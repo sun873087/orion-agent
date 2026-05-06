@@ -36,7 +36,15 @@ class AgentContext:
     abort_event: anyio.Event = field(default_factory=anyio.Event)
     token_budget: TokenBudget = field(default_factory=TokenBudget)
     feature_flags: dict[str, bool] = field(default_factory=dict)
-    # 後續 phase 加入:sandbox, permissions, hooks, plan_mode_state 等
+
+    # ─── Phase 1 加入 ─────────────────────────────────────────────────────
+    todos: list[dict[str, str]] = field(default_factory=list)
+    """TodoWriteTool 的 in-memory list。每筆 dict 至少含 'content' 與 'status'。"""
+
+    sub_agent_depth: int = 0
+    """AgentTool spawn 出的子 agent 深度。0 = 主 agent,1 = 子,>=2 禁止再 spawn。"""
+
+    # 後續 phase 加入:sandbox, permissions persisted, hooks, plan_mode_state 等
 
     def feature(self, name: str) -> bool:
         """對應 TS 的 feature() 函式。

@@ -1,42 +1,74 @@
-"""Phase 0 demo CLI。
+"""Phase 1 demo CLI — 完整 agent loop。
 
 跑法:
-  orion --provider anthropic --model claude-sonnet-4-6 "Read /etc/hosts"
-  orion --provider openai    --model gpt-5             "Read /etc/hosts"
+  orion --provider anthropic --model claude-sonnet-4-6 "Look at /etc and tell me about it"
+  orion --provider openai    --model gpt-4o-mini       "..."
 
-Phase 0 範圍:單 turn streaming + tool 執行印結果。
-**不**回填工具結果給模型再請求(那是 Phase 1 完整 agent loop)。
+支援多 turn 對話、平行工具執行、permission policy(預設 always_allow)、
+streaming text + tool 進度顯示。
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from dotenv import load_dotenv
 
-# 載入 .env(若存在)— 把 ANTHROPIC_API_KEY / OPENAI_API_KEY 注入 process env。
-# 必須在 import provider 之前,SDK client 在 import 時就會讀環境變數。
+# 載入 .env(若存在)— 注入 API keys。必須在 import provider 之前。
 load_dotenv()
 
+from orion_agent.core.conversation import Conversation  # noqa: E402
+from orion_agent.core.query_loop import (  # noqa: E402
+    AssistantTextDelta,
+    AssistantThinkingDelta,
+    AssistantTurnComplete,
+    LoopTerminated,
+)
 from orion_agent.core.state import AgentContext  # noqa: E402
-from orion_agent.core.tool import ErrorEvent, TextEvent, ToolInput  # noqa: E402
-from orion_agent.llm.events import (  # noqa: E402
-    MessageStopEvent,
-    TextDeltaEvent,
-    ThinkingDeltaEvent,
-    ToolUseStartEvent,
-    ToolUseStopEvent,
+from orion_agent.core.tool import ErrorEvent, ProgressEvent, TextEvent, Tool  # noqa: E402
+from orion_agent.core.tool_execution import (  # noqa: E402
+    ToolProgressUpdate,
+    ToolResultUpdate,
 )
 from orion_agent.llm.provider import get_provider  # noqa: E402
-from orion_agent.llm.tool_def import ToolDefinition  # noqa: E402
-from orion_agent.llm.types import NormalizedMessage  # noqa: E402
 from orion_agent.services.feature_flags import load_feature_flags  # noqa: E402
+from orion_agent.tools.agent.skill_tool import SkillTool  # noqa: E402
+from orion_agent.tools.file.edit import FileEditTool  # noqa: E402
 from orion_agent.tools.file.read import FileReadTool  # noqa: E402
+from orion_agent.tools.file.write import FileWriteTool  # noqa: E402
+from orion_agent.tools.search.glob import GlobTool  # noqa: E402
+from orion_agent.tools.search.grep import GrepTool  # noqa: E402
+from orion_agent.tools.shell.bash import BashTool  # noqa: E402
+from orion_agent.tools.todo.todo_write import TodoWriteTool  # noqa: E402
+from orion_agent.tools.web.fetch import WebFetchTool  # noqa: E402
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+SYSTEM_PROMPT = """\
+You are orion-agent, a concise software engineering assistant with file system,
+shell, search, web, and task-tracking tools. Use tools when helpful. Use absolute
+paths for file operations. Prefer parallel reads (Glob/Grep) over sequential
+ones when the user wants exploration. Be direct and brief.\
+"""
+
+
+def _build_tools() -> list[Tool[Any]]:
+    """註冊所有 Phase 1 內建工具。AgentTool 不放這(避免子 agent 自我遞迴)。"""
+    return [
+        FileReadTool(),
+        FileWriteTool(),
+        FileEditTool(),
+        BashTool(),
+        GlobTool(),
+        GrepTool(),
+        WebFetchTool(),
+        SkillTool(),
+        TodoWriteTool(),
+    ]
 
 
 @app.command()
@@ -48,80 +80,96 @@ def run(
     model: Annotated[
         str, typer.Option("--model", "-m", help="Model id.")
     ] = "claude-sonnet-4-6",
-    max_tokens: Annotated[int, typer.Option(help="Max output tokens.")] = 2048,
+    max_turns: Annotated[
+        int, typer.Option(help="Max agent turns before forced terminate.")
+    ] = 30,
+    max_tokens: Annotated[
+        int, typer.Option(help="Max output tokens per turn.")
+    ] = 4096,
 ) -> None:
-    """跑單 turn demo:streaming → 若 model 想 call Read 工具就執行印結果。"""
-    asyncio.run(_run_async(prompt=prompt, provider=provider, model=model, max_tokens=max_tokens))
+    """跑完整 agent loop:多 turn、tool feedback、streaming。"""
+    asyncio.run(
+        _run_async(
+            prompt=prompt,
+            provider=provider,
+            model=model,
+            max_turns=max_turns,
+            max_tokens=max_tokens,
+        )
+    )
 
 
-async def _run_async(*, prompt: str, provider: str, model: str, max_tokens: int) -> None:
+async def _run_async(
+    *,
+    prompt: str,
+    provider: str,
+    model: str,
+    max_turns: int,
+    max_tokens: int,
+) -> None:
     ctx = AgentContext(feature_flags=load_feature_flags())
     llm = get_provider(provider, model)
-
-    file_read = FileReadTool()
-    tool_defs = [
-        ToolDefinition(
-            name=file_read.name,
-            description=file_read.description,
-            input_schema=file_read.input_schema.model_json_schema(),
-        )
-    ]
-
-    messages: list[NormalizedMessage] = [
-        NormalizedMessage(role="user", content=prompt),
-    ]
-
-    system_prompt = (
-        "You are a concise assistant. If the user asks you to read a file, "
-        "use the Read tool with an absolute path. Otherwise just answer."
+    conv = Conversation(
+        provider=llm,
+        system_prompt=SYSTEM_PROMPT,
+        tools=_build_tools(),
+        max_turns=max_turns,
+        max_tokens_per_turn=max_tokens,
     )
 
     print(f"=== orion-agent ({provider} / {model}) ===", flush=True)
 
-    pending_tool: ToolUseStopEvent | None = None
+    async for ev in conv.send(prompt, ctx=ctx):
+        _render(ev)
 
-    async for event in llm.stream(
-        system=system_prompt,
-        messages=messages,
-        tools=tool_defs,
-        max_tokens=max_tokens,
-    ):
-        if isinstance(event, TextDeltaEvent):
-            sys.stdout.write(event.text)
-            sys.stdout.flush()
-        elif isinstance(event, ThinkingDeltaEvent):
-            sys.stdout.write(f"\x1b[2m{event.text}\x1b[0m")
-            sys.stdout.flush()
-        elif isinstance(event, ToolUseStartEvent):
-            print(f"\n[tool_use_start] {event.tool_name} (id={event.tool_use_id})", flush=True)
-        elif isinstance(event, ToolUseStopEvent):
-            print(f"[tool_use_stop]  input={event.full_input}", flush=True)
-            pending_tool = event
-        elif isinstance(event, MessageStopEvent):
-            print(
-                f"\n[message_stop] reason={event.stop_reason} "
-                f"in={event.usage.input_tokens} out={event.usage.output_tokens} "
-                f"cache_read={event.usage.cache_read_tokens}",
-                flush=True,
-            )
-
-    # Phase 0:單 turn,只執行第一個 tool_use 後停。Phase 1 才有完整 loop。
-    if pending_tool is not None and pending_tool.tool_name == file_read.name:
-        print("\n--- executing tool locally ---", flush=True)
-        try:
-            tool_input = file_read.input_schema.model_validate(pending_tool.full_input)
-        except (ValueError, TypeError) as e:
-            print(f"[tool input invalid] {e}", flush=True)
-            return
-        await _drain_tool(file_read, tool_input, ctx)
+    print(
+        f"\n=== done — turns={conv.stats.turns}, "
+        f"tools={conv.stats.tool_calls}({conv.stats.tool_errors} errors), "
+        f"in={conv.stats.input_tokens}, out={conv.stats.output_tokens} ===",
+        flush=True,
+    )
 
 
-async def _drain_tool(tool: FileReadTool, tool_input: ToolInput, ctx: AgentContext) -> None:
-    async for tool_event in tool.call(tool_input, ctx):  # type: ignore[arg-type]
-        if isinstance(tool_event, TextEvent):
-            print(tool_event.text)
-        elif isinstance(tool_event, ErrorEvent):
-            print(f"[tool error] {tool_event.message}")
+def _render(ev: Any) -> None:
+    """把 LoopEvent / ToolUpdate 印給 user 看。"""
+    if isinstance(ev, AssistantTextDelta):
+        sys.stdout.write(ev.text)
+        sys.stdout.flush()
+    elif isinstance(ev, AssistantThinkingDelta):
+        # 暗灰色 reasoning
+        sys.stdout.write(f"\x1b[2m{ev.text}\x1b[0m")
+        sys.stdout.flush()
+    elif isinstance(ev, AssistantTurnComplete):
+        # turn 結束換行
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    elif isinstance(ev, ToolProgressUpdate):
+        # 工具中間事件:tool 啟動 / 進度 / 錯誤
+        if isinstance(ev.event, TextEvent):
+            # 工具的 final text 由 ToolResultUpdate 顯示,這裡跳過
+            pass
+        elif isinstance(ev.event, ProgressEvent):
+            print(f"  [\x1b[2m{ev.tool_name} progress\x1b[0m] {ev.event.data}", flush=True)
+        elif isinstance(ev.event, ErrorEvent):
+            print(f"  [\x1b[31m{ev.tool_name} error\x1b[0m] {ev.event.message}", flush=True)
+    elif isinstance(ev, ToolResultUpdate):
+        marker = "\x1b[31m✗\x1b[0m" if ev.is_error else "\x1b[32m✓\x1b[0m"
+        # 印 tool 的縮排結果摘要(前 500 字)
+        first_block = ev.message.content[0] if isinstance(ev.message.content, list) else None
+        text = ""
+        if first_block is not None and hasattr(first_block, "content"):
+            raw = first_block.content
+            text = raw if isinstance(raw, str) else str(raw)
+        preview = text if len(text) <= 500 else text[:500] + f"\n... [+{len(text) - 500} chars]"
+        indented = "\n".join(f"    {line}" for line in preview.split("\n"))
+        print(f"\n  {marker} {ev.tool_name} (id={ev.tool_use_id}):", flush=True)
+        print(indented, flush=True)
+    elif isinstance(ev, LoopTerminated):
+        print(
+            f"\n--- loop terminated: {ev.transition.reason} "
+            f"(turns={ev.total_turns}) ---",
+            flush=True,
+        )
 
 
 def cli() -> None:

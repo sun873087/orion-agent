@@ -76,12 +76,17 @@ class Tool(Protocol[Input_T]):
     description: str
     """給模型的工具說明。"""
 
-    async def call(
+    def call(
         self,
         input: Input_T,
         ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
-        """執行工具,yield 事件。"""
+        """執行工具,回 async iterator(實作通常是 `async def` 加 `yield`)。
+
+        注意 Protocol 用 sync `def` 宣告:async generator function 的 *型別* 是
+        `(...) -> AsyncIterator[T]`,不是 `(...) -> Coroutine[Any, Any, AsyncIterator[T]]`。
+        若這裡寫 `async def`,mypy 會誤判實作為 coroutine,導致比對失敗。
+        """
         ...
 
     def is_concurrency_safe(self, input: Input_T) -> bool:
