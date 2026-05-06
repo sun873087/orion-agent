@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Orion Agent Dev Test</title>
+<style>
+  body { font-family: monospace; max-width: 900px; margin: 20px auto; padding: 20px; }
+  #messages { background: #f5f5f5; padding: 12px; height: 500px;
+              overflow-y: auto; border: 1px solid #ccc; }
+  .user { color: #0066cc; }
+  .assistant { color: #333; }
+  .tool-use { color: #888; background: #eef; padding: 4px 8px; margin: 4px 0;
+              border-left: 3px solid #66f; font-size: 12px; }
+  .tool-result { color: #555; background: #efe; padding: 4px 8px;
+                 border-left: 3px solid #6f6; font-size: 12px;
+                 white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+  .permission { background: #fee; padding: 8px; margin: 4px 0;
+                border: 2px solid #f66; border-radius: 4px; }
+  .error { color: #c00; }
+  #prompt { width: 100%; padding: 8px; font-family: monospace; }
+  button { padding: 8px 16px; margin-right: 4px; }
+  .banner { background: #ffe; padding: 8px; border: 1px dashed #cc0;
+            font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Orion Agent Dev Test (Stage 1)</h1>
+
+<div class="banner">
+  ⚠️ <b>Phase 0:</b> FastAPI 還沒開(Phase 6 才會做)。這個頁面現在只是介面樣板,
+  Phase 0 的測試請用 CLI:
+  <code>uv run orion --provider anthropic "Read /etc/hosts"</code>
+</div>
+
+<p>Backend: <input id="endpoint" value="http://localhost:8000" /></p>
+<p>Provider:
+  <select id="provider">
+    <option value="anthropic">anthropic</option>
+    <option value="openai">openai</option>
+  </select>
+  Model: <input id="model" value="claude-sonnet-4-6" size="24" />
+</p>
+<p>Session: <input id="sessionId" placeholder="(auto-created)" /></p>
+
+<div id="messages"></div>
+
+<p>
+  <textarea id="prompt" rows="3" placeholder="Type prompt... (Ctrl/Cmd+Enter to send)"></textarea>
+</p>
+<p>
+  <button onclick="send()">Send</button>
+  <button onclick="clearChat()">Clear</button>
+  <button onclick="newSession()">New Session</button>
+</p>
+
+<script>
+let ws = null;
+let pendingPermissions = {};
+
+function append(html, cls) {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.innerHTML = html;
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView();
+}
+
+async function newSession() {
+  try {
+    const r = await fetch(endpoint.value + '/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: document.getElementById('provider').value,
+        model: document.getElementById('model').value,
+      }),
+    });
+    const data = await r.json();
+    document.getElementById('sessionId').value = data.id;
+    clearChat();
+    connect();
+  } catch (e) {
+    append('[Backend not reachable — Phase 6 will add FastAPI]', 'error');
+  }
+}
+
+function clearChat() {
+  document.getElementById('messages').innerHTML = '';
+}
+
+function connect() {
+  if (ws) ws.close();
+  const sid = document.getElementById('sessionId').value;
+  if (!sid) return;
+  const wsUrl = endpoint.value.replace('http', 'ws') + '/chat/stream/' + sid;
+  ws = new WebSocket(wsUrl);
+  ws.onmessage = (e) => handleEvent(JSON.parse(e.data));
+  ws.onerror = () => append('[WS error]', 'error');
+}
+
+function handleEvent(ev) {
+  switch (ev.type) {
+    case 'assistant_text':
+      append('<b class="assistant">[assistant]</b> ' + escapeHtml(ev.text), 'assistant');
+      break;
+    case 'tool_use':
+      append('🔧 <b>' + ev.tool_name + '</b>(' +
+             escapeHtml(JSON.stringify(ev.input)) + ')', 'tool-use');
+      break;
+    case 'tool_result':
+      append('<b>↳</b> ' + escapeHtml(
+        typeof ev.content === 'string' ? ev.content : JSON.stringify(ev.content)
+      ).slice(0, 500) + (ev.content?.length > 500 ? '...' : ''),
+      'tool-result');
+      break;
+    case 'permission_ask':
+      const pid = ev.request_id;
+      pendingPermissions[pid] = true;
+      const html = `🔐 Allow <b>${ev.tool_name}</b>?
+        <pre>${escapeHtml(JSON.stringify(ev.input, null, 2))}</pre>
+        <button onclick="answerPermission('${pid}', 'allow')">Allow</button>
+        <button onclick="answerPermission('${pid}', 'always_allow')">Always</button>
+        <button onclick="answerPermission('${pid}', 'deny')">Deny</button>`;
+      append(html, 'permission');
+      break;
+    case 'tool_progress':
+      append('⏳ ' + escapeHtml(JSON.stringify(ev.data)), 'tool-use');
+      break;
+    case 'error':
+      append('❌ ' + escapeHtml(ev.message), 'error');
+      break;
+    case 'terminal':
+      append('━━━ done (' + ev.reason + ') ━━━', 'tool-use');
+      break;
+  }
+}
+
+function answerPermission(requestId, decision) {
+  ws.send(JSON.stringify({
+    type: 'permission_decision',
+    request_id: requestId,
+    decision: decision,
+  }));
+}
+
+function send() {
+  const text = document.getElementById('prompt').value.trim();
+  if (!text || !ws) {
+    append('[No session — click "New Session" first]', 'error');
+    return;
+  }
+  append('<b class="user">[user]</b> ' + escapeHtml(text), 'user');
+  ws.send(JSON.stringify({ type: 'user_message', content: text }));
+  document.getElementById('prompt').value = '';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+document.getElementById('prompt').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send();
+});
+
+window.addEventListener('load', () => {
+  if (document.getElementById('sessionId').value) connect();
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 各子專案有自己的 .gitignore(api/.gitignore 等)— 此處只處理 repo 根。
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# 防呆:任何位置出現的 env 檔絕對不 commit
+.env
+.env.local
+*.env
