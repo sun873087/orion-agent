@@ -18,3 +18,4 @@
 - [x] [Phase 0 — Foundation](phase-00-completion.md)(2026-05-07)
 - [x] [Phase 1 — Agent Loop](phase-01-completion.md)(2026-05-07)
 - [x] [Phase 2 — Storage / Resume](phase-02-completion.md)(2026-05-07)
+- [x] [Phase 1b — 補完 Phase 1 小債](phase-01b-completion.md)(2026-05-07)

@@ -13,13 +13,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from orion_agent.core.state import AgentContext
+from orion_agent.core.streaming_executor import StreamingToolExecutor
 from orion_agent.core.tool import Tool
 from orion_agent.core.tool_execution import (
     ToolProgressUpdate,
     ToolResultUpdate,
     ToolUpdate,
 )
-from orion_agent.core.tool_orchestration import run_tools
+from orion_agent.core.tool_orchestration import run_tools  # noqa: F401 — 留作 fallback / 測試
 from orion_agent.core.transitions import Terminal
 from orion_agent.hooks.registry import HookRegistry
 from orion_agent.llm.events import (
@@ -127,78 +128,87 @@ def _tool_definitions(tools: list[Tool[Any]]) -> list[ToolDefinition]:
 
 async def _run_one_turn(
     *,
-    provider: LLMProvider,
-    system_prompt: str,
+    params: QueryParams,
+    ctx: AgentContext,
     state_messages: list[NormalizedMessage],
     tool_defs: list[ToolDefinition],
-    max_tokens: int,
-    reasoning_effort: ReasoningEffort | None,
 ) -> AsyncIterator[LoopEvent]:
-    """跑一輪 model stream,yield delta events,最後 yield AssistantTurnComplete。
+    """跑一輪:stream model + streaming tool execution(立即 add_tool)+ drain。
 
-    內部會根據收到的 NormalizedEvent 累積 text + tool_use blocks 成一則 assistant
-    NormalizedMessage,並 append 到 state_messages(in-place mutate)。
+    順序:
+        1. 模型 stream 進來 — text yield、tool_use_stop 立刻送進 executor 開始跑
+        2. stream 結束 — 組 assistant NormalizedMessage(text + tool_use blocks)
+        3. yield AssistantTurnComplete(message 已 append 到 state_messages)
+        4. drain executor — 按 add 順序 yield ToolProgressUpdate / ToolResultUpdate
     """
     text_chunks: list[str] = []
-    tool_uses: list[ToolUseBlock] = []
+    pending_tool_uses: dict[int, ToolUseBlock] = {}
     stop_reason = "end_turn"
     input_tokens = 0
     output_tokens = 0
 
-    # tool_use 暫存:block_index → (id, name, full_input?)
-    pending_tool_uses: dict[int, dict[str, Any]] = {}
+    async with StreamingToolExecutor(
+        params.tools,
+        can_use_tool=params.can_use_tool,
+        hooks=params.hooks,
+        ctx=ctx,
+    ) as executor:
+        # ─── 1. stream model ────────────────────────────────────────────────
+        async for ev in params.provider.stream(
+            system=params.system_prompt,
+            messages=state_messages,
+            tools=tool_defs,
+            max_tokens=params.max_tokens_per_turn,
+            reasoning_effort=params.reasoning_effort,
+        ):
+            if isinstance(ev, TextDeltaEvent):
+                text_chunks.append(ev.text)
+                yield AssistantTextDelta(text=ev.text)
+            elif isinstance(ev, ThinkingDeltaEvent):
+                yield AssistantThinkingDelta(text=ev.text)
+            elif isinstance(ev, ToolUseStopEvent):
+                block = ToolUseBlock(
+                    id=ev.tool_use_id,
+                    name=ev.tool_name,
+                    input=ev.full_input,
+                )
+                pending_tool_uses[ev.block_index] = block
+                # streaming:模型一 yield tool_use 就立即 add → 可能立刻開跑
+                executor.add_tool(block)
+            elif isinstance(ev, MessageStopEvent):
+                stop_reason = ev.stop_reason
+                input_tokens = ev.usage.input_tokens
+                output_tokens = ev.usage.output_tokens
 
-    async for ev in provider.stream(
-        system=system_prompt,
-        messages=state_messages,
-        tools=tool_defs,
-        max_tokens=max_tokens,
-        reasoning_effort=reasoning_effort,
-    ):
-        if isinstance(ev, TextDeltaEvent):
-            text_chunks.append(ev.text)
-            yield AssistantTextDelta(text=ev.text)
-        elif isinstance(ev, ThinkingDeltaEvent):
-            yield AssistantThinkingDelta(text=ev.text)
-        elif isinstance(ev, ToolUseStopEvent):
-            pending_tool_uses[ev.block_index] = {
-                "id": ev.tool_use_id,
-                "name": ev.tool_name,
-                "input": ev.full_input,
-            }
-        elif isinstance(ev, MessageStopEvent):
-            stop_reason = ev.stop_reason
-            input_tokens = ev.usage.input_tokens
-            output_tokens = ev.usage.output_tokens
+        # ─── 2. 組 assistant NormalizedMessage ──────────────────────────────
+        tool_uses_in_order: list[ToolUseBlock] = [
+            pending_tool_uses[idx] for idx in sorted(pending_tool_uses)
+        ]
+        assistant_blocks: list[Any] = []
+        if text_chunks:
+            joined = "".join(text_chunks)
+            if joined.strip():
+                assistant_blocks.append(TextBlock(text=joined))
+        assistant_blocks.extend(tool_uses_in_order)
 
-    # 組 ToolUseBlock(按 block_index 順序)
-    for idx in sorted(pending_tool_uses):
-        info = pending_tool_uses[idx]
-        tool_uses.append(
-            ToolUseBlock(id=info["id"], name=info["name"], input=info["input"])
+        # 即使沒任何 block(理論上不該發生),也 append 一個空 text 以維持對齊
+        if not assistant_blocks:
+            assistant_blocks.append(TextBlock(text=""))
+
+        assistant_msg = NormalizedMessage(role="assistant", content=assistant_blocks)
+        state_messages.append(assistant_msg)
+
+        # ─── 3. assistant turn complete ─────────────────────────────────────
+        yield AssistantTurnComplete(
+            message=assistant_msg,
+            stop_reason=stop_reason,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
-    # 組 assistant NormalizedMessage:text block + tool_use blocks
-    assistant_blocks: list[Any] = []
-    if text_chunks:
-        joined = "".join(text_chunks)
-        if joined.strip():
-            assistant_blocks.append(TextBlock(text=joined))
-    assistant_blocks.extend(tool_uses)
-
-    # 即使沒任何 block(理論上不該發生),也 append 一個空 text 以維持對話對齊
-    if not assistant_blocks:
-        assistant_blocks.append(TextBlock(text=""))
-
-    assistant_msg = NormalizedMessage(role="assistant", content=assistant_blocks)
-    state_messages.append(assistant_msg)
-
-    yield AssistantTurnComplete(
-        message=assistant_msg,
-        stop_reason=stop_reason,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    )
+        # ─── 4. drain — 工具結果按 add 順序 yield ──────────────────────────
+        async for upd in executor.drain():
+            yield upd
 
 
 async def query_loop(
@@ -239,26 +249,30 @@ async def query_loop(
                 ctx.session_id,
             )
 
-        # ─── 1. stream model ────────────────────────────────────────────────
+        # ─── stream + executor + drain(全部在 _run_one_turn 裡)─────────────
         last_assistant_msg: NormalizedMessage | None = None
+        result_blocks: list[Any] = []
         async for ev in _run_one_turn(
-            provider=params.provider,
-            system_prompt=params.system_prompt,
+            params=params,
+            ctx=ctx,
             state_messages=state_messages,
             tool_defs=tool_defs,
-            max_tokens=params.max_tokens_per_turn,
-            reasoning_effort=params.reasoning_effort,
         ):
             yield ev
             if isinstance(ev, AssistantTurnComplete):
                 last_assistant_msg = ev.message
+            elif isinstance(ev, ToolResultUpdate):
+                # tool 完成 — 累積 result block 供下輪回填
+                if isinstance(ev.message.content, list):
+                    result_blocks.extend(ev.message.content)
+            elif isinstance(ev, ToolProgressUpdate):
+                pass  # 已 yield 給 caller
 
         if last_assistant_msg is None:
-            # 不該發生,但保險 — provider 沒給我們任何完整 message,終止避免死循環
             transition = Terminal(reason="empty_response")
             break
 
-        # ─── 2. 收集本輪的 tool_use blocks ──────────────────────────────────
+        # ─── 收集本輪的 tool_use blocks 決定 continue / terminate ───────────
         tool_uses: list[ToolUseBlock] = [
             b for b in last_assistant_msg.content
             if isinstance(b, ToolUseBlock)
@@ -268,31 +282,11 @@ async def query_loop(
             transition = Terminal(reason="natural_stop")
             break
 
-        # ─── 3. 跑工具,把結果累積成一則 user NormalizedMessage 回填 ─────────
-        result_blocks: list[Any] = []
-        async for upd in run_tools(
-            tool_uses,
-            tools=params.tools,
-            can_use_tool=params.can_use_tool,
-            hooks=params.hooks,
-            ctx=ctx,
-        ):
-            yield upd
-            if isinstance(upd, ToolResultUpdate):
-                # upd.message.content 是 [ToolResultBlock(...)]
-                if isinstance(upd.message.content, list):
-                    result_blocks.extend(upd.message.content)
-            elif isinstance(upd, ToolProgressUpdate):
-                pass  # progress 已 yield 給 caller,不進 state
-
-            if ctx.abort_event.is_set():
-                break
-
         if ctx.abort_event.is_set():
             transition = Terminal(reason="aborted")
             break
 
-        # 把所有 ToolResultBlock 合成一則 user message(對應 Anthropic 慣例)
+        # 把所有 ToolResultBlock 合成一則 user message(Anthropic 慣例)
         if result_blocks:
             state_messages.append(
                 NormalizedMessage(role="user", content=result_blocks)

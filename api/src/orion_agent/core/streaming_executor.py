@@ -34,11 +34,12 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import Tool
 from orion_agent.core.tool_execution import (
+    ToolResultUpdate,
     ToolUpdate,
     run_one_tool,
 )
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.types import ToolUseBlock
+from orion_agent.llm.types import NormalizedMessage, ToolResultBlock, ToolUseBlock
 from orion_agent.permissions.decisions import CanUseToolFn
 
 ToolStatus = Literal["queued", "executing", "done"]
@@ -72,6 +73,9 @@ class StreamingToolExecutor:
         self.hooks = hooks
         self.ctx = ctx
         self.tracked: list[TrackedTool] = []
+        self.sibling_abort = anyio.Event()
+        """non-safe(e.g. Bash)工具錯誤時 set;queued 工具 skip 並回 synthetic error。
+        對應 TS StreamingToolExecutor.maybe_abort_siblings。"""
         self._task_group: anyio.abc.TaskGroup | None = None
         self._task_group_cm: Any = None
 
@@ -132,6 +136,32 @@ class StreamingToolExecutor:
         if tt.send_stream is None:
             return
         try:
+            # sibling_abort 已被前面的 non-safe 工具 set → 直接 synthetic skip
+            if self.sibling_abort.is_set():
+                skip_msg = NormalizedMessage(
+                    role="user",
+                    content=[
+                        ToolResultBlock(
+                            tool_use_id=tt.block.id,
+                            content=(
+                                f"Skipped {tt.block.name!r}: a sibling tool errored, "
+                                "all queued tools in this batch were aborted."
+                            ),
+                            is_error=True,
+                        )
+                    ],
+                )
+                await tt.send_stream.send(
+                    ToolResultUpdate(
+                        tool_use_id=tt.block.id,
+                        tool_name=tt.block.name,
+                        message=skip_msg,
+                        is_error=True,
+                        extra_notes=["sibling_abort triggered"],
+                    )
+                )
+                return
+
             async for upd in run_one_tool(
                 tt.block.id,
                 tt.block.name,
@@ -142,6 +172,16 @@ class StreamingToolExecutor:
                 ctx=self.ctx,
             ):
                 await tt.send_stream.send(upd)
+                # 非並發安全工具(e.g. Bash)在執行階段錯 → 觸發 sibling abort
+                # 排除「unknown tool」/「invalid input」這類 synthetic error
+                # — 那些是 caller 給的爛 input,不該因此關掉並行兄弟
+                if (
+                    isinstance(upd, ToolResultUpdate)
+                    and upd.is_error
+                    and not tt.is_concurrency_safe
+                    and tt.block.name in self.tools_by_name
+                ):
+                    self.sibling_abort.set()
         finally:
             await tt.send_stream.aclose()
             tt.status = "done"
