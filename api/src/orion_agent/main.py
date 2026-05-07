@@ -48,12 +48,8 @@ from orion_agent.tools.web.fetch import WebFetchTool  # noqa: E402
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
-SYSTEM_PROMPT = """\
-You are orion-agent, a concise software engineering assistant with file system,
-shell, search, web, and task-tracking tools. Use tools when helpful. Use absolute
-paths for file operations. Prefer parallel reads (Glob/Grep) over sequential
-ones when the user wants exploration. Be direct and brief.\
-"""
+# Phase 4:system prompt 改由 Conversation 自己組(prompt/static_sections + 動態段)。
+# 不再在 main.py 寫死 — Conversation(system_prompt="") 會走 assembler 路徑。
 
 
 def _build_tools() -> list[Tool[Any]]:
@@ -167,7 +163,7 @@ async def _run_async(
             sid,
             provider=llm,
             tools=_build_tools(),
-            system_prompt=SYSTEM_PROMPT,
+            # system_prompt 留空 → Conversation 用 Phase 4 assembler 組
             max_turns=max_turns,
         )
         conv.persistence_enabled = not no_persistence
@@ -182,7 +178,7 @@ async def _run_async(
     else:
         conv = Conversation(
             provider=llm,
-            system_prompt=SYSTEM_PROMPT,
+            # system_prompt 留空 → Conversation 用 Phase 4 assembler 組
             tools=_build_tools(),
             max_turns=max_turns,
             max_tokens_per_turn=max_tokens,

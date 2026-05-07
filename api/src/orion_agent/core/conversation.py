@@ -34,12 +34,14 @@ from orion_agent.llm.provider import LLMProvider, ReasoningEffort
 from orion_agent.llm.types import NormalizedMessage
 from orion_agent.memory.extract import extract_memories
 from orion_agent.memory.paths import default_user_id, user_memory_paths
-from orion_agent.memory.relevance import rank_memories
-from orion_agent.memory.render import prepend_to_system_prompt
 from orion_agent.memory.scan import scan_memory_dir
 from orion_agent.permissions.decisions import (
     CanUseToolFn,
     always_allow,
+)
+from orion_agent.prompt.assembler import (
+    build_system_prompt_list,
+    fetch_system_prompt_parts,
 )
 from orion_agent.storage.replacement_state import ContentReplacementState
 from orion_agent.storage.session import SessionStorage
@@ -62,8 +64,10 @@ class Conversation:
     """跨 send() 共用的 agent 對話狀態。"""
 
     provider: LLMProvider
-    system_prompt: str
-    tools: list[Tool[Any]]
+    system_prompt: str = ""
+    """**Phase 4**:可省略;不傳 → Conversation 自己用 prompt/static_sections + 動態段組裝。
+    傳了 → 視為 caller 客製,完整覆蓋(不再加靜態 7 段)。"""
+    tools: list[Tool[Any]] = field(default_factory=list)
     can_use_tool: CanUseToolFn = always_allow
     hooks: HookRegistry = field(default_factory=HookRegistry)
     max_turns: int = 30
@@ -125,23 +129,23 @@ class Conversation:
         if store is not None:
             await store.record_message(user_msg)
 
-        # ─── Phase 3:載入相關 memory 進 system prompt ──────────────────────
-        effective_system_prompt = self.system_prompt
-        if self.memory_enabled:
+        # ─── Phase 4:組裝 system prompt(7 段靜態 + 動態 + memory)──────────
+        effective_system_prompt: str | list[str]
+        if self.system_prompt:
+            # caller 給了完整 prompt → 直接用(向後相容,且 memory 仍會載入動態段)
+            effective_system_prompt = self.system_prompt
+        else:
             try:
-                paths = user_memory_paths(self.user_id)
-                index = scan_memory_dir(paths)
-                if index.memories:
-                    relevant = await rank_memories(
-                        index.memories,
-                        self.state_messages,
-                        provider=self.provider,
-                    )
-                    effective_system_prompt = prepend_to_system_prompt(
-                        self.system_prompt, relevant,
-                    )
-            except Exception:  # noqa: BLE001 — memory 載入失敗不該影響對話
-                effective_system_prompt = self.system_prompt
+                parts = await fetch_system_prompt_parts(
+                    cwd=ctx.cwd,
+                    user_id=self.user_id,
+                    conversation_messages=self.state_messages,
+                    provider=self.provider if self.memory_enabled else None,
+                )
+                effective_system_prompt = build_system_prompt_list(parts)
+            except Exception:  # noqa: BLE001 — fallback 到純靜態 block
+                from orion_agent.prompt.static_sections import render_static_block
+                effective_system_prompt = render_static_block()
 
         params = QueryParams(
             provider=self.provider,

@@ -55,7 +55,9 @@ class QueryParams:
     provider: LLMProvider
     """LLM provider — Phase 0 抽象,可為 Anthropic / OpenAI。"""
 
-    system_prompt: str
+    system_prompt: str | list[str]
+    """單字串(簡單模式)或 list[str](Phase 4 cache scope:Anthropic 自動把
+    last-1 element 標 cache_control)。Phase 0 LLMProvider.stream 已支援兩種。"""
     tools: list[Tool[Any]]
     can_use_tool: CanUseToolFn
     hooks: HookRegistry
