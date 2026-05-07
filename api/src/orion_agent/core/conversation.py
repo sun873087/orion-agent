@@ -184,10 +184,16 @@ class Conversation:
         Returns:
             Conversation 實例,state_messages + replacement_state 已重建。
         """
+        import sys
+
         from orion_agent.storage.resume import load_session
 
         snapshot = load_session(session_id)
         sp_text = system_prompt or snapshot.system_prompt or ""
+
+        # Dangling tool_use auto-repair 等警告(若有)印到 stderr
+        for w in snapshot.warnings:
+            print(f"[resume warning] {w}", file=sys.stderr, flush=True)
 
         conv = cls(
             provider=provider,

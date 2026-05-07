@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -42,6 +43,8 @@ class SessionSnapshot:
     messages: list[NormalizedMessage] = field(default_factory=list)
     replacement_state: ContentReplacementState = field(default_factory=ContentReplacementState)
     transitions: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    """resume 時偵測到的問題(dangling tool_use auto-repair 等)。"""
 
 
 def _block_from_dict(d: dict[str, Any]) -> ContentBlock | None:
@@ -89,6 +92,68 @@ def _message_from_dict(d: dict[str, Any]) -> NormalizedMessage | None:
     return None
 
 
+def validate_and_repair_messages(
+    messages: list[NormalizedMessage],
+) -> tuple[list[NormalizedMessage], list[str]]:
+    """檢查每個 ToolUseBlock 都有對應 ToolResultBlock。
+
+    Dangling tool_use(無對應 result)= session 被中途 kill 在 tool 執行中。
+    Auto-repair:在那則 assistant message 後插一則 synthetic user message,
+    內含 ToolResultBlock(is_error=True),讓 resume 後的 conversation 對齊
+    Anthropic / OpenAI 的「tool_use 必有 tool_result 後接」契約。
+
+    Returns:
+        (repaired_messages, warnings)— 沒有 dangling 時 messages 原樣回。
+    """
+    warnings: list[str] = []
+
+    # 蒐集所有 tool_use 與 tool_result IDs
+    tool_use_info: list[tuple[int, str, str]] = []  # (msg_idx, id, name)
+    tool_result_ids: set[str] = set()
+
+    for i, m in enumerate(messages):
+        if not isinstance(m.content, list):
+            continue
+        for block in m.content:
+            if isinstance(block, ToolUseBlock):
+                tool_use_info.append((i, block.id, block.name))
+            elif isinstance(block, ToolResultBlock):
+                tool_result_ids.add(block.tool_use_id)
+
+    by_msg_idx: dict[int, list[tuple[str, str]]] = defaultdict(list)
+    for msg_idx, tu_id, tu_name in tool_use_info:
+        if tu_id not in tool_result_ids:
+            by_msg_idx[msg_idx].append((tu_id, tu_name))
+            warnings.append(
+                f"dangling tool_use id={tu_id!r} ({tu_name!r}) in message[{msg_idx}] "
+                "— appending synthetic error result for resume safety"
+            )
+
+    if not by_msg_idx:
+        return list(messages), warnings
+
+    repaired: list[NormalizedMessage] = []
+    for i, m in enumerate(messages):
+        repaired.append(m)
+        if i in by_msg_idx:
+            synthetic_blocks: list[ContentBlock] = [
+                ToolResultBlock(
+                    tool_use_id=tu_id,
+                    content=(
+                        f"(tool {tu_name!r} did not complete — session was "
+                        "interrupted before the result was recorded; treating as error)"
+                    ),
+                    is_error=True,
+                )
+                for tu_id, tu_name in by_msg_idx[i]
+            ]
+            repaired.append(
+                NormalizedMessage(role="user", content=synthetic_blocks)
+            )
+
+    return repaired, warnings
+
+
 def load_session(session_id: UUID) -> SessionSnapshot:
     """讀整個 transcript 重建 SessionSnapshot。"""
     sp = session_paths(session_id)
@@ -113,6 +178,12 @@ def load_session(session_id: UUID) -> SessionSnapshot:
             replacement_records.append(r)
         elif kind == "transition":
             snapshot.transitions.append(r)
+
+    # Auto-repair dangling tool_use(中途 kill 的 transcript)
+    snapshot.messages, validation_warnings = validate_and_repair_messages(
+        snapshot.messages,
+    )
+    snapshot.warnings.extend(validation_warnings)
 
     snapshot.replacement_state = reconstruct_content_replacement_state(
         snapshot.messages,

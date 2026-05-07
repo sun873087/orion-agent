@@ -3,11 +3,14 @@
 對應 TS Claude Code `src/tools/GlobTool/`。Phase 1 簡化版,只支援基本 glob pattern。
 
 語意:`**/*.py` 遞迴所有 .py 檔。`*.txt` 只看 cwd 一層。
+
+記憶體控制:用 heapq.heap of size _MAX_RESULTS,iter base.glob() 不一次性 list 所有路徑。
+若 base 是 1M 檔的目錄,記憶體用量保持 O(_MAX_RESULTS) 而非 O(總檔數)。
 """
 
 from __future__ import annotations
 
-import contextlib
+import heapq
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -56,21 +59,31 @@ class GlobTool:
             yield ErrorEvent(message=f"base_path does not exist or is not a directory: {base}")
             return
 
+        # Min-heap of size _MAX_RESULTS,key 為 (mtime, str(path)) 確保 tie-break 穩定。
+        # iterate base.glob 是 generator,不一次性載入所有 Path。
+        heap: list[tuple[float, str, Path]] = []
+        truncated = False
         try:
-            matches = list(base.glob(input.pattern))
+            for p in base.glob(input.pattern):
+                if not p.is_file():
+                    continue
+                try:
+                    mtime = p.stat().st_mtime
+                except OSError:
+                    continue  # broken symlink / permission denied
+                if len(heap) < _MAX_RESULTS:
+                    heapq.heappush(heap, (mtime, str(p), p))
+                else:
+                    truncated = True
+                    # 只在 mtime 比 heap 最舊還新時替換 → 維持 top-N newest
+                    if mtime > heap[0][0]:
+                        heapq.heapreplace(heap, (mtime, str(p), p))
         except (OSError, ValueError) as e:
             yield ErrorEvent(message=f"glob failed: {e}")
             return
 
-        # 過濾 dirs(只回 file)
-        files = [p for p in matches if p.is_file()]
-
-        # 按 mtime 降序
-        with contextlib.suppress(OSError):
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-        truncated = len(files) > _MAX_RESULTS
-        files = files[:_MAX_RESULTS]
+        # 從 heap 抽出 → 按 mtime 降序排
+        files = [p for _, _, p in sorted(heap, key=lambda x: x[0], reverse=True)]
 
         if not files:
             yield TextEvent(text=f"(no files matched {input.pattern!r} under {base})")
@@ -79,7 +92,10 @@ class GlobTool:
         lines = [str(p) for p in files]
         out = f"# {len(files)} match(es) for {input.pattern!r} under {base}\n" + "\n".join(lines)
         if truncated:
-            out += f"\n... (truncated at {_MAX_RESULTS})"
+            out += (
+                f"\n... (showing newest {_MAX_RESULTS}; "
+                "more matches exist — narrow the pattern)"
+            )
         yield TextEvent(text=out)
 
     def is_concurrency_safe(self, input: GlobInput) -> bool:  # noqa: ARG002
