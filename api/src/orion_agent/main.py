@@ -68,6 +68,34 @@ def _build_tools() -> list[Tool[Any]]:
 
 
 @app.command()
+def serve(
+    host: Annotated[
+        str, typer.Option("--host", help="Bind address (default 127.0.0.1).")
+    ] = "127.0.0.1",
+    port: Annotated[
+        int, typer.Option("--port", help="Listen port (default 8000).")
+    ] = 8000,
+    reload: Annotated[
+        bool, typer.Option("--reload", help="Auto-reload on code change (dev).")
+    ] = False,
+) -> None:
+    """Phase 6:啟 FastAPI server(uvicorn)。
+
+    `orion serve --port 8000` → `http://127.0.0.1:8000/healthz`
+    WebSocket: `ws://127.0.0.1:8000/chat/stream/<session_id>?token=<jwt>`
+    """
+    import uvicorn
+
+    uvicorn.run(
+        "orion_agent.api.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info",
+    )
+
+
+@app.command()
 def run(
     prompt: Annotated[str, typer.Argument(help="User prompt to send to the model.")],
     provider: Annotated[

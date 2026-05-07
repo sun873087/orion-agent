@@ -8,7 +8,8 @@
   #messages { background: #f5f5f5; padding: 12px; height: 500px;
               overflow-y: auto; border: 1px solid #ccc; }
   .user { color: #0066cc; }
-  .assistant { color: #333; }
+  .assistant { color: #333; white-space: pre-wrap; }
+  .thinking { color: #999; font-style: italic; white-space: pre-wrap; }
   .tool-use { color: #888; background: #eef; padding: 4px 8px; margin: 4px 0;
               border-left: 3px solid #66f; font-size: 12px; }
   .tool-result { color: #555; background: #efe; padding: 4px 8px;
@@ -17,31 +18,33 @@
   .permission { background: #fee; padding: 8px; margin: 4px 0;
                 border: 2px solid #f66; border-radius: 4px; }
   .error { color: #c00; }
+  .stat { color: #888; font-size: 11px; }
   #prompt { width: 100%; padding: 8px; font-family: monospace; }
-  button { padding: 8px 16px; margin-right: 4px; }
-  .banner { background: #ffe; padding: 8px; border: 1px dashed #cc0;
-            font-size: 13px; margin-bottom: 12px; }
+  button { padding: 6px 12px; margin-right: 4px; }
+  .row { margin: 6px 0; }
+  .row label { display: inline-block; min-width: 80px; }
 </style>
 </head>
 <body>
 
-<h1>Orion Agent Dev Test (Stage 1)</h1>
+<h1>Orion Agent Dev Test</h1>
 
-<div class="banner">
-  ⚠️ <b>Phase 0:</b> FastAPI 還沒開(Phase 6 才會做)。這個頁面現在只是介面樣板,
-  Phase 0 的測試請用 CLI:
-  <code>uv run orion --provider anthropic "Read /etc/hosts"</code>
+<div class="row">
+  <label>Backend:</label>
+  <input id="endpoint" value="http://localhost:8000" size="36" />
 </div>
-
-<p>Backend: <input id="endpoint" value="http://localhost:8000" /></p>
-<p>Provider:
-  <select id="provider">
-    <option value="anthropic">anthropic</option>
-    <option value="openai">openai</option>
-  </select>
-  Model: <input id="model" value="claude-sonnet-4-6" size="24" />
-</p>
-<p>Session: <input id="sessionId" placeholder="(auto-created)" /></p>
+<div class="row">
+  <label>Username:</label>
+  <input id="username" value="alice" size="16" />
+  <button onclick="login()">Login (get JWT)</button>
+  <span id="loginStatus" class="stat"></span>
+</div>
+<div class="row">
+  <label>Session:</label>
+  <input id="sessionId" placeholder="(click New Session)" size="40" />
+  <button onclick="newSession()">New Session</button>
+  <button onclick="connectWS()">Connect WS</button>
+</div>
 
 <div id="messages"></div>
 
@@ -50,13 +53,13 @@
 </p>
 <p>
   <button onclick="send()">Send</button>
-  <button onclick="clearChat()">Clear</button>
-  <button onclick="newSession()">New Session</button>
+  <button onclick="abort()">Abort</button>
+  <button onclick="clearChat()">Clear chat</button>
 </p>
 
 <script>
 let ws = null;
-let pendingPermissions = {};
+let token = null;
 
 function append(html, cls) {
   const div = document.createElement('div');
@@ -66,77 +69,137 @@ function append(html, cls) {
   div.scrollIntoView();
 }
 
-async function newSession() {
-  try {
-    const r = await fetch(endpoint.value + '/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: document.getElementById('provider').value,
-        model: document.getElementById('model').value,
-      }),
-    });
-    const data = await r.json();
-    document.getElementById('sessionId').value = data.id;
-    clearChat();
-    connect();
-  } catch (e) {
-    append('[Backend not reachable — Phase 6 will add FastAPI]', 'error');
-  }
-}
-
 function clearChat() {
   document.getElementById('messages').innerHTML = '';
 }
 
-function connect() {
+function endpoint() {
+  return document.getElementById('endpoint').value.trim();
+}
+
+async function login() {
+  const username = document.getElementById('username').value.trim() || 'alice';
+  try {
+    const r = await fetch(endpoint() + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    token = data.token;
+    document.getElementById('loginStatus').textContent = `OK (${data.user_id})`;
+  } catch (e) {
+    document.getElementById('loginStatus').textContent = 'login failed: ' + e.message;
+    append('[login failed: ' + e.message + ']', 'error');
+  }
+}
+
+async function newSession() {
+  if (!token) { await login(); }
+  if (!token) return;
+  try {
+    const r = await fetch(endpoint() + '/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    document.getElementById('sessionId').value = data.session_id;
+    clearChat();
+    append('[session created: ' + data.session_id + ']', 'stat');
+    connectWS();
+  } catch (e) {
+    append('[new session failed: ' + e.message + ']', 'error');
+  }
+}
+
+function connectWS() {
+  if (!token) {
+    append('[need to login first]', 'error');
+    return;
+  }
   if (ws) ws.close();
-  const sid = document.getElementById('sessionId').value;
-  if (!sid) return;
-  const wsUrl = endpoint.value.replace('http', 'ws') + '/chat/stream/' + sid;
+  const sid = document.getElementById('sessionId').value.trim();
+  if (!sid) {
+    append('[no session id]', 'error');
+    return;
+  }
+  const wsUrl = endpoint().replace(/^http/, 'ws') + '/chat/stream/' + sid +
+                '?token=' + encodeURIComponent(token);
   ws = new WebSocket(wsUrl);
+  ws.onopen = () => append('[WS connected]', 'stat');
   ws.onmessage = (e) => handleEvent(JSON.parse(e.data));
+  ws.onclose = (e) => append('[WS closed: ' + e.code + ']', 'stat');
   ws.onerror = () => append('[WS error]', 'error');
 }
+
+let assistantBufferDiv = null;
 
 function handleEvent(ev) {
   switch (ev.type) {
     case 'assistant_text':
-      append('<b class="assistant">[assistant]</b> ' + escapeHtml(ev.text), 'assistant');
+      // 同一 turn 內 streaming text 累積到同一個 div
+      if (!assistantBufferDiv) {
+        assistantBufferDiv = document.createElement('div');
+        assistantBufferDiv.className = 'assistant';
+        assistantBufferDiv.innerHTML = '<b>[assistant]</b> ';
+        document.getElementById('messages').appendChild(assistantBufferDiv);
+      }
+      assistantBufferDiv.innerHTML += escapeHtml(ev.text);
+      assistantBufferDiv.scrollIntoView();
+      break;
+    case 'assistant_thinking':
+      append('💭 ' + escapeHtml(ev.text), 'thinking');
       break;
     case 'tool_use':
-      append('🔧 <b>' + ev.tool_name + '</b>(' +
+      assistantBufferDiv = null;
+      append('🔧 <b>' + escapeHtml(ev.tool_name) + '</b>(' +
              escapeHtml(JSON.stringify(ev.input)) + ')', 'tool-use');
       break;
     case 'tool_result':
-      append('<b>↳</b> ' + escapeHtml(
-        typeof ev.content === 'string' ? ev.content : JSON.stringify(ev.content)
-      ).slice(0, 500) + (ev.content?.length > 500 ? '...' : ''),
-      'tool-result');
+      const cls = ev.is_error ? 'error' : 'tool-result';
+      const prefix = ev.is_error ? '❌' : '↳';
+      const txt = String(ev.content || '');
+      const truncated = txt.length > 500 ? txt.slice(0, 500) + '...' : txt;
+      append(prefix + ' <b>' + escapeHtml(ev.tool_name) + '</b>: ' +
+             escapeHtml(truncated), cls);
       break;
     case 'permission_ask':
+      assistantBufferDiv = null;
       const pid = ev.request_id;
-      pendingPermissions[pid] = true;
-      const html = `🔐 Allow <b>${ev.tool_name}</b>?
+      const html = `🔐 Allow <b>${escapeHtml(ev.tool_name)}</b>?
         <pre>${escapeHtml(JSON.stringify(ev.input, null, 2))}</pre>
-        <button onclick="answerPermission('${pid}', 'allow')">Allow</button>
+        <button onclick="answerPermission('${pid}', 'allow')">Allow once</button>
         <button onclick="answerPermission('${pid}', 'always_allow')">Always</button>
-        <button onclick="answerPermission('${pid}', 'deny')">Deny</button>`;
+        <button onclick="answerPermission('${pid}', 'deny')">Deny</button>
+        <span class="stat">(timeout ${ev.timeout_seconds}s → auto deny)</span>`;
       append(html, 'permission');
       break;
-    case 'tool_progress':
-      append('⏳ ' + escapeHtml(JSON.stringify(ev.data)), 'tool-use');
-      break;
-    case 'error':
-      append('❌ ' + escapeHtml(ev.message), 'error');
+    case 'turn_complete':
+      assistantBufferDiv = null;
+      append('━ turn complete (stop=' + ev.stop_reason +
+             ', in=' + ev.input_tokens + ', out=' + ev.output_tokens + ')',
+             'stat');
       break;
     case 'terminal':
-      append('━━━ done (' + ev.reason + ') ━━━', 'tool-use');
+      assistantBufferDiv = null;
+      append('━━━ ' + ev.reason + ' (turns=' + ev.total_turns + ') ━━━', 'stat');
       break;
+    case 'error':
+      assistantBufferDiv = null;
+      append('❌ ' + escapeHtml(ev.message), 'error');
+      break;
+    default:
+      append('? unknown event: ' + escapeHtml(JSON.stringify(ev)), 'error');
   }
 }
 
 function answerPermission(requestId, decision) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({
     type: 'permission_decision',
     request_id: requestId,
@@ -145,14 +208,21 @@ function answerPermission(requestId, decision) {
 }
 
 function send() {
-  const text = document.getElementById('prompt').value.trim();
-  if (!text || !ws) {
-    append('[No session — click "New Session" first]', 'error');
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    append('[WS not connected — click Connect WS]', 'error');
     return;
   }
+  const text = document.getElementById('prompt').value.trim();
+  if (!text) return;
   append('<b class="user">[user]</b> ' + escapeHtml(text), 'user');
   ws.send(JSON.stringify({ type: 'user_message', content: text }));
   document.getElementById('prompt').value = '';
+}
+
+function abort() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'abort' }));
+  append('[abort sent]', 'stat');
 }
 
 function escapeHtml(s) {
@@ -161,10 +231,6 @@ function escapeHtml(s) {
 
 document.getElementById('prompt').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send();
-});
-
-window.addEventListener('load', () => {
-  if (document.getElementById('sessionId').value) connect();
 });
 </script>
 
