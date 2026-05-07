@@ -77,3 +77,41 @@ async def test_no_user_query_returns_priority_default() -> None:
     out = await rank_memories(memories, msgs, max_results=2)
     # USER 優先(priority=0 < project=2)
     assert out[0].type == MemoryType.USER
+
+
+@pytest.mark.asyncio
+async def test_stop_words_dont_match() -> None:
+    """`in` / `am` / `the` 等 stop word 不該成為 relevance 訊號。
+
+    複現實際使用場景:query 含 stop word `in`,memory body 也含 `in`,但 user 真正
+    要找的是另一條 memory 命中其他 keyword。
+    """
+    memories = [
+        _mk(
+            "Linear bugs",
+            "track bugs in Linear ORION-BUGS project",
+            "all bug reporting goes to Linear",
+        ),
+        _mk(
+            "Python expertise",
+            "user is fluent in Python async patterns",
+            "uses asyncio anyio",
+        ),
+    ]
+    msgs = [NormalizedMessage(role="user", content="What languages am I fluent in?")]
+    out = await rank_memories(memories, msgs, max_results=2)
+    # Python memory 應排第一(命中「fluent」)而非 Linear(原 "in" 假命中)
+    assert out[0].name == "Python expertise"
+
+
+@pytest.mark.asyncio
+async def test_stop_words_no_false_match_when_only_stop_overlap() -> None:
+    """純 stop word 重疊 → 視同零命中,fallback 到 type priority。"""
+    memories = [
+        _mk("Project info", "deadline X", t=MemoryType.PROJECT),
+        _mk("User profile", "name alice", t=MemoryType.USER),
+    ]
+    msgs = [NormalizedMessage(role="user", content="what is the answer")]
+    out = await rank_memories(memories, msgs, max_results=2)
+    # 應 fallback type priority(USER 優先)
+    assert out[0].type == MemoryType.USER

@@ -40,8 +40,49 @@ def _extract_recent_user_query(messages: list[NormalizedMessage]) -> str:
     return ""
 
 
+_STOP_WORDS = frozenset({
+    # Articles
+    "a", "an", "the",
+    # Pronouns
+    "i", "you", "he", "she", "it", "we", "they",
+    "me", "my", "your", "his", "her", "our", "their", "its",
+    "us", "him", "them", "myself", "yourself", "ourselves",
+    # Aux / be / do / have
+    "am", "is", "are", "was", "were", "be", "been", "being",
+    "do", "does", "did", "doing", "done",
+    "have", "has", "had", "having",
+    # Modals
+    "will", "would", "could", "should", "shall",
+    "can", "may", "might", "must",
+    # Prepositions
+    "in", "on", "at", "to", "for", "of", "with", "by", "from",
+    "into", "onto", "out", "off", "up", "down",
+    "about", "over", "under", "between", "through", "across",
+    # Conjunctions
+    "and", "or", "but", "not", "so", "if", "then", "as", "than",
+    "because", "since", "while", "though", "although",
+    # Demonstratives
+    "this", "that", "these", "those",
+    # Wh-words(meta — 通常不帶 topic 訊號)
+    "what", "where", "when", "how", "why", "who", "which",
+    "whom", "whose",
+    # 常見 qualifier / quantifier
+    "just", "only", "too", "very", "more", "most", "less", "least",
+    "some", "any", "all", "both", "each", "every", "no", "none",
+    "many", "much", "few",
+    # 其他高頻無內容詞
+    "yes", "ok", "okay", "please", "thanks", "thank",
+    "now", "later", "today", "really",
+})
+"""停用字 — heuristic ranker 不該因這些詞撞 match。"""
+
+
 def _tokenize(text: str) -> set[str]:
-    return {w for w in re.findall(r"\w+", text.lower()) if len(w) > 1}
+    return {
+        w
+        for w in re.findall(r"\w+", text.lower())
+        if len(w) > 1 and w not in _STOP_WORDS
+    }
 
 
 def _heuristic_score(memory: Memory, query_words: set[str]) -> int:
