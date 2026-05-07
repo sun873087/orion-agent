@@ -22,7 +22,7 @@ async def test_pre_tool_use_hook_returning_false_blocks() -> None:
     async def deny(_ev: HookEvent) -> bool:
         return False
 
-    reg.register("pre_tool_use", deny)
+    reg.register("PreToolUse", deny)
     ok = await reg.pre_tool_use(PreToolUseEvent())
     assert ok is False
 
@@ -34,7 +34,7 @@ async def test_pre_tool_use_hook_returning_none_allows() -> None:
     async def passthrough(_ev: HookEvent) -> None:
         return None
 
-    reg.register("pre_tool_use", passthrough)  # type: ignore[arg-type]
+    reg.register("PreToolUse", passthrough)  # type: ignore[arg-type]
     ok = await reg.pre_tool_use(PreToolUseEvent())
     assert ok is True
 
@@ -48,7 +48,7 @@ async def test_post_tool_use_return_value_ignored() -> None:
         called.append(ev)
         return None
 
-    reg.register("post_tool_use", observer)  # type: ignore[arg-type]
+    reg.register("PostToolUse", observer)  # type: ignore[arg-type]
     await reg.post_tool_use(PostToolUseEvent(result_text="x"))
     assert len(called) == 1
 
@@ -60,7 +60,7 @@ async def test_clear_removes_all() -> None:
     async def x(_ev: HookEvent) -> bool:
         return False
 
-    reg.register("pre_tool_use", x)
+    reg.register("PreToolUse", x)
     reg.clear()
     ok = await reg.pre_tool_use(PreToolUseEvent())
     assert ok is True

@@ -75,7 +75,10 @@ async def test_path_traversal_rejected(
 
 
 @pytest.mark.asyncio
-async def test_no_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_no_dir_falls_back_to_builtin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Phase 8:user dir 不存在 → 仍可列出內建 skills(be-concise 等)。"""
     nope = tmp_path / "nonexistent"
     monkeypatch.setenv("ORION_SKILLS_DIR", str(nope))
     tool = SkillTool()
@@ -84,4 +87,6 @@ async def test_no_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         async for e in tool.call(SkillInput(), AgentContext())
     ]
     assert isinstance(events[0], TextEvent)
-    assert "no skills directory" in events[0].text.lower()
+    text = events[0].text.lower()
+    assert "available skills" in text
+    assert "be-concise" in text
