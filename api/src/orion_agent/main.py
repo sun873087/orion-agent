@@ -110,6 +110,20 @@ def run(
             help="Disable memory load + auto-extract (Phase 3 features).",
         ),
     ] = False,
+    mcp_config: Annotated[
+        str | None,
+        typer.Option(
+            "--mcp-config",
+            help="額外 mcp.json 路徑(優先於 ~/.orion/mcp.json + cwd/.orion/mcp.json)。",
+        ),
+    ] = None,
+    no_mcp: Annotated[
+        bool,
+        typer.Option(
+            "--no-mcp",
+            help="Disable MCP servers entirely (Phase 5)。",
+        ),
+    ] = False,
 ) -> None:
     """跑完整 agent loop:多 turn、tool feedback、streaming。
 
@@ -132,6 +146,8 @@ def run(
             no_persistence=no_persistence,
             user_id=effective_uid,
             no_memory=no_memory,
+            mcp_config=mcp_config,
+            no_mcp=no_mcp,
         )
     )
 
@@ -147,61 +163,93 @@ async def _run_async(
     no_persistence: bool = False,
     user_id: str = "default",
     no_memory: bool = False,
+    mcp_config: str | None = None,
+    no_mcp: bool = False,
 ) -> None:
+    from contextlib import AsyncExitStack
+    from pathlib import Path
     from uuid import UUID
+
+    from orion_agent.mcp.manager import McpManager
 
     ctx = AgentContext(feature_flags=load_feature_flags(), user_id=user_id)
     llm = get_provider(provider, model)
 
-    if resume_id is not None:
-        try:
-            sid = UUID(resume_id)
-        except ValueError:
-            print(f"invalid session id (not a UUID): {resume_id!r}", flush=True)
-            return
-        conv = await Conversation.resume(
-            sid,
-            provider=llm,
-            tools=_build_tools(),
-            # system_prompt 留空 → Conversation 用 Phase 4 assembler 組
-            max_turns=max_turns,
-        )
-        conv.persistence_enabled = not no_persistence
-        conv.user_id = user_id
-        conv.memory_enabled = not no_memory
-        conv.auto_extract_memories = not no_memory
+    async with AsyncExitStack() as stack:
+        # ─── Phase 5:啟動 McpManager(若有 config 或啟用)─────────────────
+        mcp_manager: McpManager | None = None
+        if not no_mcp:
+            extra_path = Path(mcp_config) if mcp_config else None
+            manager = McpManager(extra_config_path=extra_path)
+            if manager.configs:  # 有 config 才 connect,沒就跳過
+                try:
+                    mcp_manager = await stack.enter_async_context(manager)
+                    if mcp_manager.connection_errors:
+                        for name, err in mcp_manager.connection_errors.items():
+                            print(
+                                f"[mcp] {name!r} failed: {err}",
+                                flush=True,
+                            )
+                    if mcp_manager.connected_servers:
+                        print(
+                            f"[mcp] connected: "
+                            f"{', '.join(mcp_manager.connected_servers)} "
+                            f"({len(mcp_manager.tools)} tools)",
+                            flush=True,
+                        )
+                except Exception as e:  # noqa: BLE001
+                    print(f"[mcp] initialization failed: {e}", flush=True)
+                    mcp_manager = None
+
+        if resume_id is not None:
+            try:
+                sid = UUID(resume_id)
+            except ValueError:
+                print(f"invalid session id (not a UUID): {resume_id!r}", flush=True)
+                return
+            conv = await Conversation.resume(
+                sid,
+                provider=llm,
+                tools=_build_tools(),
+                max_turns=max_turns,
+            )
+            conv.persistence_enabled = not no_persistence
+            conv.user_id = user_id
+            conv.memory_enabled = not no_memory
+            conv.auto_extract_memories = not no_memory
+            conv.mcp_manager = mcp_manager
+            print(
+                f"=== resumed session {sid} (user={user_id}, "
+                f"{len(conv.state_messages)} prior messages) ===",
+                flush=True,
+            )
+        else:
+            conv = Conversation(
+                provider=llm,
+                tools=_build_tools(),
+                max_turns=max_turns,
+                max_tokens_per_turn=max_tokens,
+                persistence_enabled=not no_persistence,
+                user_id=user_id,
+                memory_enabled=not no_memory,
+                auto_extract_memories=not no_memory,
+                mcp_manager=mcp_manager,
+            )
+            print(
+                f"=== orion-agent ({provider} / {model}) "
+                f"session={conv.session_id} ===",
+                flush=True,
+            )
+
+        async for ev in conv.send(prompt, ctx=ctx):
+            _render(ev)
+
         print(
-            f"=== resumed session {sid} (user={user_id}, "
-            f"{len(conv.state_messages)} prior messages) ===",
+            f"\n=== done — turns={conv.stats.turns}, "
+            f"tools={conv.stats.tool_calls}({conv.stats.tool_errors} errors), "
+            f"in={conv.stats.input_tokens}, out={conv.stats.output_tokens} ===",
             flush=True,
         )
-    else:
-        conv = Conversation(
-            provider=llm,
-            # system_prompt 留空 → Conversation 用 Phase 4 assembler 組
-            tools=_build_tools(),
-            max_turns=max_turns,
-            max_tokens_per_turn=max_tokens,
-            persistence_enabled=not no_persistence,
-            user_id=user_id,
-            memory_enabled=not no_memory,
-            auto_extract_memories=not no_memory,
-        )
-        print(
-            f"=== orion-agent ({provider} / {model}) "
-            f"session={conv.session_id} ===",
-            flush=True,
-        )
-
-    async for ev in conv.send(prompt, ctx=ctx):
-        _render(ev)
-
-    print(
-        f"\n=== done — turns={conv.stats.turns}, "
-        f"tools={conv.stats.tool_calls}({conv.stats.tool_errors} errors), "
-        f"in={conv.stats.input_tokens}, out={conv.stats.output_tokens} ===",
-        flush=True,
-    )
 
 
 def _render(ev: Any) -> None:

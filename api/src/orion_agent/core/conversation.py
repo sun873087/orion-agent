@@ -103,6 +103,12 @@ class Conversation:
     auto_extract_memories: bool = True
     """True → 對話結束 fork 子 agent 萃取 memory(失敗不影響主對話)。"""
 
+    # ─── Phase 5 ──────────────────────────────────────────────────────────
+    mcp_manager: object | None = None
+    """McpManager instance(用 object 型別避免循環 import)。
+    main / caller 在 async with McpManager(...) 內建 conversation,本欄位指該 manager。
+    None → 不啟用 MCP(只用內建工具)。"""
+
     async def send(
         self,
         user_text: str,
@@ -129,10 +135,10 @@ class Conversation:
         if store is not None:
             await store.record_message(user_msg)
 
-        # ─── Phase 4:組裝 system prompt(7 段靜態 + 動態 + memory)──────────
+        # ─── Phase 4:組裝 system prompt(7 段靜態 + 動態 + memory + MCP)─────
         effective_system_prompt: str | list[str]
         if self.system_prompt:
-            # caller 給了完整 prompt → 直接用(向後相容,且 memory 仍會載入動態段)
+            # caller 給了完整 prompt → 直接用
             effective_system_prompt = self.system_prompt
         else:
             try:
@@ -141,16 +147,24 @@ class Conversation:
                     user_id=self.user_id,
                     conversation_messages=self.state_messages,
                     provider=self.provider if self.memory_enabled else None,
+                    mcp_manager=self.mcp_manager,
                 )
                 effective_system_prompt = build_system_prompt_list(parts)
             except Exception:  # noqa: BLE001 — fallback 到純靜態 block
                 from orion_agent.prompt.static_sections import render_static_block
                 effective_system_prompt = render_static_block()
 
+        # ─── Phase 5:把 McpManager 的工具併進這次 turn 的 tools ────────────
+        effective_tools: list[Tool[Any]] = list(self.tools)
+        if self.mcp_manager is not None:
+            mcp_tools = getattr(self.mcp_manager, "tools", [])
+            if isinstance(mcp_tools, list):
+                effective_tools.extend(mcp_tools)
+
         params = QueryParams(
             provider=self.provider,
             system_prompt=effective_system_prompt,
-            tools=self.tools,
+            tools=effective_tools,
             can_use_tool=self.can_use_tool,
             hooks=self.hooks,
             initial_messages=self.state_messages,

@@ -93,3 +93,28 @@ def session_guidance_section(extra: str | None = None) -> str:
     if not extra:
         return ""
     return f"# Session guidance\n\n{extra}"
+
+
+def mcp_instructions_section(mcp_manager: object | None) -> str:
+    """Phase 5:已連 MCP servers + 工具列表。
+
+    Args:
+        mcp_manager: McpManager instance(避免循環 import,型別 object)
+    """
+    if mcp_manager is None:
+        return ""
+
+    summary = getattr(mcp_manager, "server_summary", None)
+    if not callable(summary):
+        return ""
+
+    body = summary()
+    if not body:
+        return ""
+
+    return (
+        "# MCP servers connected\n\n"
+        f"{body}\n\n"
+        "Tools from these servers are prefixed `mcp__<server>__<tool>`. "
+        "Use them like any other tool — they appear in your tool list."
+    )

@@ -26,6 +26,7 @@
 - [x] [Phase 2b — 補完 Phase 0/1/2 漏網](phase-02b-completion.md)(2026-05-07)
 - [x] [Phase 3 — Memory / Compaction](phase-03-completion.md)(2026-05-07)
 - [x] [Phase 4 — System Prompt + Cache Control](phase-04-completion.md)(2026-05-07)
+- [x] [Phase 5 — MCP Integration](phase-05-completion.md)(2026-05-07)
 
 ## 從本專案衍生的新 phase plan
 
