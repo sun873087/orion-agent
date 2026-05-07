@@ -28,8 +28,10 @@ from orion_agent.api.routes import auth as auth_router  # noqa: E402
 from orion_agent.api.routes import chat as chat_router  # noqa: E402
 from orion_agent.api.routes import health as health_router  # noqa: E402
 from orion_agent.api.routes import sessions as sessions_router  # noqa: E402
+from orion_agent.api.routes import uploads as uploads_router  # noqa: E402
 from orion_agent.api.session_manager import SessionManager  # noqa: E402
 from orion_agent.api.session_manager_db import DbSessionManager  # noqa: E402
+from orion_agent.commands.registry import register_builtins  # noqa: E402
 from orion_agent.hooks.events import SetupEvent  # noqa: E402
 from orion_agent.hooks.registry import HookRegistry  # noqa: E402
 from orion_agent.services.logging import (  # noqa: E402
@@ -63,6 +65,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
       否則 → in-memory SessionManager(Phase 6 行為)
     """
     configure_logging()
+
+    # Phase 11:註冊內建 slash 命令(/help / /model)— idempotent
+    register_builtins()
 
     db_url = os.environ.get("ORION_DB_URL")
     db_engine = None
@@ -117,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router.router)
     app.include_router(auth_router.router)
     app.include_router(sessions_router.router)
+    app.include_router(uploads_router.router)
     app.include_router(chat_router.router)
 
     return app
