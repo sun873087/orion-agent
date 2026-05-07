@@ -27,6 +27,7 @@ from orion_agent.permissions.decisions import (
     CanUseToolFn,
     PermissionDecision,
 )
+from orion_agent.storage.tool_result import maybe_persist_large_tool_result
 
 
 @dataclass
@@ -175,7 +176,7 @@ async def run_one_tool(
     else:
         result_text = "\n".join(text_chunks) if text_chunks else "(tool produced no output)"
 
-    # ─── 6. PostToolUse hook ────────────────────────────────────────────────
+    # ─── 6. PostToolUse hook(看「真實完整」結果,不被 persistence 替換)──────
     post_event = PostToolUseEvent(
         tool=tool,
         tool_input=raw_input,
@@ -185,8 +186,24 @@ async def run_one_tool(
     )
     await hooks.post_tool_use(post_event)
 
-    # ─── 7. final result update ─────────────────────────────────────────────
-    msg = _make_result_message(tool_use_id, result_text, is_error=is_error)
+    # ─── 7. Phase 2 第 2 層持久化:大結果寫檔 + 換 preview ─────────────────
+    persisted = maybe_persist_large_tool_result(
+        ctx.session_id, tool_use_id, result_text,
+    )
+    notes: list[str] = []
+    if persisted.persisted_path is not None:
+        notes.append(
+            f"persisted {persisted.persisted_size} bytes to {persisted.persisted_path}"
+        )
+
+    # ─── 8. final result update(送給模型的版本可能是 preview)──────────────
+    msg = _make_result_message(
+        tool_use_id, persisted.content_for_model, is_error=is_error,
+    )
     yield ToolResultUpdate(
-        tool_use_id=tool_use_id, tool_name=tool_name, message=msg, is_error=is_error,
+        tool_use_id=tool_use_id,
+        tool_name=tool_name,
+        message=msg,
+        is_error=is_error,
+        extra_notes=notes,
     )

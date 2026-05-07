@@ -36,6 +36,10 @@ from orion_agent.llm.types import (
     ToolUseBlock,
 )
 from orion_agent.permissions.decisions import CanUseToolFn
+from orion_agent.storage.replacement_state import (
+    ContentReplacementState,
+    apply_tool_result_budget,
+)
 
 
 @dataclass
@@ -226,6 +230,14 @@ async def query_loop(
             break
 
         turn_count += 1
+
+        # ─── Phase 2: 第 3 層 budget(進 API 前 aggregate)─────────────────
+        if isinstance(ctx.replacement_state, ContentReplacementState):
+            state_messages, _decisions = apply_tool_result_budget(
+                state_messages,
+                ctx.replacement_state,
+                ctx.session_id,
+            )
 
         # ─── 1. stream model ────────────────────────────────────────────────
         last_assistant_msg: NormalizedMessage | None = None

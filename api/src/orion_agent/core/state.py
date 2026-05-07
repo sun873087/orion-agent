@@ -44,6 +44,13 @@ class AgentContext:
     sub_agent_depth: int = 0
     """AgentTool spawn 出的子 agent 深度。0 = 主 agent,1 = 子,>=2 禁止再 spawn。"""
 
+    # ─── Phase 2 加入 ─────────────────────────────────────────────────────
+    replacement_state: object | None = None
+    """ContentReplacementState(避免循環 import,這裡用 object)。
+    Conversation 在跨 turn 時持續累積決策。query_loop 每 turn 進 API 前會 apply_tool_result_budget。
+    None 表示「尚未啟用第 3 層 budget」(子 agent / 測試)。
+    """
+
     # 後續 phase 加入:sandbox, permissions persisted, hooks, plan_mode_state 等
 
     def feature(self, name: str) -> bool:

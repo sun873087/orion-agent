@@ -14,7 +14,6 @@ from orion_agent.core.query_loop import AssistantTextDelta, LoopTerminated
 from orion_agent.llm.provider import get_provider
 from orion_agent.tools.file.read import FileReadTool
 
-
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"),
     reason="OPENAI_API_KEY not set — integration test skipped",

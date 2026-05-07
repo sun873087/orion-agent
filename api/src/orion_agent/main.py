@@ -86,8 +86,26 @@ def run(
     max_tokens: Annotated[
         int, typer.Option(help="Max output tokens per turn.")
     ] = 4096,
+    resume_id: Annotated[
+        str | None,
+        typer.Option(
+            "--resume",
+            help="Resume an existing session by ID (UUID). state_messages 會從 transcript 重建。",
+        ),
+    ] = None,
+    no_persistence: Annotated[
+        bool,
+        typer.Option(
+            "--no-persistence",
+            help="Disable transcript / replacement-state persistence (in-memory only).",
+        ),
+    ] = False,
 ) -> None:
-    """跑完整 agent loop:多 turn、tool feedback、streaming。"""
+    """跑完整 agent loop:多 turn、tool feedback、streaming。
+
+    Phase 2:預設啟用 transcript JSONL 寫入(~/.orion/sessions/<id>/transcript.jsonl)。
+    `--resume <id>` 從先前 session 載入歷史繼續對話。
+    """
     asyncio.run(
         _run_async(
             prompt=prompt,
@@ -95,6 +113,8 @@ def run(
             model=model,
             max_turns=max_turns,
             max_tokens=max_tokens,
+            resume_id=resume_id,
+            no_persistence=no_persistence,
         )
     )
 
@@ -106,18 +126,47 @@ async def _run_async(
     model: str,
     max_turns: int,
     max_tokens: int,
+    resume_id: str | None = None,
+    no_persistence: bool = False,
 ) -> None:
+    from uuid import UUID
+
     ctx = AgentContext(feature_flags=load_feature_flags())
     llm = get_provider(provider, model)
-    conv = Conversation(
-        provider=llm,
-        system_prompt=SYSTEM_PROMPT,
-        tools=_build_tools(),
-        max_turns=max_turns,
-        max_tokens_per_turn=max_tokens,
-    )
 
-    print(f"=== orion-agent ({provider} / {model}) ===", flush=True)
+    if resume_id is not None:
+        try:
+            sid = UUID(resume_id)
+        except ValueError:
+            print(f"invalid session id (not a UUID): {resume_id!r}", flush=True)
+            return
+        conv = await Conversation.resume(
+            sid,
+            provider=llm,
+            tools=_build_tools(),
+            system_prompt=SYSTEM_PROMPT,
+            max_turns=max_turns,
+        )
+        conv.persistence_enabled = not no_persistence
+        print(
+            f"=== resumed session {sid} "
+            f"({len(conv.state_messages)} prior messages) ===",
+            flush=True,
+        )
+    else:
+        conv = Conversation(
+            provider=llm,
+            system_prompt=SYSTEM_PROMPT,
+            tools=_build_tools(),
+            max_turns=max_turns,
+            max_tokens_per_turn=max_tokens,
+            persistence_enabled=not no_persistence,
+        )
+        print(
+            f"=== orion-agent ({provider} / {model}) "
+            f"session={conv.session_id} ===",
+            flush=True,
+        )
 
     async for ev in conv.send(prompt, ctx=ctx):
         _render(ev)

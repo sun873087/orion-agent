@@ -19,6 +19,7 @@ from pydantic import Field
 
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
+from orion_agent.storage.file_history import make_snapshot
 
 _MAX_BYTES = 1024 * 1024  # 1 MB
 
@@ -41,7 +42,7 @@ class FileWriteTool:
     async def call(
         self,
         input: FileWriteInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         path = Path(input.path)
 
@@ -75,6 +76,14 @@ class FileWriteTool:
             return
 
         existed = path.exists()
+
+        # Phase 2:寫前快照(若原檔存在)
+        snap_note = ""
+        if existed:
+            snap = make_snapshot(ctx.session_id, path)
+            if snap.snapshot_path is not None:
+                snap_note = f"  [snapshot: {snap.snapshot_path}]"
+
         try:
             path.write_bytes(data)
         except OSError as e:
@@ -83,7 +92,10 @@ class FileWriteTool:
 
         action = "overwrote" if existed else "created"
         yield TextEvent(
-            text=f"{action} {path} ({len(data)} bytes, {len(input.content.splitlines())} lines)"
+            text=(
+                f"{action} {path} ({len(data)} bytes, "
+                f"{len(input.content.splitlines())} lines){snap_note}"
+            )
         )
 
     def is_concurrency_safe(self, input: FileWriteInput) -> bool:  # noqa: ARG002

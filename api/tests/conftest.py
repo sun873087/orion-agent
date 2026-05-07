@@ -28,6 +28,16 @@ from orion_agent.llm.tool_def import ToolDefinition  # noqa: E402
 from orion_agent.llm.types import NormalizedMessage  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolate_sessions_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """所有測試強制把 ORION_SESSIONS_DIR 指向 tmp,避免污染 ~/.orion/。"""
+    sessions_dir = tmp_path_factory.mktemp("orion-sessions")
+    monkeypatch.setenv("ORION_SESSIONS_DIR", str(sessions_dir))
+    return sessions_dir
+
+
 @pytest.fixture
 def tmp_ctx(tmp_path: Path) -> AgentContext:
     """乾淨的 AgentContext,cwd 設為 tmp_path,適合工具測試。"""

@@ -24,6 +24,7 @@ from pydantic import Field
 
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
+from orion_agent.storage.file_history import make_snapshot
 
 _MAX_BYTES = 1024 * 1024  # 1 MB
 
@@ -54,7 +55,7 @@ class FileEditTool:
     async def call(
         self,
         input: FileEditInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         path = Path(input.path)
 
@@ -113,6 +114,14 @@ class FileEditTool:
             else text.replace(input.old_string, input.new_string, 1)
         )
 
+        # Phase 2:寫前快照
+        snap = make_snapshot(ctx.session_id, path)
+        snap_note = (
+            f"  [snapshot: {snap.snapshot_path}]"
+            if snap.snapshot_path is not None
+            else ""
+        )
+
         try:
             path.write_text(new_text, encoding="utf-8")
         except OSError as e:
@@ -121,8 +130,10 @@ class FileEditTool:
 
         replaced = count if input.replace_all else 1
         yield TextEvent(
-            text=f"edited {path} — {replaced} occurrence(s) replaced "
-                 f"({len(text)} → {len(new_text)} chars)"
+            text=(
+                f"edited {path} — {replaced} occurrence(s) replaced "
+                f"({len(text)} → {len(new_text)} chars){snap_note}"
+            )
         )
 
     def is_concurrency_safe(self, input: FileEditInput) -> bool:  # noqa: ARG002
