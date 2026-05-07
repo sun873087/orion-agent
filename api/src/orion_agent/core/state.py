@@ -55,7 +55,19 @@ class AgentContext:
     user_id: str = "default"
     """Per-user memory key。CLI 預設 "default";Phase 6 FastAPI 透過 session middleware 注入。"""
 
-    # 後續 phase 加入:sandbox, permissions persisted, hooks, plan_mode_state 等
+    # ─── Phase 9 加入 ─────────────────────────────────────────────────────
+    cwd_stack: list[Path] = field(default_factory=list)
+    """EnterWorkdirTool / ExitWorkdirTool 的 cwd push/pop 堆疊。
+    Enter 把當前 ctx.cwd push 進來,改成新值;Exit 從 stack pop 還原。
+    """
+
+    # ─── Phase 7 加入 ─────────────────────────────────────────────────────
+    sandbox_backend: object | None = None
+    """SandboxBackend instance(避免循環 import,型別 object)。
+    Conversation.send() 會把自己持有的 backend 注進來;tools 可透過 ctx.sandbox_backend 動態取用。
+    None = 走 host(LocalBackend 同效)。"""
+
+    # 後續 phase 加入:permissions persisted, hooks, plan_mode_state 等
 
     def feature(self, name: str) -> bool:
         """對應 TS 的 feature() 函式。

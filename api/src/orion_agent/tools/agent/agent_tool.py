@@ -54,11 +54,18 @@ class AgentTool:
         provider: LLMProvider,
         child_tools: list[Tool[Any]],
         max_child_turns: int = 10,
+        parent_hooks: HookRegistry | None = None,
+        sandbox_factory: object | None = None,
     ) -> None:
         self.provider = provider
         # 過濾掉自己,防止 child_tools 含 AgentTool 造成 deeper spawn
         self.child_tools = [t for t in child_tools if t.name != self.name]
         self.max_child_turns = max_child_turns
+        # Phase 8:parent 的 hook registry(用來 fire SubagentStart),子 agent 自己不繼承
+        self.parent_hooks = parent_hooks
+        # Phase 9:給子 agent 新 sandbox 的 factory(同步 / async 都吃)。
+        # None → 子共用父 sandbox(若父有);否則無 sandbox。
+        self.sandbox_factory = sandbox_factory
 
     async def call(
         self,
@@ -78,12 +85,32 @@ class AgentTool:
             query_loop,
         )
         from orion_agent.llm.types import NormalizedMessage
-
-        child_ctx = AgentContext(
-            cwd=ctx.cwd,
-            feature_flags=dict(ctx.feature_flags),
-            sub_agent_depth=ctx.sub_agent_depth + 1,
+        from orion_agent.sandbox.sub_agent_isolation import (
+            fork_context_for_subagent,
+            release_subagent,
         )
+
+        # Phase 9:用 fork_context_for_subagent 建獨立 ctx + 可選新 sandbox
+        handle = await fork_context_for_subagent(
+            ctx,
+            sandbox_factory=self.sandbox_factory,  # type: ignore[arg-type]
+            inherit_sandbox=self.sandbox_factory is None and ctx.sandbox_backend is not None,
+        )
+        child_ctx = handle.ctx
+
+        # Phase 8:SubagentStart hook(在 parent 的 registry 上 fire)
+        if self.parent_hooks is not None:
+            from orion_agent.hooks.events import SubagentStartEvent
+            await self.parent_hooks.fire(
+                SubagentStartEvent(
+                    parent_session_id=str(ctx.session_id),
+                    subagent_type=self.name,
+                    prompt=input.task,
+                    ctx=ctx,
+                    session_id=str(child_ctx.session_id),
+                    user_id=ctx.user_id,
+                ),
+            )
 
         params = QueryParams(
             provider=self.provider,
@@ -99,13 +126,17 @@ class AgentTool:
 
         text_chunks: list[str] = []
         try:
-            async for ev in query_loop(params, child_ctx):
-                if isinstance(ev, AssistantTextDelta):
-                    text_chunks.append(ev.text)
-                # 不 propagate 子 agent 內部 tool 事件給 parent — 純 black box
-        except Exception as e:  # noqa: BLE001
-            yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
-            return
+            try:
+                async for ev in query_loop(params, child_ctx):
+                    if isinstance(ev, AssistantTextDelta):
+                        text_chunks.append(ev.text)
+                    # 不 propagate 子 agent 內部 tool 事件給 parent — 純 black box
+            except Exception as e:  # noqa: BLE001
+                yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
+                return
+        finally:
+            # Phase 9:釋放子 agent 拿到的 sandbox(若是 fork 出來的新的)
+            await release_subagent(handle)
 
         final_text = "".join(text_chunks).strip()
         if not final_text:

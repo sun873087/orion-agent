@@ -29,6 +29,7 @@ from orion_agent.core.query_loop import (
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import Tool
 from orion_agent.core.tool_execution import ToolResultUpdate
+from orion_agent.core.transitions import Terminal
 from orion_agent.hooks.registry import HookRegistry
 from orion_agent.llm.provider import LLMProvider, ReasoningEffort
 from orion_agent.llm.types import NormalizedMessage
@@ -109,6 +110,16 @@ class Conversation:
     main / caller 在 async with McpManager(...) 內建 conversation,本欄位指該 manager。
     None → 不啟用 MCP(只用內建工具)。"""
 
+    # ─── Phase 7 ──────────────────────────────────────────────────────────
+    sandbox_backend: object | None = None
+    """SandboxBackend instance。若有,send() 會傳給 ctx,工具可透過它跑命令。
+    self.tools 是否已是 sandboxed proxy 由 caller 決定(main.py 看 --sandbox flag)。
+    None = 工具直接動 host(Phase 1-6 行為)。"""
+
+    # ─── Phase 8 ──────────────────────────────────────────────────────────
+    _session_started: bool = field(default=False, init=False)
+    """SessionStart hook 已觸發過(避免重 fire)。"""
+
     async def send(
         self,
         user_text: str,
@@ -126,8 +137,50 @@ class Conversation:
         if self.persistence_enabled:
             ctx.replacement_state = self.replacement_state
 
+        # Phase 7:傳 sandbox backend 進 ctx(若有)
+        if self.sandbox_backend is not None:
+            ctx.sandbox_backend = self.sandbox_backend
+
         # 延遲 init storage(避免測試強制建檔案)
         store = await self._ensure_storage()
+        injected_context: str | None = None
+
+        # ─── Phase 8:SessionStart + UserPromptSubmit hook ─────────────────
+        if self.hooks.count("SessionStart") > 0 and not self._session_started:
+            from orion_agent.hooks.events import SessionStartEvent
+            await self.hooks.fire(
+                SessionStartEvent(
+                    cwd=str(ctx.cwd),
+                    resumed=bool(self.state_messages),
+                    session_id=str(self.session_id),
+                    user_id=self.user_id,
+                ),
+            )
+        self._session_started = True
+        ups_abort_reason: str | None = None
+        if self.hooks.count("UserPromptSubmit") > 0:
+            from orion_agent.hooks.events import UserPromptSubmitEvent
+            ups_result = await self.hooks.fire_user_prompt_submit(
+                UserPromptSubmitEvent(
+                    prompt=user_text,
+                    session_id=str(self.session_id),
+                    user_id=self.user_id,
+                ),
+            )
+            if ups_result.abort:
+                ups_abort_reason = ups_result.abort_reason or "no reason"
+            else:
+                injected_context = ups_result.additional_context
+
+        if ups_abort_reason is not None:
+            yield LoopTerminated(
+                transition=Terminal(
+                    reason=f"user_prompt_submit_aborted: {ups_abort_reason}",
+                ),
+                total_turns=self.stats.turns,
+                final_messages=list(self.state_messages),
+            )
+            return
 
         # user 訊息進 state + 寫 transcript
         user_msg = NormalizedMessage(role="user", content=user_text)
@@ -154,6 +207,13 @@ class Conversation:
                 from orion_agent.prompt.static_sections import render_static_block
                 effective_system_prompt = render_static_block()
 
+        # Phase 8:UserPromptSubmit hook 注入的額外 context(append 到 system prompt)
+        if injected_context:
+            if isinstance(effective_system_prompt, str):
+                effective_system_prompt = effective_system_prompt + "\n\n" + injected_context
+            else:
+                effective_system_prompt = list(effective_system_prompt) + [injected_context]
+
         # ─── Phase 5:把 McpManager 的工具併進這次 turn 的 tools ────────────
         effective_tools: list[Tool[Any]] = list(self.tools)
         if self.mcp_manager is not None:
@@ -173,46 +233,50 @@ class Conversation:
             reasoning_effort=self.reasoning_effort,
         )
 
-        async for ev in query_loop(params, ctx):
-            yield ev
+        # Phase 9:把整 turn 包進 OTel trace_turn
+        from orion_agent.telemetry.instrumentation import trace_turn
 
-            # 累積 stats
-            if isinstance(ev, AssistantTurnComplete):
-                self.stats.input_tokens += ev.input_tokens
-                self.stats.output_tokens += ev.output_tokens
-                if store is not None:
-                    await store.record_message(ev.message)
-            elif isinstance(ev, ToolResultUpdate):
-                self.stats.tool_calls += 1
-                if ev.is_error:
-                    self.stats.tool_errors += 1
-                if ev.extra_notes and any("not permitted" in n for n in ev.extra_notes):
-                    self.stats.permission_denials += 1
-                # 工具結果 message 也寫 transcript(供 resume)
-                if store is not None:
-                    await store.record_message(ev.message)
-            elif isinstance(ev, LoopTerminated):
-                self.stats.turns += ev.total_turns
-                self.state_messages = ev.final_messages
-                if store is not None:
-                    await store.record_transition(
-                        reason=ev.transition.reason,
-                        total_turns=ev.total_turns,
-                    )
+        with trace_turn(str(self.session_id), self.user_id, turn_index=self.stats.turns):
+            async for ev in query_loop(params, ctx):
+                yield ev
 
-                # ─── Phase 3:fork 子 agent 萃取新 memory(失敗不影響)───────
-                if self.memory_enabled and self.auto_extract_memories:
-                    try:
-                        paths = user_memory_paths(self.user_id)
-                        existing = scan_memory_dir(paths).memories
-                        await extract_memories(
-                            self.state_messages,
-                            existing,
-                            provider=self.provider,
-                            paths=paths,
+                # 累積 stats
+                if isinstance(ev, AssistantTurnComplete):
+                    self.stats.input_tokens += ev.input_tokens
+                    self.stats.output_tokens += ev.output_tokens
+                    if store is not None:
+                        await store.record_message(ev.message)
+                elif isinstance(ev, ToolResultUpdate):
+                    self.stats.tool_calls += 1
+                    if ev.is_error:
+                        self.stats.tool_errors += 1
+                    if ev.extra_notes and any("not permitted" in n for n in ev.extra_notes):
+                        self.stats.permission_denials += 1
+                    # 工具結果 message 也寫 transcript(供 resume)
+                    if store is not None:
+                        await store.record_message(ev.message)
+                elif isinstance(ev, LoopTerminated):
+                    self.stats.turns += ev.total_turns
+                    self.state_messages = ev.final_messages
+                    if store is not None:
+                        await store.record_transition(
+                            reason=ev.transition.reason,
+                            total_turns=ev.total_turns,
                         )
-                    except Exception:  # noqa: BLE001
-                        pass  # 萃取失敗不該炸對話
+
+                    # ─── Phase 3:fork 子 agent 萃取新 memory(失敗不影響)───
+                    if self.memory_enabled and self.auto_extract_memories:
+                        try:
+                            paths = user_memory_paths(self.user_id)
+                            existing = scan_memory_dir(paths).memories
+                            await extract_memories(
+                                self.state_messages,
+                                existing,
+                                provider=self.provider,
+                                paths=paths,
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass  # 萃取失敗不該炸對話
 
     async def _ensure_storage(self) -> SessionStorage | None:
         """Lazy 初始化 SessionStorage。"""

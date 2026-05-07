@@ -20,7 +20,12 @@ from pydantic import ValidationError
 
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, ProgressEvent, TextEvent, Tool, ToolEvent
-from orion_agent.hooks.events import PostToolUseEvent, PreToolUseEvent
+from orion_agent.hooks.events import (
+    FileChangedEvent,
+    PostToolUseEvent,
+    PostToolUseFailureEvent,
+    PreToolUseEvent,
+)
 from orion_agent.hooks.registry import HookRegistry
 from orion_agent.llm.types import NormalizedMessage, ToolResultBlock
 from orion_agent.permissions.decisions import (
@@ -88,7 +93,67 @@ async def run_one_tool(
     hooks: HookRegistry,
     ctx: AgentContext,
 ) -> AsyncIterator[ToolUpdate]:
-    """單一 tool 執行流程,yield ToolProgressUpdate*,最後 yield 一個 ToolResultUpdate。"""
+    """單一 tool 執行流程,yield ToolProgressUpdate*,最後 yield 一個 ToolResultUpdate。
+
+    Phase 9:wrap 一個 OTel span(`orion_agent.tool`),自動記 duration / errors。
+    """
+    # Phase 9:OTel span 包整個 generator
+    import time
+
+    from orion_agent.telemetry.otel import (
+        tool_duration as _tool_duration_metric,
+    )
+    from orion_agent.telemetry.otel import (
+        tool_errors as _tool_errors_metric,
+    )
+    from orion_agent.telemetry.otel import (
+        tracer as _tracer,
+    )
+
+    _span = _tracer.start_span(
+        "orion_agent.tool",
+        attributes={
+            "tool.name": tool_name,
+            "tool.use_id": tool_use_id,
+            "session_id": str(ctx.session_id),
+        },
+    )
+    _start_t = time.monotonic()
+    _had_error = False
+    try:
+        async for upd in _run_one_tool_inner(
+            tool_use_id, tool_name, raw_input,
+            tools_by_name=tools_by_name,
+            can_use_tool=can_use_tool,
+            hooks=hooks,
+            ctx=ctx,
+        ):
+            if isinstance(upd, ToolResultUpdate) and upd.is_error:
+                _had_error = True
+            yield upd
+    finally:
+        if _had_error:
+            _tool_errors_metric().add(
+                1, {"tool.name": tool_name, "session_id": str(ctx.session_id)},
+            )
+        _tool_duration_metric().record(
+            (time.monotonic() - _start_t) * 1000,
+            {"tool.name": tool_name, "session_id": str(ctx.session_id)},
+        )
+        _span.end()
+
+
+async def _run_one_tool_inner(
+    tool_use_id: str,
+    tool_name: str,
+    raw_input: dict[str, Any],
+    *,
+    tools_by_name: dict[str, Tool[Any]],
+    can_use_tool: CanUseToolFn,
+    hooks: HookRegistry,
+    ctx: AgentContext,
+) -> AsyncIterator[ToolUpdate]:
+    """原 run_one_tool 內容(Phase 9 把它分出來;wrapper 加 OTel)。"""
 
     # ─── 1. find tool ───────────────────────────────────────────────────────
     tool = tools_by_name.get(tool_name)
@@ -119,19 +184,41 @@ async def run_one_tool(
 
     # ─── 3. PreToolUse hook ─────────────────────────────────────────────────
     pre_event = PreToolUseEvent(
-        tool=tool, tool_input=raw_input, ctx=ctx,
+        tool=tool,
+        tool_input=raw_input,
+        ctx=ctx,
+        session_id=str(ctx.session_id),
+        user_id=ctx.user_id,
+        tool_name=tool_name,
+        tool_use_id=tool_use_id,
     )
-    pre_allowed = await hooks.pre_tool_use(pre_event)
-    if not pre_allowed:
+    pre_result = await hooks.fire_pre_tool_use(pre_event)
+    if pre_result.abort:
+        reason = pre_result.abort_reason or "blocked by pre_tool_use hook"
         msg = _make_result_message(
             tool_use_id,
-            f"Tool {tool_name!r} blocked by pre_tool_use hook.",
+            f"Tool {tool_name!r} blocked by pre_tool_use hook: {reason}",
             is_error=True,
         )
         yield ToolResultUpdate(
             tool_use_id=tool_use_id, tool_name=tool_name, message=msg, is_error=True,
         )
         return
+    # Phase 8:hook 可改 input(覆蓋 caller 給的)
+    if pre_result.modified_input is not None:
+        raw_input = pre_result.modified_input
+        try:
+            parsed_input = tool.input_schema.model_validate(raw_input)
+        except ValidationError as e:
+            msg = _make_result_message(
+                tool_use_id,
+                f"Hook modified_input failed schema for {tool_name!r}: {e}",
+                is_error=True,
+            )
+            yield ToolResultUpdate(
+                tool_use_id=tool_use_id, tool_name=tool_name, message=msg, is_error=True,
+            )
+            return
 
     # ─── 4. CanUseToolFn permission ─────────────────────────────────────────
     perm = await can_use_tool(tool, raw_input, ctx)
@@ -176,15 +263,47 @@ async def run_one_tool(
     else:
         result_text = "\n".join(text_chunks) if text_chunks else "(tool produced no output)"
 
-    # ─── 6. PostToolUse hook(看「真實完整」結果,不被 persistence 替換)──────
-    post_event = PostToolUseEvent(
-        tool=tool,
-        tool_input=raw_input,
-        result_text=result_text,
-        is_error=is_error,
-        ctx=ctx,
-    )
-    await hooks.post_tool_use(post_event)
+    # ─── 6. PostToolUse / PostToolUseFailure hook ────────────────────────
+    if is_error:
+        await hooks.fire(
+            PostToolUseFailureEvent(
+                tool=tool,
+                tool_input=raw_input,
+                error_message=result_text,
+                ctx=ctx,
+                session_id=str(ctx.session_id),
+                user_id=ctx.user_id,
+                tool_name=tool_name,
+                tool_use_id=tool_use_id,
+            ),
+        )
+    else:
+        post_event = PostToolUseEvent(
+            tool=tool,
+            tool_input=raw_input,
+            result_text=result_text,
+            is_error=is_error,
+            ctx=ctx,
+            session_id=str(ctx.session_id),
+            user_id=ctx.user_id,
+            tool_name=tool_name,
+            tool_use_id=tool_use_id,
+        )
+        await hooks.post_tool_use(post_event)
+
+    # FileChanged event(Write / Edit 工具成功時)
+    if not is_error and tool_name in ("Write", "Edit"):
+        path = raw_input.get("path") if isinstance(raw_input, dict) else None
+        if isinstance(path, str) and path:
+            await hooks.fire(
+                FileChangedEvent(
+                    file_path=path,
+                    change_type="modified" if tool_name == "Edit" else "created",
+                    ctx=ctx,
+                    session_id=str(ctx.session_id),
+                    user_id=ctx.user_id,
+                ),
+            )
 
     # ─── 7. Phase 2 第 2 層持久化:大結果寫檔 + 換 preview ─────────────────
     persisted = maybe_persist_large_tool_result(

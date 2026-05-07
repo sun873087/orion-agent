@@ -133,7 +133,7 @@ async def test_pre_hook_can_block() -> None:
     async def deny_hook(_event: object) -> bool:
         return False
 
-    hooks.register("pre_tool_use", deny_hook)
+    hooks.register("PreToolUse", deny_hook)
 
     updates = [
         u
@@ -180,7 +180,7 @@ async def test_happy_path_yields_progress_then_result() -> None:
         if isinstance(ev, PostToolUseEvent):
             post_calls.append(ev)
 
-    hooks.register("post_tool_use", post_observer)  # type: ignore[arg-type]
+    hooks.register("PostToolUse", post_observer)  # type: ignore[arg-type]
 
     updates = [
         u

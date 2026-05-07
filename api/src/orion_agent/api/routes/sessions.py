@@ -22,6 +22,7 @@ from orion_agent.api.deps import (
 from orion_agent.api.session_manager import SessionManager
 from orion_agent.core.conversation import Conversation
 from orion_agent.llm.provider import LLMProvider
+from orion_agent.telemetry.cost_tracker import get_session_summary
 
 router = APIRouter()
 
@@ -89,6 +90,31 @@ async def get_session(
         n_messages=len(conv.state_messages),
         n_turns=conv.stats.turns,
     )
+
+
+@router.get("/sessions/{session_id}/cost")
+async def session_cost(
+    session_id: UUID,
+    user_id: Annotated[str, Depends(current_user)],
+    sm: Annotated[SessionManager, Depends(get_session_manager)],
+) -> dict[str, object]:
+    """Phase 9:回該 session 的 token / cost 摘要。"""
+    # 確認 session 屬於此 user(防止跨 user 偷查)
+    conv = await sm.get(user_id, session_id)
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    summary = get_session_summary(str(session_id))
+    if summary is None:
+        # 還沒任何 LLM call → 回 zero summary
+        return {
+            "session_id": str(session_id),
+            "user_id": user_id,
+            "total_cost_usd": 0.0,
+            "cache_hit_ratio": 0.0,
+            "total_api_duration_ms": 0.0,
+            "by_model": {},
+        }
+    return summary
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

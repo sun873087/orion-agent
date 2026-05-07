@@ -154,6 +154,8 @@ async def _run_one_turn(
     input_tokens = 0
     output_tokens = 0
 
+    from orion_agent.telemetry.instrumentation import record_usage, trace_api_call
+
     async with StreamingToolExecutor(
         params.tools,
         can_use_tool=params.can_use_tool,
@@ -161,31 +163,45 @@ async def _run_one_turn(
         ctx=ctx,
     ) as executor:
         # ─── 1. stream model ────────────────────────────────────────────────
-        async for ev in params.provider.stream(
-            system=params.system_prompt,
-            messages=state_messages,
-            tools=tool_defs,
-            max_tokens=params.max_tokens_per_turn,
-            reasoning_effort=params.reasoning_effort,
+        async with trace_api_call(
+            model=params.provider.model,
+            session_id=str(ctx.session_id),
+            provider=params.provider.name,
         ):
-            if isinstance(ev, TextDeltaEvent):
-                text_chunks.append(ev.text)
-                yield AssistantTextDelta(text=ev.text)
-            elif isinstance(ev, ThinkingDeltaEvent):
-                yield AssistantThinkingDelta(text=ev.text)
-            elif isinstance(ev, ToolUseStopEvent):
-                block = ToolUseBlock(
-                    id=ev.tool_use_id,
-                    name=ev.tool_name,
-                    input=ev.full_input,
-                )
-                pending_tool_uses[ev.block_index] = block
-                # streaming:模型一 yield tool_use 就立即 add → 可能立刻開跑
-                executor.add_tool(block)
-            elif isinstance(ev, MessageStopEvent):
-                stop_reason = ev.stop_reason
-                input_tokens = ev.usage.input_tokens
-                output_tokens = ev.usage.output_tokens
+            async for ev in params.provider.stream(
+                system=params.system_prompt,
+                messages=state_messages,
+                tools=tool_defs,
+                max_tokens=params.max_tokens_per_turn,
+                reasoning_effort=params.reasoning_effort,
+            ):
+                if isinstance(ev, TextDeltaEvent):
+                    text_chunks.append(ev.text)
+                    yield AssistantTextDelta(text=ev.text)
+                elif isinstance(ev, ThinkingDeltaEvent):
+                    yield AssistantThinkingDelta(text=ev.text)
+                elif isinstance(ev, ToolUseStopEvent):
+                    block = ToolUseBlock(
+                        id=ev.tool_use_id,
+                        name=ev.tool_name,
+                        input=ev.full_input,
+                    )
+                    pending_tool_uses[ev.block_index] = block
+                    # streaming:模型一 yield tool_use 就立即 add → 可能立刻開跑
+                    executor.add_tool(block)
+                elif isinstance(ev, MessageStopEvent):
+                    stop_reason = ev.stop_reason
+                    input_tokens = ev.usage.input_tokens
+                    output_tokens = ev.usage.output_tokens
+
+        # Phase 9:把 token usage 寫進 cost tracker + OTel counter
+        record_usage(
+            session_id=str(ctx.session_id),
+            user_id=ctx.user_id,
+            model=params.provider.model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
         # ─── 2. 組 assistant NormalizedMessage ──────────────────────────────
         tool_uses_in_order: list[ToolUseBlock] = [
