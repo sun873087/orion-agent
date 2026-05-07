@@ -21,6 +21,7 @@ from orion_agent.llm.types import (
     NormalizedMessage,
     TextBlock,
     ThinkingBlock,
+    TombstoneBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
@@ -71,6 +72,14 @@ def _block_from_dict(d: dict[str, Any]) -> ContentBlock | None:
         )
     if btype == "thinking":
         return ThinkingBlock(text=d.get("text", ""))
+    if btype == "tombstone":
+        return TombstoneBlock(
+            summary=d.get("summary", ""),
+            range_start_msg_index=d.get("range_start_msg_index", 0),
+            range_end_msg_index=d.get("range_end_msg_index", 0),
+            original_token_count=d.get("original_token_count", 0),
+            captured_at=d.get("captured_at", ""),
+        )
     return None
 
 

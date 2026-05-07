@@ -11,6 +11,7 @@ from orion_agent.llm.types import (
     NormalizedMessage,
     TextBlock,
     ThinkingBlock,
+    TombstoneBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
@@ -67,6 +68,15 @@ def _block_to_anthropic(block: ContentBlock) -> dict[str, Any]:
         }
     if isinstance(block, ThinkingBlock):
         return {"type": "thinking", "thinking": block.text}
+    if isinstance(block, TombstoneBlock):
+        # API 不認 tombstone — 送成普通 text 即可,模型靠 summary 上下文
+        return {
+            "type": "text",
+            "text": (
+                "[Earlier conversation auto-compacted to summary]\n"
+                + block.summary
+            ),
+        }
     raise ValueError(f"Unknown block type: {type(block).__name__}")
 
 

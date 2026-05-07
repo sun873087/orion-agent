@@ -100,12 +100,31 @@ def run(
             help="Disable transcript / replacement-state persistence (in-memory only).",
         ),
     ] = False,
+    user_id: Annotated[
+        str,
+        typer.Option(
+            "--user-id",
+            help="Memory key,預設 'default'(也可由 ORION_USER_ID 環境變數覆蓋)。",
+        ),
+    ] = "",
+    no_memory: Annotated[
+        bool,
+        typer.Option(
+            "--no-memory",
+            help="Disable memory load + auto-extract (Phase 3 features).",
+        ),
+    ] = False,
 ) -> None:
     """跑完整 agent loop:多 turn、tool feedback、streaming。
 
     Phase 2:預設啟用 transcript JSONL 寫入(~/.orion/sessions/<id>/transcript.jsonl)。
+    Phase 3:預設啟用 per-user memory + autoCompact。
     `--resume <id>` 從先前 session 載入歷史繼續對話。
     """
+    from orion_agent.memory.paths import default_user_id as _default_uid
+
+    effective_uid = user_id or _default_uid()
+
     asyncio.run(
         _run_async(
             prompt=prompt,
@@ -115,6 +134,8 @@ def run(
             max_tokens=max_tokens,
             resume_id=resume_id,
             no_persistence=no_persistence,
+            user_id=effective_uid,
+            no_memory=no_memory,
         )
     )
 
@@ -128,10 +149,12 @@ async def _run_async(
     max_tokens: int,
     resume_id: str | None = None,
     no_persistence: bool = False,
+    user_id: str = "default",
+    no_memory: bool = False,
 ) -> None:
     from uuid import UUID
 
-    ctx = AgentContext(feature_flags=load_feature_flags())
+    ctx = AgentContext(feature_flags=load_feature_flags(), user_id=user_id)
     llm = get_provider(provider, model)
 
     if resume_id is not None:
@@ -148,9 +171,12 @@ async def _run_async(
             max_turns=max_turns,
         )
         conv.persistence_enabled = not no_persistence
+        conv.user_id = user_id
+        conv.memory_enabled = not no_memory
+        conv.auto_extract_memories = not no_memory
         print(
-            f"=== resumed session {sid} "
-            f"({len(conv.state_messages)} prior messages) ===",
+            f"=== resumed session {sid} (user={user_id}, "
+            f"{len(conv.state_messages)} prior messages) ===",
             flush=True,
         )
     else:
@@ -161,6 +187,9 @@ async def _run_async(
             max_turns=max_turns,
             max_tokens_per_turn=max_tokens,
             persistence_enabled=not no_persistence,
+            user_id=user_id,
+            memory_enabled=not no_memory,
+            auto_extract_memories=not no_memory,
         )
         print(
             f"=== orion-agent ({provider} / {model}) "

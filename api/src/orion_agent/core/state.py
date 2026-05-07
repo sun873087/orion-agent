@@ -51,6 +51,10 @@ class AgentContext:
     None 表示「尚未啟用第 3 層 budget」(子 agent / 測試)。
     """
 
+    # ─── Phase 3 加入 ─────────────────────────────────────────────────────
+    user_id: str = "default"
+    """Per-user memory key。CLI 預設 "default";Phase 6 FastAPI 透過 session middleware 注入。"""
+
     # 後續 phase 加入:sandbox, permissions persisted, hooks, plan_mode_state 等
 
     def feature(self, name: str) -> bool:

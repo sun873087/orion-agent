@@ -51,8 +51,33 @@ class ThinkingBlock(BaseModel):
     text: str
 
 
+class TombstoneBlock(BaseModel):
+    """被 autoCompact 替換掉的訊息範圍 placeholder(Phase 3)。
+
+    送給模型看的時候只是一段 "summary" text。內部保留 range_start_uuid /
+    range_end_uuid 給 resume 對齊用 — 萬一兩個 conversation 共用 transcript,
+    或要做 audit / replay。
+    """
+
+    type: Literal["tombstone"] = "tombstone"
+    summary: str
+    """送給模型看的摘要(LLM 生成)。"""
+
+    range_start_msg_index: int
+    """被替換的 message 範圍起始 index(原 state_messages 的)。"""
+
+    range_end_msg_index: int
+    """被替換的 message 範圍結束 index(inclusive)。"""
+
+    original_token_count: int
+    """被壓縮前的概略 token 數(供 telemetry / debug)。"""
+
+    captured_at: str
+    """ISO datetime,壓縮發生時間。"""
+
+
 ContentBlock = Annotated[
-    TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock | ThinkingBlock,
+    TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock | ThinkingBlock | TombstoneBlock,
     Field(discriminator="type"),
 ]
 

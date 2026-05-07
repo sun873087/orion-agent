@@ -15,6 +15,7 @@ from orion_agent.llm.types import (
     NormalizedMessage,
     TextBlock,
     ThinkingBlock,
+    TombstoneBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
@@ -109,6 +110,16 @@ def translate_messages_to_openai(
             elif isinstance(block, ThinkingBlock):
                 # OpenAI 的 reasoning 是模型自己 emit 的,client 不該回送
                 continue
+            elif isinstance(block, TombstoneBlock):
+                # 壓縮過的對話段落 — 送成 input_text(放在 user message 裡)
+                text_type = "input_text" if m.role == "user" else "output_text"
+                message_content.append({
+                    "type": text_type,
+                    "text": (
+                        "[Earlier conversation auto-compacted to summary]\n"
+                        + block.summary
+                    ),
+                })
 
         if message_content:
             result.append({"type": "message", "role": m.role, "content": message_content})

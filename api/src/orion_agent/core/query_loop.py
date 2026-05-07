@@ -12,6 +12,11 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from orion_agent.compact.auto import auto_compact_if_needed
+from orion_agent.compact.reactive import (
+    is_prompt_too_long_error,
+    reactive_compact,
+)
 from orion_agent.core.state import AgentContext
 from orion_agent.core.streaming_executor import StreamingToolExecutor
 from orion_agent.core.tool import Tool
@@ -241,6 +246,11 @@ async def query_loop(
 
         turn_count += 1
 
+        # ─── Phase 3: autoCompact(token 接近上限就摘要前段)──────────────
+        state_messages, _was_compacted = await auto_compact_if_needed(
+            state_messages, provider=params.provider,
+        )
+
         # ─── Phase 2: 第 3 層 budget(進 API 前 aggregate)─────────────────
         if isinstance(ctx.replacement_state, ContentReplacementState):
             state_messages, _decisions = apply_tool_result_budget(
@@ -250,23 +260,40 @@ async def query_loop(
             )
 
         # ─── stream + executor + drain(全部在 _run_one_turn 裡)─────────────
+        # Phase 3:catch prompt-too-long → reactive compact + retry once
         last_assistant_msg: NormalizedMessage | None = None
         result_blocks: list[Any] = []
-        async for ev in _run_one_turn(
-            params=params,
-            ctx=ctx,
-            state_messages=state_messages,
-            tool_defs=tool_defs,
-        ):
-            yield ev
-            if isinstance(ev, AssistantTurnComplete):
-                last_assistant_msg = ev.message
-            elif isinstance(ev, ToolResultUpdate):
-                # tool 完成 — 累積 result block 供下輪回填
-                if isinstance(ev.message.content, list):
-                    result_blocks.extend(ev.message.content)
-            elif isinstance(ev, ToolProgressUpdate):
-                pass  # 已 yield 給 caller
+        retried = False
+
+        while True:
+            try:
+                async for ev in _run_one_turn(
+                    params=params,
+                    ctx=ctx,
+                    state_messages=state_messages,
+                    tool_defs=tool_defs,
+                ):
+                    yield ev
+                    if isinstance(ev, AssistantTurnComplete):
+                        last_assistant_msg = ev.message
+                    elif isinstance(ev, ToolResultUpdate):
+                        if isinstance(ev.message.content, list):
+                            result_blocks.extend(ev.message.content)
+                    elif isinstance(ev, ToolProgressUpdate):
+                        pass
+                break  # 成功跑完,離開 retry while
+            except Exception as e:  # noqa: BLE001
+                if retried or not is_prompt_too_long_error(e):
+                    raise
+                # 第一次撞到 prompt-too-long → reactive compact + retry once
+                state_messages = await reactive_compact(
+                    state_messages, provider=params.provider,
+                )
+                # 重置這輪 collected
+                last_assistant_msg = None
+                result_blocks = []
+                retried = True
+                continue
 
         if last_assistant_msg is None:
             transition = Terminal(reason="empty_response")

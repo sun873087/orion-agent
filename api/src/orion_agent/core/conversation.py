@@ -32,6 +32,11 @@ from orion_agent.core.tool_execution import ToolResultUpdate
 from orion_agent.hooks.registry import HookRegistry
 from orion_agent.llm.provider import LLMProvider, ReasoningEffort
 from orion_agent.llm.types import NormalizedMessage
+from orion_agent.memory.extract import extract_memories
+from orion_agent.memory.paths import default_user_id, user_memory_paths
+from orion_agent.memory.relevance import rank_memories
+from orion_agent.memory.render import prepend_to_system_prompt
+from orion_agent.memory.scan import scan_memory_dir
 from orion_agent.permissions.decisions import (
     CanUseToolFn,
     always_allow,
@@ -84,6 +89,16 @@ class Conversation:
     _session_storage: SessionStorage | None = None
     """SessionStorage instance,lazy init 在第一次 send() 時。"""
 
+    # ─── Phase 3 ──────────────────────────────────────────────────────────
+    user_id: str = field(default_factory=default_user_id)
+    """Per-user memory key。CLI 預設 "default";Phase 6 web app 透過 session 注入。"""
+
+    memory_enabled: bool = True
+    """True → send() 前載入相關 memory 進 system prompt;LoopTerminated 時 fork 萃取。"""
+
+    auto_extract_memories: bool = True
+    """True → 對話結束 fork 子 agent 萃取 memory(失敗不影響主對話)。"""
+
     async def send(
         self,
         user_text: str,
@@ -91,10 +106,11 @@ class Conversation:
     ) -> AsyncIterator[LoopEvent]:
         """送一則 user 訊息,跑 query_loop 直到 terminate,yield events。"""
         if ctx is None:
-            ctx = AgentContext(session_id=self.session_id)
+            ctx = AgentContext(session_id=self.session_id, user_id=self.user_id)
         else:
-            # 確保 ctx 用 conversation 的 session_id(統一持久化路徑)
+            # 確保 ctx 用 conversation 的 session_id / user_id
             ctx.session_id = self.session_id
+            ctx.user_id = self.user_id
 
         # 共用 replacement_state(query_loop 會用 ctx.replacement_state)
         if self.persistence_enabled:
@@ -109,9 +125,27 @@ class Conversation:
         if store is not None:
             await store.record_message(user_msg)
 
+        # ─── Phase 3:載入相關 memory 進 system prompt ──────────────────────
+        effective_system_prompt = self.system_prompt
+        if self.memory_enabled:
+            try:
+                paths = user_memory_paths(self.user_id)
+                index = scan_memory_dir(paths)
+                if index.memories:
+                    relevant = await rank_memories(
+                        index.memories,
+                        self.state_messages,
+                        provider=self.provider,
+                    )
+                    effective_system_prompt = prepend_to_system_prompt(
+                        self.system_prompt, relevant,
+                    )
+            except Exception:  # noqa: BLE001 — memory 載入失敗不該影響對話
+                effective_system_prompt = self.system_prompt
+
         params = QueryParams(
             provider=self.provider,
-            system_prompt=self.system_prompt,
+            system_prompt=effective_system_prompt,
             tools=self.tools,
             can_use_tool=self.can_use_tool,
             hooks=self.hooks,
@@ -147,6 +181,20 @@ class Conversation:
                         reason=ev.transition.reason,
                         total_turns=ev.total_turns,
                     )
+
+                # ─── Phase 3:fork 子 agent 萃取新 memory(失敗不影響)───────
+                if self.memory_enabled and self.auto_extract_memories:
+                    try:
+                        paths = user_memory_paths(self.user_id)
+                        existing = scan_memory_dir(paths).memories
+                        await extract_memories(
+                            self.state_messages,
+                            existing,
+                            provider=self.provider,
+                            paths=paths,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass  # 萃取失敗不該炸對話
 
     async def _ensure_storage(self) -> SessionStorage | None:
         """Lazy 初始化 SessionStorage。"""

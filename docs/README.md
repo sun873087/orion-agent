@@ -24,6 +24,7 @@
 - [x] [Phase 2 — Storage / Resume](phase-02-completion.md)(2026-05-07)
 - [x] [Phase 1b — 補完 Phase 1 小債](phase-01b-completion.md)(2026-05-07)
 - [x] [Phase 2b — 補完 Phase 0/1/2 漏網](phase-02b-completion.md)(2026-05-07)
+- [x] [Phase 3 — Memory / Compaction](phase-03-completion.md)(2026-05-07)
 
 ## 從本專案衍生的新 phase plan
 
