@@ -173,28 +173,18 @@ spec 踩雷 #3 提到 process 可能寫一半死掉,留下損壞 JSON 行。
 
 ---
 
-## 留給下個 phase 的 TODO
+## Phase 2 為後續鋪好的基礎(回顧)
 
-### Phase 3(memory / compaction)會用到
+| 後續 phase 將用到本 phase 的 | 說明 |
+|---|---|
+| Phase 3(memory / compaction)| ContentReplacementState 與 compaction 共用 messages 重寫機制;Phase 3 spec 會驗證兩者不踩腳 |
+| Phase 5(MCP)| `storage/mcp_output.py` stub 已備,Phase 5 接 binary persistence |
+| Phase 6(FastAPI)| transcript JSONL 已穩定,Phase 6 加 `/sessions` 列表 + `/sessions/<id>/transcript` 端點 |
 
-- ContentReplacementState 跟 compaction 的互動 — 兩者都對 messages 做變動,要確保不踩腳
-- Resume 後第一輪 prompt cache 是否真的命中 — 需要實測 input_tokens vs cache_read_input_tokens
+實作中觀察到的延後優化(均升級為獨立 phase plan):
 
-### Phase 5(MCP)
-
-- `storage/mcp_output.py` 真正實作(binary persistence)
-- WebFetchTool / 各種 MCP tool 的 binary 結果走 mcp_output
-
-### Phase 6(FastAPI)
-
-- `/sessions` API 列出可 resume 的 session
-- `/sessions/<id>/transcript` API 回 transcript(分頁)
-
-### 觀察到的後續優化
-
-- File history 沒有 garbage collection — 一個 session 跑久 snapshot 會大量累積。Phase 7 該加 LRU 或 max-snapshots
-- Transcript JSONL 沒壓縮 — 大 conversation 會很肥。可選 gzip(但 resume 要解壓)
-- ContentReplacementState 的 select_fresh_to_replace 用 sorted O(n log n);conversation 一輪 < 10 候選,沒意義優化
+- File history GC → [`docs/phases/19-file-history-gc.md`](../../docs/phases/19-file-history-gc.md)
+- Transcript JSONL gzip → [`docs/phases/20-transcript-compression.md`](../../docs/phases/20-transcript-compression.md)
 
 ---
 

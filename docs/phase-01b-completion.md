@@ -88,13 +88,16 @@ stream → tool_use 一個就 add_tool 立即跑 →
 
 ---
 
-## 留下的小債(留給 Phase 3 / 後續)
+## 觀察到的延後工作(均升級為獨立 phase plan)
 
-- 中途 abort:目前 `ctx.abort_event.is_set()` 只在 turn 邊界檢查;tool 執行中按 ctrl-C 不會立即停。
-  Phase 3 / Phase 7 加 cancel scope 整合
-- Sibling abort 只 abort **queued** 工具,沒辦法中止已 running 的。Streaming + cancel scope 後可加
-- run_tools 批次模式如今沒人用 — 是否該移除?**保留**:純函數,適合單元測試;同時也是 spec 對照
-  教材(對應 TS toolOrchestration.runTools)。零 maintenance 成本
+- 中途 abort + sibling abort 中止 running 工具 → [`docs/phases/16-abort-stream-mid-flight.md`](../../docs/phases/16-abort-stream-mid-flight.md)
+
+## 設計回顧
+
+`run_tools` 批次模式如今 query_loop 沒在用,但**保留**:
+- 純函數,適合單元測試 / hypothesis fuzz
+- 是 spec 對照教材(對應 TS `toolOrchestration.runTools`)
+- 零 maintenance 成本
 
 ---
 

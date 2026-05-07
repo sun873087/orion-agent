@@ -94,14 +94,13 @@ load_session-end-to-end-repair、no-dangling-unchanged。
 
 ---
 
-## 留下的(沒承諾,不算漏)
+## 衍生的新 phase plan
 
-phase-01 完成記錄末尾「觀察到的後續優化機會」三項仍未做:
-- `final_messages` 滾雪球 → Phase 3 compaction 解決(本就如此規劃)
-- AgentTool max_concurrent_sub_agents limit
-- WebFetchTool caching
+實作過程中再次審視 phase-00 / phase-01 的延後工作,確認均已升級為獨立 phase plan
+(在 `docs/phases/`):
 
-這三項都是「nice-to-have」非「TODO」,不阻塞 Phase 3。
+- `phases/16-abort-stream-mid-flight.md` — 中途 stream abort(來源:Phase 0)
+- `phases/17-agenttool-concurrency-limit.md` — AgentTool 全域並發上限(來源:Phase 1)
+- `phases/18-webfetch-cache.md` — WebFetchTool URL caching(來源:Phase 1)
 
-phase-00 完成記錄的「Abort 機制中斷 stream」目前**部分**做(turn 邊界 + BashTool 監看)。
-中途 ctrl-C 即時中止 stream 留給 Phase 3 / 7 配合 anyio cancel scope 重做。
+`final_messages` 滾雪球本就在 Phase 3 spec(memory / compaction)範圍內,不另開。
