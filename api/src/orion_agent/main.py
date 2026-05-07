@@ -36,14 +36,36 @@ from orion_agent.core.tool_execution import (  # noqa: E402
 from orion_agent.llm.provider import get_provider  # noqa: E402
 from orion_agent.services.feature_flags import load_feature_flags  # noqa: E402
 from orion_agent.tools.agent.skill_tool import SkillTool  # noqa: E402
+from orion_agent.tools.config.config_tool import ConfigTool  # noqa: E402
+from orion_agent.tools.cron.cron_create import CronCreateTool  # noqa: E402
+from orion_agent.tools.cron.cron_delete import CronDeleteTool  # noqa: E402
+from orion_agent.tools.cron.cron_list import CronListTool  # noqa: E402
 from orion_agent.tools.file.edit import FileEditTool  # noqa: E402
+from orion_agent.tools.file.notebook_edit import NotebookEditTool  # noqa: E402
 from orion_agent.tools.file.read import FileReadTool  # noqa: E402
 from orion_agent.tools.file.write import FileWriteTool  # noqa: E402
+from orion_agent.tools.interactive.ask_user import (  # noqa: E402
+    AskUserQuestionTool,
+    make_stdin_asker,
+)
 from orion_agent.tools.search.glob import GlobTool  # noqa: E402
 from orion_agent.tools.search.grep import GrepTool  # noqa: E402
 from orion_agent.tools.shell.bash import BashTool  # noqa: E402
+from orion_agent.tools.special.sleep import SleepTool  # noqa: E402
+from orion_agent.tools.special.synthetic_output import (  # noqa: E402
+    SyntheticOutputTool,
+)
+from orion_agent.tools.special.tool_search import ToolSearchTool  # noqa: E402
+from orion_agent.tools.task.task_create import TaskCreateTool  # noqa: E402
+from orion_agent.tools.task.task_get import TaskGetTool  # noqa: E402
+from orion_agent.tools.task.task_list import TaskListTool  # noqa: E402
+from orion_agent.tools.task.task_output import TaskOutputTool  # noqa: E402
+from orion_agent.tools.task.task_stop import TaskStopTool  # noqa: E402
+from orion_agent.tools.task.task_update import TaskUpdateTool  # noqa: E402
 from orion_agent.tools.todo.todo_write import TodoWriteTool  # noqa: E402
 from orion_agent.tools.web.fetch import WebFetchTool  # noqa: E402
+from orion_agent.tools.workdir.enter import EnterWorkdirTool  # noqa: E402
+from orion_agent.tools.workdir.exit import ExitWorkdirTool  # noqa: E402
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -53,8 +75,12 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
 def _build_tools() -> list[Tool[Any]]:
-    """註冊所有 Phase 1 內建工具。AgentTool 不放這(避免子 agent 自我遞迴)。"""
-    return [
+    """註冊所有內建工具。AgentTool 不放這(避免子 agent 自我遞迴)。
+
+    Phase 10 加 ~17 個新工具(special / config / interactive / notebook / task / cron / workdir)。
+    """
+    base: list[Tool[Any]] = [
+        # Phase 1 — 基礎
         FileReadTool(),
         FileWriteTool(),
         FileEditTool(),
@@ -64,7 +90,33 @@ def _build_tools() -> list[Tool[Any]]:
         WebFetchTool(),
         SkillTool(),
         TodoWriteTool(),
+        # Phase 9 — workdir(取代 worktree)
+        EnterWorkdirTool(),
+        ExitWorkdirTool(),
+        # Phase 10 — special
+        SleepTool(),
+        SyntheticOutputTool(),
+        # Phase 10 — config
+        ConfigTool(),
+        # Phase 10 — interactive(CLI 用 stdin asker)
+        AskUserQuestionTool(asker=make_stdin_asker()),
+        # Phase 10 — notebook
+        NotebookEditTool(),
+        # Phase 10 — task
+        TaskCreateTool(),
+        TaskGetTool(),
+        TaskListTool(),
+        TaskUpdateTool(),
+        TaskStopTool(),
+        TaskOutputTool(),
+        # Phase 10 — cron
+        CronCreateTool(),
+        CronListTool(),
+        CronDeleteTool(),
     ]
+    # ToolSearch 拿 self-aware 全清單(deferred 機制 — 模型可動態載 schema)
+    base.append(ToolSearchTool(all_tools=base))
+    return base
 
 
 @app.command()
@@ -78,13 +130,29 @@ def serve(
     reload: Annotated[
         bool, typer.Option("--reload", help="Auto-reload on code change (dev).")
     ] = False,
+    db_url: Annotated[
+        str | None,
+        typer.Option(
+            "--db-url",
+            help=(
+                "Database URL(等同設 ORION_DB_URL),"
+                "如 postgresql+asyncpg://... 或 sqlite+aiosqlite:///./orion.db。"
+                "未設 → in-memory SessionManager(Phase 6 行為)。"
+            ),
+        ),
+    ] = None,
 ) -> None:
-    """Phase 6:啟 FastAPI server(uvicorn)。
+    """Phase 6:啟 FastAPI server(uvicorn)。Phase 7 加 --db-url。
 
     `orion serve --port 8000` → `http://127.0.0.1:8000/healthz`
     WebSocket: `ws://127.0.0.1:8000/chat/stream/<session_id>?token=<jwt>`
     """
+    import os
+
     import uvicorn
+
+    if db_url:
+        os.environ["ORION_DB_URL"] = db_url
 
     uvicorn.run(
         "orion_agent.api.app:app",
@@ -152,6 +220,13 @@ def run(
             help="Disable MCP servers entirely (Phase 5)。",
         ),
     ] = False,
+    sandbox: Annotated[
+        str,
+        typer.Option(
+            "--sandbox",
+            help="Sandbox backend: local | docker(預設 local;Phase 7)。",
+        ),
+    ] = "local",
 ) -> None:
     """跑完整 agent loop:多 turn、tool feedback、streaming。
 
@@ -176,6 +251,7 @@ def run(
             no_memory=no_memory,
             mcp_config=mcp_config,
             no_mcp=no_mcp,
+            sandbox=sandbox,
         )
     )
 
@@ -193,15 +269,30 @@ async def _run_async(
     no_memory: bool = False,
     mcp_config: str | None = None,
     no_mcp: bool = False,
+    sandbox: str = "local",
 ) -> None:
     from contextlib import AsyncExitStack
     from pathlib import Path
     from uuid import UUID
 
     from orion_agent.mcp.manager import McpManager
+    from orion_agent.sandbox.factory import get_sandbox_backend
+    from orion_agent.sandbox.proxy_tools import build_sandboxed_tools
 
     ctx = AgentContext(feature_flags=load_feature_flags(), user_id=user_id)
     llm = get_provider(provider, model)
+
+    # ─── Phase 7:選 sandbox backend ───────────────────────────────────
+    sandbox_backend = None
+    sandboxed_tools_list: list[Any] = []
+    if sandbox != "local":
+        try:
+            sandbox_backend = get_sandbox_backend(sandbox)
+            sandboxed_tools_list = build_sandboxed_tools(sandbox_backend)
+            print(f"[sandbox] using {sandbox} backend", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[sandbox] failed to init {sandbox!r}: {e}", flush=True)
+            sandbox_backend = None
 
     async with AsyncExitStack() as stack:
         # ─── Phase 5:啟動 McpManager(若有 config 或啟用)─────────────────
@@ -229,6 +320,9 @@ async def _run_async(
                     print(f"[mcp] initialization failed: {e}", flush=True)
                     mcp_manager = None
 
+        # Phase 7:tools 用 sandboxed 版本(若 backend 啟用)
+        effective_tools = sandboxed_tools_list if sandbox_backend is not None else _build_tools()
+
         if resume_id is not None:
             try:
                 sid = UUID(resume_id)
@@ -238,7 +332,7 @@ async def _run_async(
             conv = await Conversation.resume(
                 sid,
                 provider=llm,
-                tools=_build_tools(),
+                tools=effective_tools,
                 max_turns=max_turns,
             )
             conv.persistence_enabled = not no_persistence
@@ -246,6 +340,7 @@ async def _run_async(
             conv.memory_enabled = not no_memory
             conv.auto_extract_memories = not no_memory
             conv.mcp_manager = mcp_manager
+            conv.sandbox_backend = sandbox_backend
             print(
                 f"=== resumed session {sid} (user={user_id}, "
                 f"{len(conv.state_messages)} prior messages) ===",
@@ -254,7 +349,7 @@ async def _run_async(
         else:
             conv = Conversation(
                 provider=llm,
-                tools=_build_tools(),
+                tools=effective_tools,
                 max_turns=max_turns,
                 max_tokens_per_turn=max_tokens,
                 persistence_enabled=not no_persistence,
@@ -262,6 +357,7 @@ async def _run_async(
                 memory_enabled=not no_memory,
                 auto_extract_memories=not no_memory,
                 mcp_manager=mcp_manager,
+                sandbox_backend=sandbox_backend,
             )
             print(
                 f"=== orion-agent ({provider} / {model}) "
@@ -269,8 +365,16 @@ async def _run_async(
                 flush=True,
             )
 
-        async for ev in conv.send(prompt, ctx=ctx):
-            _render(ev)
+        try:
+            async for ev in conv.send(prompt, ctx=ctx):
+                _render(ev)
+        finally:
+            # Phase 7:sandbox backend cleanup(如 Docker container)
+            if sandbox_backend is not None:
+                try:
+                    await sandbox_backend.cleanup()
+                except Exception as e:  # noqa: BLE001
+                    print(f"[sandbox] cleanup error: {e}", flush=True)
 
         print(
             f"\n=== done — turns={conv.stats.turns}, "

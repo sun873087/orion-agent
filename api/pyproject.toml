@@ -22,6 +22,19 @@ dependencies = [
     "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27",
     "pyjwt>=2.8",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "aiosqlite>=0.19",
+    "bcrypt>=4.0",
+    "docker>=7.0",
+    "python-frontmatter>=1.1",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "apscheduler>=3.10",
+    "pyinstrument>=4.6",
+    "nbformat>=5.10",
 ]
 
 [project.scripts]
@@ -47,6 +60,10 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = ["anthropic.*", "openai.*"]
 ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = ["frontmatter.*", "nbformat.*", "apscheduler.*", "pyinstrument.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
