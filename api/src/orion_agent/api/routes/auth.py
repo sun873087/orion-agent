@@ -1,15 +1,104 @@
-"""/auth/login — JWT(dev mode 任意 username 通過)。"""
+"""/auth — login + register。
+
+Phase 6 是 dev mode 任意 username 通過(/auth/login)。
+Phase 7 加 /auth/register 與 DB-backed login。
+
+行為:
+- 若 app.state.db_engine 存在 → DB 模式(查 users 表)
+- 否則 → Phase 6 dev fallback(任意 username 通過,**production 必設 ORION_DB_URL**)
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from orion_agent.api.auth import LoginRequest, LoginResponse, issue_token
+from orion_agent.api.auth_db import authenticate, create_user
+from orion_agent.storage.db.engine import db_session
 
 router = APIRouter()
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=8, max_length=256)
+
+
+class RegisterResponse(BaseModel):
+    user_id: str
+    username: str
+
+
+class LoginWithPasswordRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(default="", max_length=256)
+    """Dev mode 可省;DB mode 必填。"""
+
+
+def _db_engine(request: Request) -> object | None:
+    """從 app.state 取 db engine(可能 None — dev mode)。"""
+    return getattr(request.app.state, "db_engine", None)
+
+
+@router.post("/auth/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+async def register(
+    body: RegisterRequest,
+    engine: Annotated[object | None, Depends(_db_engine)],
+) -> RegisterResponse:
+    if engine is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "registration requires DB (set ORION_DB_URL)",
+        )
+    try:
+        async with db_session(engine) as session:  # type: ignore[arg-type]
+            try:
+                user = await create_user(
+                    session, username=body.username, password=body.password,
+                )
+            except IntegrityError as e:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"username {body.username!r} already exists",
+                ) from e
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, f"register failed: {e}",
+        ) from e
+
+    return RegisterResponse(user_id=user.id, username=user.username)
+
+
 @router.post("/auth/login", response_model=LoginResponse)
-async def login(body: LoginRequest) -> LoginResponse:
-    """Dev 模式登入。Phase 7 換真 user DB / OAuth。"""
-    return issue_token(body.username)
+async def login(
+    body: LoginWithPasswordRequest,
+    engine: Annotated[object | None, Depends(_db_engine)],
+) -> LoginResponse:
+    """登入。
+
+    DB 模式(engine 設):必驗密碼,失敗 401。
+    Dev 模式(engine None):任意 username 通過(向後兼容 Phase 6)。
+    """
+    if engine is None:
+        # Dev fallback — 任意 username
+        return issue_token(body.username)
+
+    async with db_session(engine) as session:  # type: ignore[arg-type]
+        user = await authenticate(
+            session, username=body.username, password=body.password,
+        )
+    if user is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "invalid username or password",
+        )
+    return issue_token(user.username)
+
+
+# 向後相容:Phase 6 的 LoginRequest 仍可解(若 client 沒帶 password,fall through DB 模式 401)。
+_ = LoginRequest

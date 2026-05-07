@@ -1,0 +1,37 @@
+# orion-agent sandbox runtime — DockerBackend per-session container 用的 base image。
+# Phase 7。Build:
+#   docker build -f deploy/Dockerfile.sandbox -t orion-agent-sandbox:dev orion-agent/
+#
+# Spec:輕量 Python 環境,允許跑 user 工具(Bash / Python),預設 sleep infinity 等 exec。
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# 常用 CLI(供 user prompt 觸發 Bash 用)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        coreutils \
+        findutils \
+        grep \
+        sed \
+        gawk \
+        curl \
+        git \
+        ca-certificates \
+        less \
+        nano \
+    && rm -rf /var/lib/apt/lists/*
+
+# 用非 root 跑;DockerBackend 可 override `user=` 但預設這位
+RUN useradd -m -u 10001 -s /bin/bash sandbox \
+    && mkdir -p /workspace \
+    && chown sandbox:sandbox /workspace
+
+USER sandbox
+WORKDIR /workspace
+
+# 永久 idle(DockerBackend 用 exec_run 注命令)
+CMD ["sleep", "infinity"]

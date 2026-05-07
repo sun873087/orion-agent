@@ -1,0 +1,37 @@
+# orion-agent API image — FastAPI + uvicorn。
+# Phase 7。Build:
+#   docker build -f deploy/Dockerfile.api -t orion-agent-api:dev orion-agent/
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# 系統依賴(bcrypt 需 build deps;asyncpg 用 binary wheel 就不用 libpq-dev)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 先複製 pyproject 鎖依賴(讓 layer cache 命中)
+COPY api/pyproject.toml api/uv.lock* ./api/
+COPY api/src ./api/src
+COPY api/alembic.ini ./api/
+
+# 安裝 uv 並用 system Python 安裝 deps
+RUN pip install uv \
+    && cd api && uv pip install --system -e .
+
+EXPOSE 8000
+
+# 預設值,docker-compose 會覆蓋
+ENV ORION_LOG_FORMAT=json \
+    ORION_DB_AUTO_CREATE=1
+
+WORKDIR /app/api
+
+CMD ["uvicorn", "orion_agent.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

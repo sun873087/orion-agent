@@ -29,6 +29,14 @@ from orion_agent.api.routes import chat as chat_router  # noqa: E402
 from orion_agent.api.routes import health as health_router  # noqa: E402
 from orion_agent.api.routes import sessions as sessions_router  # noqa: E402
 from orion_agent.api.session_manager import SessionManager  # noqa: E402
+from orion_agent.api.session_manager_db import DbSessionManager  # noqa: E402
+from orion_agent.hooks.events import SetupEvent  # noqa: E402
+from orion_agent.hooks.registry import HookRegistry  # noqa: E402
+from orion_agent.services.logging import (  # noqa: E402
+    configure_logging,
+    request_id_middleware,
+)
+from orion_agent.storage.db.engine import create_db_engine, init_db  # noqa: E402
 
 
 def _cors_origins() -> list[str]:
@@ -47,14 +55,40 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """startup / shutdown hooks。"""
-    app.state.session_manager = SessionManager()
+    """startup / shutdown hooks。
+
+    Phase 7:
+    - configure_logging:structlog initialize
+    - 若 ORION_DB_URL 設 → 起 DB engine + init_db,SessionManager 切 DbSessionManager
+      否則 → in-memory SessionManager(Phase 6 行為)
+    """
+    configure_logging()
+
+    db_url = os.environ.get("ORION_DB_URL")
+    db_engine = None
+    if db_url:
+        db_engine = create_db_engine(db_url)
+        # 自動建表(production 應改走 Alembic);Phase 7 預設 SQLite/dev 友善
+        if os.environ.get("ORION_DB_AUTO_CREATE", "1") != "0":
+            await init_db(db_engine)
+        app.state.db_engine = db_engine
+        app.state.session_manager = DbSessionManager(engine=db_engine)
+    else:
+        app.state.db_engine = None
+        app.state.session_manager = SessionManager()
+
     app.state.llm_provider = _provider_from_env()
+
+    # Phase 8:全域 HookRegistry(routes / chat 用,讓 plugin / settings 註冊到此)
+    hooks = HookRegistry()
+    app.state.hooks = hooks
+    await hooks.fire(SetupEvent(session_id=None, user_id=None))
+
     try:
         yield
     finally:
-        # Phase 7:close DB / clean up MCP
-        pass
+        if db_engine is not None:
+            await db_engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -76,6 +110,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Phase 7:request_id middleware(每 request 產 UUID,bind structlog contextvars)
+    app.middleware("http")(request_id_middleware)
 
     app.include_router(health_router.router)
     app.include_router(auth_router.router)
