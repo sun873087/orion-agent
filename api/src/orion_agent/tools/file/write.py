@@ -77,6 +77,21 @@ class FileWriteTool:
 
         existed = path.exists()
 
+        # Phase 12:覆寫既有檔必須先 Read 過 + 沒被外部改動
+        # 新建檔(existed=False)不需要 Read(沒得讀)
+        from orion_agent.services.file_state import FileStateCache, require_fresh_read
+
+        cache = (
+            ctx.file_state_cache
+            if isinstance(ctx.file_state_cache, FileStateCache)
+            else None
+        )
+        if cache is not None and existed:
+            err = require_fresh_read(cache, path)
+            if err is not None:
+                yield ErrorEvent(message=err)
+                return
+
         # Phase 2:寫前快照(若原檔存在)
         snap_note = ""
         if existed:
@@ -89,6 +104,10 @@ class FileWriteTool:
         except OSError as e:
             yield ErrorEvent(message=f"Failed to write {path}: {e}")
             return
+
+        # Phase 12:更新 cache snapshot(無論新建 / 覆寫,寫完後新內容才是 baseline)
+        if cache is not None:
+            cache.record_read(path)
 
         action = "overwrote" if existed else "created"
         yield TextEvent(

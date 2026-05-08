@@ -120,6 +120,11 @@ class Conversation:
     _session_started: bool = field(default=False, init=False)
     """SessionStart hook 已觸發過(避免重 fire)。"""
 
+    # ─── Phase 12 ─────────────────────────────────────────────────────────
+    file_state_cache: object | None = None
+    """FileStateCache instance(避免循環 import)。Conversation 級共用,跨 turn 持久。
+    None → lazy 初始化(第一次 send 時建)。"""
+
     async def send(
         self,
         user_text: str,
@@ -140,6 +145,12 @@ class Conversation:
         # Phase 7:傳 sandbox backend 進 ctx(若有)
         if self.sandbox_backend is not None:
             ctx.sandbox_backend = self.sandbox_backend
+
+        # Phase 12:傳 file_state_cache 進 ctx(lazy 建立,跨 turn 共用)
+        if self.file_state_cache is None:
+            from orion_agent.services.file_state import FileStateCache
+            self.file_state_cache = FileStateCache()
+        ctx.file_state_cache = self.file_state_cache
 
         # 延遲 init storage(避免測試強制建檔案)
         store = await self._ensure_storage()

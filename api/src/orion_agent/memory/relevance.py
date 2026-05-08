@@ -16,7 +16,7 @@ import os
 import re
 
 from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage, TextBlock, ToolUseBlock
+from orion_agent.llm.types import NormalizedMessage, TextBlock
 from orion_agent.memory.types import Memory, MemoryType
 
 _DEFAULT_MAX_RESULTS = 10
@@ -134,8 +134,14 @@ async def _llm_rank(
 ) -> list[Memory] | None:
     """讓 provider 看 memory descriptions + query,回 top N indices。
 
+    Phase 12:改走 side_query — 不汙染主 transcript、可選 JSON Schema 強制輸出。
     失敗(parse error / API error)→ 回 None,caller 改 fallback heuristic。
     """
+    from orion_agent.services.side_query import (
+        SideQueryParams,
+        side_query,
+    )
+
     listings = []
     for i, m in enumerate(memories):
         type_str = m.type.value if m.type else "?"
@@ -143,63 +149,67 @@ async def _llm_rank(
 
     system_prompt = (
         "You score memory relevance to the user's current query. "
-        "Output is parsed mechanically — emit only integers, one per line."
+        "Return JSON with an `indices` array of memory indices, "
+        "most relevant first, max length capped by the user instruction."
     )
     user_text = (
         f"User query:\n{query}\n\n"
         f"Available memories:\n" + "\n".join(listings) + "\n\n"
-        f"Return up to {max_results} most relevant memory indices, "
-        "one per line as just the integer (no brackets, no explanation, "
-        "most relevant first). If none are relevant, return nothing."
+        f"Return up to {max_results} most relevant memory indices."
     )
 
+    schema = {
+        "name": "rank_memories",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "indices": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Memory indices, most relevant first.",
+                },
+            },
+            "required": ["indices"],
+        },
+    }
+
     try:
-        text = await _provider_complete(provider, system_prompt, user_text)
+        result = await side_query(
+            SideQueryParams(
+                system=system_prompt,
+                user_text=user_text,
+                max_tokens=512,
+                json_schema=schema,
+                query_source="memdir_relevance",
+            ),
+            provider=provider,
+        )
     except Exception:  # noqa: BLE001
         return None
 
     indices: list[int] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # 支援 "[2]" 或 "2" 或 "2." 格式
-        cleaned = re.sub(r"[^\d]", "", line)
-        if cleaned.isdigit():
-            idx = int(cleaned)
-            if 0 <= idx < len(memories) and idx not in indices:
-                indices.append(idx)
+    if isinstance(result.structured, dict):
+        raw = result.structured.get("indices")
+        if isinstance(raw, list):
+            for v in raw:
+                if isinstance(v, int) and 0 <= v < len(memories) and v not in indices:
+                    indices.append(v)
+
+    # 沒走 schema 路徑(provider 不支援) → 回退舊式 line-by-line 解析
+    if not indices and result.text.strip():
+        for line in result.text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            cleaned = re.sub(r"[^\d]", "", line)
+            if cleaned.isdigit():
+                idx = int(cleaned)
+                if 0 <= idx < len(memories) and idx not in indices:
+                    indices.append(idx)
 
     if not indices:
         return None
     return [memories[i] for i in indices[:max_results]]
-
-
-async def _provider_complete(
-    provider: LLMProvider, system: str, user_text: str
-) -> str:
-    """簡單包 provider.stream → 累積 text 回單一 string。"""
-    from orion_agent.llm.events import (
-        MessageStopEvent,
-        TextDeltaEvent,
-        ToolUseStopEvent,
-    )
-
-    chunks: list[str] = []
-    messages = [NormalizedMessage(role="user", content=user_text)]
-    async for ev in provider.stream(
-        system=system,
-        messages=messages,
-        tools=[],
-        max_tokens=512,
-    ):
-        if isinstance(ev, TextDeltaEvent):
-            chunks.append(ev.text)
-        elif isinstance(ev, ToolUseStopEvent):
-            pass  # ranker 不該 emit tool_use,忽略
-        elif isinstance(ev, MessageStopEvent):
-            break
-    return "".join(chunks)
 
 
 async def rank_memories(
@@ -233,6 +243,4 @@ async def rank_memories(
             return result
         # LLM 失敗 → fallback
 
-    # _:silently 忽略無關引數,維持 type completeness
-    _ = ToolUseBlock  # keep import alive
     return _heuristic_rank(memories, query, max_results)

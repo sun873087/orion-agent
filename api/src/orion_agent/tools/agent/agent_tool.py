@@ -78,67 +78,57 @@ class AgentTool:
             )
             return
 
-        # 延遲 import 避免循環依賴(query_loop 不該是 tool 的 hard dep)
-        from orion_agent.core.query_loop import (
-            AssistantTextDelta,
-            QueryParams,
-            query_loop,
-        )
-        from orion_agent.llm.types import NormalizedMessage
-        from orion_agent.sandbox.sub_agent_isolation import (
-            fork_context_for_subagent,
-            release_subagent,
+        # Phase 12:走 services.forked_agent 統一 fork 入口(cache-safe params 抽象)
+        from orion_agent.services.forked_agent import (
+            CacheSafeParams,
+            run_forked_agent,
         )
 
-        # Phase 9:用 fork_context_for_subagent 建獨立 ctx + 可選新 sandbox
-        handle = await fork_context_for_subagent(
-            ctx,
-            sandbox_factory=self.sandbox_factory,  # type: ignore[arg-type]
-            inherit_sandbox=self.sandbox_factory is None and ctx.sandbox_backend is not None,
+        cache_safe = CacheSafeParams.from_parts(
+            system_prompt=_SUB_AGENT_SYSTEM_PROMPT,
+            tools=self.child_tools,
+            messages=[],  # 子 agent 從空對話起跑(獨立 system + 自己的 task）
         )
-        child_ctx = handle.ctx
 
-        # Phase 8:SubagentStart hook(在 parent 的 registry 上 fire)
+        # Phase 8:SubagentStart hook 仍在 parent registry 上 fire(forked_agent 內部不繼承)
+        new_session_str: str | None = None
         if self.parent_hooks is not None:
+            from uuid import uuid4
+
             from orion_agent.hooks.events import SubagentStartEvent
+
+            # 預先生成 session id 以塞 hook(forked_agent 內部會新建,這裡只給 hook event)
+            new_session_str = str(uuid4())
             await self.parent_hooks.fire(
                 SubagentStartEvent(
                     parent_session_id=str(ctx.session_id),
                     subagent_type=self.name,
                     prompt=input.task,
                     ctx=ctx,
-                    session_id=str(child_ctx.session_id),
+                    session_id=new_session_str,
                     user_id=ctx.user_id,
                 ),
             )
 
-        params = QueryParams(
-            provider=self.provider,
-            system_prompt=_SUB_AGENT_SYSTEM_PROMPT,
-            tools=self.child_tools,
-            can_use_tool=always_allow,  # 子 agent 不再問 permission(parent 已同意)
-            hooks=HookRegistry(),
-            initial_messages=[
-                NormalizedMessage(role="user", content=input.task),
-            ],
-            max_turns=self.max_child_turns,
-        )
-
-        text_chunks: list[str] = []
         try:
-            try:
-                async for ev in query_loop(params, child_ctx):
-                    if isinstance(ev, AssistantTextDelta):
-                        text_chunks.append(ev.text)
-                    # 不 propagate 子 agent 內部 tool 事件給 parent — 純 black box
-            except Exception as e:  # noqa: BLE001
-                yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
-                return
-        finally:
-            # Phase 9:釋放子 agent 拿到的 sandbox(若是 fork 出來的新的)
-            await release_subagent(handle)
+            result = await run_forked_agent(
+                parent_ctx=ctx,
+                parent_params=cache_safe,
+                user_prompt=input.task,
+                provider=self.provider,
+                can_use_tool=always_allow,
+                max_turns=self.max_child_turns,
+                fork_label="agent_tool",
+                sandbox_factory=self.sandbox_factory,  # type: ignore[arg-type]
+                inherit_sandbox=(
+                    self.sandbox_factory is None and ctx.sandbox_backend is not None
+                ),
+            )
+        except Exception as e:  # noqa: BLE001
+            yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
+            return
 
-        final_text = "".join(text_chunks).strip()
+        final_text = result.final_text.strip()
         if not final_text:
             yield TextEvent(text="(sub-agent finished but produced no final text)")
         else:

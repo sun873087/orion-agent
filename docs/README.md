@@ -28,6 +28,12 @@
 - [x] [Phase 4 — System Prompt + Cache Control](phase-04-completion.md)(2026-05-07)
 - [x] [Phase 5 — MCP Integration](phase-05-completion.md)(2026-05-07)
 - [x] [Phase 6 — FastAPI Layer](phase-06-completion.md)(2026-05-07)
+- [x] [Phase 7 — Sandbox / Production](phase-07-completion.md)(2026-05-07)
+- [x] [Phase 8 — Hooks / Skills / Plugins](phase-08-completion.md)(2026-05-07)
+- [x] [Phase 9 — Worktree / Telemetry](phase-09-completion.md)(2026-05-07)
+- [x] [Phase 10 — Tools / Performance](phase-10-completion.md)(2026-05-07)
+- [x] [Phase 11 — Input Pipeline](phase-11-completion.md)(2026-05-07)
+- [x] [Phase 12 — Internal Mechanics](phase-12-completion.md)(2026-05-08)
 
 ## 從本專案衍生的新 phase plan
 

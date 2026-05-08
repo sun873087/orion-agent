@@ -67,7 +67,20 @@ class AgentContext:
     Conversation.send() 會把自己持有的 backend 注進來;tools 可透過 ctx.sandbox_backend 動態取用。
     None = 走 host(LocalBackend 同效)。"""
 
-    # 後續 phase 加入:permissions persisted, hooks, plan_mode_state 等
+    # ─── Phase 12 加入 ────────────────────────────────────────────────────
+    plan_mode_state: object | None = None
+    """PlanModeState instance(避免循環 import,型別 object)。
+    None → 視同 INACTIVE(plan mode 未啟用)。EnterPlanModeTool / ExitPlanModeTool
+    會 mutate 此欄位。permissions 走 plan_mode_aware wrapper 會檢查狀態。"""
+
+    file_state_cache: object | None = None
+    """FileStateCache instance(同上,避免循環 import)。
+    Read 後 record_read,Edit / Write 前檢查 has_been_read + is_stale。
+    None → 不啟用 staleness check(向後相容,Phase 11 之前行為)。"""
+
+    app_state: object | None = None
+    """AppState instance(同上)。Conversation 層級的廣義應用狀態(權限歷史、IDE
+    context、MCP server 狀態等)。Phase 12 抽象,後續 phase 才大量使用。"""
 
     def feature(self, name: str) -> bool:
         """對應 TS 的 feature() 函式。

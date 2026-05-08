@@ -77,6 +77,20 @@ class FileEditTool:
             )
             return
 
+        # Phase 12:必須先 Read 過該檔且讀後沒被外部改過
+        from orion_agent.services.file_state import FileStateCache, require_fresh_read
+
+        cache = (
+            ctx.file_state_cache
+            if isinstance(ctx.file_state_cache, FileStateCache)
+            else None
+        )
+        if cache is not None:
+            err = require_fresh_read(cache, path)
+            if err is not None:
+                yield ErrorEvent(message=err)
+                return
+
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -127,6 +141,10 @@ class FileEditTool:
         except OSError as e:
             yield ErrorEvent(message=f"Failed to write {path}: {e}")
             return
+
+        # Phase 12:Edit 完成後更新 snapshot — 否則下次 Edit 會被當作 stale
+        if cache is not None:
+            cache.record_read(path)
 
         replaced = count if input.replace_all else 1
         yield TextEvent(

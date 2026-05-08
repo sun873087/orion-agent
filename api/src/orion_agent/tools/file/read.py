@@ -56,7 +56,7 @@ class FileReadTool:
     async def call(
         self,
         input: FileReadInput,
-        ctx: AgentContext,  # noqa: ARG002 — Phase 0 不用 ctx,Phase 4 sandbox 才用
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         path = Path(input.path)
 
@@ -90,6 +90,12 @@ class FileReadTool:
                 is_recoverable=False,
             )
             return
+
+        # Phase 12:登錄到 file_state_cache(Edit/Write 之後驗證 staleness)
+        from orion_agent.services.file_state import FileStateCache
+
+        if isinstance(ctx.file_state_cache, FileStateCache):
+            ctx.file_state_cache.record_read(path)
 
         lines = text.splitlines()
         end = min(input.offset + input.limit, len(lines))
