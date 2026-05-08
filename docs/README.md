@@ -36,6 +36,7 @@
 - [x] [Phase 12 — Internal Mechanics](phase-12-completion.md)(2026-05-08)
 - [x] [Phase 13 — Resilience](phase-13-completion.md)(2026-05-08)
 - [x] [Phase 14 — Distribution & Sync](phase-14-completion.md)(2026-05-08)
+- [x] [Phase 15 — Multi-Agent Patterns](phase-15-completion.md)(2026-05-08)
 
 ## 從本專案衍生的新 phase plan
 
@@ -48,3 +49,4 @@
 - `phases/20-transcript-compression.md` — transcript JSONL gzip(來源:Phase 2)
 - `phases/21-git-github-workflow.md` — git/github helpers + /commit /pr /review(來源:Phase 13 § 2.8 拆出)
 - `phases/22-dxt-plugin-format.md` — DXT plugin format install / export(來源:Phase 14 § 5.5 拆出)
+- `phases/24-multiagent-tools.md` — 把 Coordinator / Swarm 暴露給模型的工具介面(來源:Phase 15 § 5.6 拆出)
