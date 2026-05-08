@@ -92,6 +92,41 @@ class Session(Base):
         return str(sid) if isinstance(sid, UUID) else sid
 
 
+class UserSetting(Base):
+    """Phase 14:per-user 通用 settings(JSON 值 + 樂觀鎖 version)。
+
+    跟 `UserPreference`(Phase 13)分開:UserPreference 是 schema-typed 欄位
+    (custom_instructions / timezone / output_style 各自欄),UserSetting 是
+    自由 key/value blob,給前端任意設定值用(model 偏好 / UI 偏好 / etc.)。
+
+    composite PK = (user_id, key)。一筆 row 一個 setting。
+
+    spec § 5.2:web chat 模式不做 diff sync,直接 REST CRUD + 樂觀鎖防多 tab race。
+    """
+
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    """JSON column;可存 str / int / list / dict 等任何 JSON 值。"""
+
+    version: Mapped[int] = mapped_column(default=1)
+    """樂觀鎖。每次 PUT 後 +1;client 帶舊 version → 409 conflict。"""
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now,
+    )
+
+    __table_args__ = (
+        Index("ix_user_settings_user_id", "user_id"),
+    )
+
+
 class UserPreference(Base):
     """Phase 13:per-user 偏好(custom instructions / timezone / 等)。
 

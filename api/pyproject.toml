@@ -35,6 +35,8 @@ dependencies = [
     "apscheduler>=3.10",
     "pyinstrument>=4.6",
     "nbformat>=5.10",
+    "cryptography>=42.0",
+    "keyring>=24.0",
 ]
 
 [project.scripts]
@@ -62,7 +64,7 @@ module = ["anthropic.*", "openai.*"]
 ignore_missing_imports = false
 
 [[tool.mypy.overrides]]
-module = ["frontmatter.*", "nbformat.*", "apscheduler.*", "pyinstrument.*"]
+module = ["frontmatter.*", "nbformat.*", "apscheduler.*", "pyinstrument.*", "keyring.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
