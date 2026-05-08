@@ -58,6 +58,8 @@ async def fetch_system_prompt_parts(
     session_guidance: str | None = None,
     mcp_manager: object | None = None,
     use_cache: bool = True,
+    custom_instructions_user: str | None = None,
+    custom_instructions_conversation: str | None = None,
 ) -> SystemPromptParts:
     """並行蒐集 system prompt 各段。
 
@@ -104,11 +106,26 @@ async def fetch_system_prompt_parts(
     session_guidance_text = session_guidance_section(session_guidance)
     mcp_text = mcp_instructions_section(mcp_manager)
 
+    # Phase 13:Web chat 的 custom instructions(已從 DB 拉好)
+    custom_inst_text = ""
+    if custom_instructions_user or custom_instructions_conversation:
+        from orion_agent.prompt.instructions import (
+            CustomInstructions,
+            assemble_instructions_section,
+        )
+        custom_inst_text = assemble_instructions_section(
+            CustomInstructions(
+                user_level=custom_instructions_user,
+                conversation_level=custom_instructions_conversation,
+            )
+        )
+
     dynamic_blocks: list[str] = [
         b
         for b in (
             env_text,
             instructions_text,
+            custom_inst_text,
             memory_text,
             mcp_text,
             language_text,

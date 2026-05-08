@@ -27,6 +27,7 @@ from orion_agent.api.deps import _provider_from_env  # noqa: E402
 from orion_agent.api.routes import auth as auth_router  # noqa: E402
 from orion_agent.api.routes import chat as chat_router  # noqa: E402
 from orion_agent.api.routes import health as health_router  # noqa: E402
+from orion_agent.api.routes import preferences as preferences_router  # noqa: E402
 from orion_agent.api.routes import sessions as sessions_router  # noqa: E402
 from orion_agent.api.routes import uploads as uploads_router  # noqa: E402
 from orion_agent.api.session_manager import SessionManager  # noqa: E402
@@ -65,6 +66,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
       否則 → in-memory SessionManager(Phase 6 行為)
     """
     configure_logging()
+
+    # Phase 13:跑 settings migrations(沒 settings.json 就略過,有 pending 才跑)
+    from orion_agent.migrations import run_pending_migrations
+    try:
+        result = run_pending_migrations()
+        if result.applied:
+            import structlog
+            structlog.get_logger().info(
+                "settings_migrations_applied",
+                from_version=result.from_version,
+                to_version=result.to_version,
+                applied=result.applied,
+                backup=str(result.backup_path) if result.backup_path else None,
+            )
+    except Exception as e:  # noqa: BLE001 — 啟動失敗 fallback 不阻擋 server
+        import structlog
+        structlog.get_logger().error("settings_migrations_failed", error=str(e))
 
     # Phase 11:註冊內建 slash 命令(/help / /model)— idempotent
     register_builtins()
@@ -123,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(sessions_router.router)
     app.include_router(uploads_router.router)
+    app.include_router(preferences_router.router)
     app.include_router(chat_router.router)
 
     return app

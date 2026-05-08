@@ -42,8 +42,11 @@ def register_builtins() -> None:
     """
     from orion_agent.commands.builtin.help import HelpCommand
     from orion_agent.commands.builtin.model import ModelCommand
+    from orion_agent.commands.builtin.output_style import OutputStyleCommand
 
     if "help" not in _registry:
         register_command(HelpCommand())
     if "model" not in _registry:
         register_command(ModelCommand())
+    if "output-style" not in _registry:
+        register_command(OutputStyleCommand())

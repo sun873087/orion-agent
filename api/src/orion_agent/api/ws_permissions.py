@@ -35,6 +35,10 @@ from orion_agent.permissions.decisions import (
     PermissionDecision,
     PermissionResult,
 )
+from orion_agent.permissions.persistence import (
+    find_matching_rule,
+    persist_decision_if_always,
+)
 
 PERMISSION_TIMEOUT_S = 60
 
@@ -78,6 +82,16 @@ def make_can_use_tool_for_websocket(
         except Exception:  # noqa: BLE001 — parse 失敗保守問 user
             pass
 
+        # Phase 13:先看 settings.permissions.rules 有無 always_* 紀錄
+        existing = find_matching_rule(tool.name, tool_input)
+        if existing is not None:
+            if existing.decision == "allow":
+                return PermissionResult(decision=PermissionDecision.ALLOW)
+            return PermissionResult(
+                decision=PermissionDecision.DENY,
+                reason=f"persisted rule denied {tool.name!r}",
+            )
+
         request_id = uuid4().hex
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[str] = loop.create_future()
@@ -105,11 +119,23 @@ def make_can_use_tool_for_websocket(
                 reason=f"user did not respond within {timeout_s}s",
             )
 
+        # Phase 13:always_* → 寫進 settings.permissions.rules,新對話直接套用
+        if decision_str in ("always_allow", "always_deny"):
+            persist_decision_if_always(
+                decision_str=decision_str,
+                tool_name=tool.name,
+                note=f"user via ws ask (request_id={request_id})",
+            )
+
         if decision_str in ("allow", "always_allow"):
             return PermissionResult(decision=PermissionDecision.ALLOW)
         return PermissionResult(
             decision=PermissionDecision.DENY,
-            reason="user denied",
+            reason=(
+                "user persistently denied"
+                if decision_str == "always_deny"
+                else "user denied"
+            ),
         )
 
     return can_use_tool

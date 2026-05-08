@@ -72,9 +72,21 @@ async def memory_section(
 
 
 def output_style_section(style: str | None = None) -> str:
-    """選用的 output style hint。預設不加。"""
+    """選用的 output style。
+
+    Phase 13:若 `style` 是已註冊的 output style 名(`~/.orion/output-styles/<name>.md`
+    或 `<cwd>/.orion/output-styles/<name>.md`),直接用該檔的 prompt body 作 section。
+    找不到對應檔則 fallback 到簡易 hint(維持 Phase 0 行為)。
+    """
     if not style:
         return ""
+    try:
+        from orion_agent.output_styles.loader import find_output_style
+        loaded = find_output_style(style)
+    except Exception:  # noqa: BLE001 — loader 失敗不該影響對話
+        loaded = None
+    if loaded is not None:
+        return f"# Output style: {loaded.name}\n\n{loaded.prompt.strip()}"
     return f"# Output style\n\nFormat your response as: {style}"
 
 

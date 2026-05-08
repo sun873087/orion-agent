@@ -1,6 +1,8 @@
 """SQLAlchemy 2.0 ORM models。
 
 Phase 7 範圍:User / Session / Message。Phase 8+ 加 PluginInstall / Hook / etc.
+Phase 13 加 UserPreference(custom instructions / timezone)+ ConversationMetadata
+(per-session title / custom instructions)。
 
 設計:
 - UUIDs 作 primary key(string column,跨 DB 兼容)
@@ -88,6 +90,51 @@ class Session(Base):
     @staticmethod
     def session_id_to_str(sid: UUID | str) -> str:
         return str(sid) if isinstance(sid, UUID) else sid
+
+
+class UserPreference(Base):
+    """Phase 13:per-user 偏好(custom instructions / timezone / 等)。
+
+    一個 user 一筆(`user_id` 是 PK + FK)。custom_instructions 對應 ChatGPT 的
+    「About me / How I want help」概念,Phase 4 system prompt 組裝時會加進去。
+    """
+
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_style: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """目前選用的 output style 名稱(對應 Phase 13 output_styles loader)。"""
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now,
+    )
+
+
+class ConversationMetadata(Base):
+    """Phase 13:per-conversation metadata(title / custom instructions)。
+
+    對應 ChatGPT 的「Custom Instructions for this chat」。session_id 為 PK + FK。
+    title 由 side_query 自動產生(Phase 12),也可以 user 手動改。
+    """
+
+    __tablename__ = "conversation_metadata"
+
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("sessions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now,
+    )
 
 
 class Message(Base):

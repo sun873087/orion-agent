@@ -125,6 +125,18 @@ class Conversation:
     """FileStateCache instance(避免循環 import)。Conversation 級共用,跨 turn 持久。
     None → lazy 初始化(第一次 send 時建)。"""
 
+    # ─── Phase 13 ─────────────────────────────────────────────────────────
+    custom_instructions_user: str | None = None
+    """User-level custom instructions(Web chat 模式 — caller 從 DB 讀好塞進來)。
+    None → 不加進 system prompt。"""
+
+    custom_instructions_conversation: str | None = None
+    """Conversation-level custom instructions。同上。"""
+
+    output_style: str | None = None
+    """選用的 output style 名(從 `output-styles/<name>.md` 載)。
+    `/output-style <name>` 命令會 mutate 此欄位。"""
+
     async def send(
         self,
         user_text: str,
@@ -212,6 +224,11 @@ class Conversation:
                     conversation_messages=self.state_messages,
                     provider=self.provider if self.memory_enabled else None,
                     mcp_manager=self.mcp_manager,
+                    custom_instructions_user=self.custom_instructions_user,
+                    custom_instructions_conversation=(
+                        self.custom_instructions_conversation
+                    ),
+                    output_style=self.output_style,
                 )
                 effective_system_prompt = build_system_prompt_list(parts)
             except Exception:  # noqa: BLE001 — fallback 到純靜態 block
