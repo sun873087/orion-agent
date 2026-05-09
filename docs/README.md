@@ -17,6 +17,10 @@
 - **Spec(forward-looking)**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/NN-*.md` — 實作**前**的計畫
 - **Completion(backward-looking)**:本資料夾 — 實作**後**的記錄
 
+## 整合 / 操作文件(非單一 phase)
+
+- [MANUAL_TESTING.md](MANUAL_TESTING.md) — 手動測試 API + UI 的 step-by-step 指南
+
 ## 已完成
 
 - [x] [Phase 0 — Foundation](phase-00-completion.md)(2026-05-07)
@@ -37,6 +41,7 @@
 - [x] [Phase 13 — Resilience](phase-13-completion.md)(2026-05-08)
 - [x] [Phase 14 — Distribution & Sync](phase-14-completion.md)(2026-05-08)
 - [x] [Phase 15 — Multi-Agent Patterns](phase-15-completion.md)(2026-05-08)
+- [x] [WEB_UI Stage 3 — 三欄佈局前端](phase-WEB-UI-completion.md)(2026-05-09)
 
 ## 從本專案衍生的新 phase plan
 
@@ -50,3 +55,4 @@
 - `phases/21-git-github-workflow.md` — git/github helpers + /commit /pr /review(來源:Phase 13 § 2.8 拆出)
 - `phases/22-dxt-plugin-format.md` — DXT plugin format install / export(來源:Phase 14 § 5.5 拆出)
 - `phases/24-multiagent-tools.md` — 把 Coordinator / Swarm 暴露給模型的工具介面(來源:Phase 15 § 5.6 拆出)
+- `phases/25-memory-mcp-rest-endpoints.md` — Memory list / CRUD + MCP OAuth REST(來源:WEB_UI Memory/MCP placeholder 接通)

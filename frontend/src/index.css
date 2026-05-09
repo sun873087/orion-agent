@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* 訊息流的 markdown 簡單預設 */
+.prose-msg p {
+  margin: 0.25rem 0;
+}
+.prose-msg pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.prose-msg code {
+  background: #f1f5f9;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+.prose-msg pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-msg ul,
+.prose-msg ol {
+  margin: 0.25rem 0;
+  padding-left: 1.5rem;
+}
