@@ -1,4 +1,5 @@
 import type { PermissionAskEvent } from '../types/events'
+import { ToolInputView } from './ToolInputView'
 
 interface Props {
   event: PermissionAskEvent
@@ -48,9 +49,9 @@ export function PermissionDialog({ event, onDecide }: Props) {
         </div>
       </div>
 
-      <pre className="text-[12px] bg-white/70 border border-claude-orange/20 rounded-md px-3 py-2 mb-3 overflow-x-auto whitespace-pre-wrap break-words max-h-40">
-        {JSON.stringify(event.input, null, 2)}
-      </pre>
+      <div className="bg-white/70 border border-claude-orange/20 rounded-md px-3 py-2 mb-3 max-h-60 overflow-y-auto">
+        <ToolInputView toolName={event.tool_name} input={event.input} />
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button

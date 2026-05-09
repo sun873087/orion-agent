@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ToolInputView } from './ToolInputView'
 
 interface Props {
   toolName: string
@@ -48,9 +49,9 @@ export function ToolUseCard({ toolName, input }: Props) {
         </span>
       </button>
       {open && (
-        <pre className="mx-3 mb-3 px-3 py-2 rounded-md bg-claude-code text-claude-codeText text-[12px] overflow-x-auto whitespace-pre-wrap break-all border border-claude-borderSoft">
-          {JSON.stringify(input, null, 2)}
-        </pre>
+        <div className="mx-3 mb-3">
+          <ToolInputView toolName={toolName} input={input} />
+        </div>
       )}
     </div>
   )
