@@ -21,7 +21,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_agent.api.session_manager import SessionInfo
-from orion_agent.core.conversation import Conversation
+from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_agent.llm.provider import get_provider
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import Session as SessionRow
@@ -87,6 +87,9 @@ class DbSessionManager:
             user_id=user_id,
             session_id=session_id,
             tools=build_default_tool_set(),
+            max_tokens_per_turn=pick_max_tokens_per_turn(
+                provider.name, provider.model,
+            ),
         )
         self._cache[(user_id, session_id)] = conv
         return conv

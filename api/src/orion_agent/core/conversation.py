@@ -54,15 +54,11 @@ _log = logging.getLogger(__name__)
 _DEFAULT_MAX_TOKENS_PER_TURN = 16384
 
 
-def _default_max_tokens_per_turn() -> int:
-    """讀 ORION_MAX_TOKENS_PER_TURN 環境變數;非正整數 / 不存在 → fallback 16384。
-
-    Anthropic Sonnet/Opus 4.x 支援到 64000;OpenAI Responses API 也很大。
-    這是 *上限* 不是預配置,只在模型真的吐這麼多時才花費。
-    """
+def _env_max_tokens_per_turn() -> int | None:
+    """讀 ORION_MAX_TOKENS_PER_TURN env;非正整數 / 不存在 → None(讓 caller fallback)。"""
     raw = os.environ.get("ORION_MAX_TOKENS_PER_TURN")
     if not raw:
-        return _DEFAULT_MAX_TOKENS_PER_TURN
+        return None
     try:
         n = int(raw)
         if n < 1:
@@ -70,10 +66,38 @@ def _default_max_tokens_per_turn() -> int:
         return n
     except (TypeError, ValueError):
         _log.warning(
-            "ORION_MAX_TOKENS_PER_TURN=%r invalid, falling back to %d",
-            raw, _DEFAULT_MAX_TOKENS_PER_TURN,
+            "ORION_MAX_TOKENS_PER_TURN=%r invalid, falling back",
+            raw,
         )
-        return _DEFAULT_MAX_TOKENS_PER_TURN
+        return None
+
+
+def _default_max_tokens_per_turn() -> int:
+    """無 (provider, model) 上下文時的預設值。
+
+    Conversation dataclass 用 — 例如 CLI / 測試直接 `Conversation(provider=...)` 沒設這欄。
+    Web chat 走 `pick_max_tokens_per_turn(provider, model)`,可以從 catalog 拿到 per-model 上限。
+
+    優先 env override(可能超過某 model 上限,讓 caller 自己 cap),否則用內建 16384。
+    """
+    return _env_max_tokens_per_turn() or _DEFAULT_MAX_TOKENS_PER_TURN
+
+
+def pick_max_tokens_per_turn(provider: str, model: str) -> int:
+    """根據 (provider, model) 從 catalog 拿 max_output_tokens;ORION_MAX_TOKENS_PER_TURN 為硬下限/上限封頂。
+
+    規則:
+    - env 沒設 → 用 catalog.get_max_output_tokens(),catalog 不認識 → fallback 16384
+    - env 有設 → 用 env 值,但 cap 在該 model 的 catalog 上限(避免 API 422)
+    """
+    # 延遲 import 避開循環(catalog 不依賴 conversation,沒實際循環,但保一致)
+    from orion_agent.llm.catalog import get_max_output_tokens
+
+    model_max = get_max_output_tokens(provider, model) or _DEFAULT_MAX_TOKENS_PER_TURN
+    env = _env_max_tokens_per_turn()
+    if env is None:
+        return model_max
+    return min(env, model_max)
 
 
 @dataclass

@@ -8,6 +8,7 @@ from orion_agent.core.conversation import (
     _DEFAULT_MAX_TOKENS_PER_TURN,
     Conversation,
     _default_max_tokens_per_turn,
+    pick_max_tokens_per_turn,
 )
 from tests.conftest import MockProvider, MockTurn
 
@@ -27,6 +28,32 @@ def test_default_max_tokens_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) 
     assert _default_max_tokens_per_turn() == _DEFAULT_MAX_TOKENS_PER_TURN
     monkeypatch.setenv("ORION_MAX_TOKENS_PER_TURN", "0")
     assert _default_max_tokens_per_turn() == _DEFAULT_MAX_TOKENS_PER_TURN
+
+
+def test_pick_max_tokens_uses_catalog_when_no_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ORION_MAX_TOKENS_PER_TURN", raising=False)
+    # claude-sonnet-4-6 在內建 catalog 是 64000
+    assert pick_max_tokens_per_turn("anthropic", "claude-sonnet-4-6") == 64000
+    # haiku 是 8192
+    assert pick_max_tokens_per_turn("anthropic", "claude-haiku-4-5") == 8192
+
+
+def test_pick_max_tokens_caps_env_at_model_max(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ORION_MAX_TOKENS_PER_TURN", "100000")
+    # haiku 上限 8192,env 100000 → cap 至 8192,避免 API 422
+    assert pick_max_tokens_per_turn("anthropic", "claude-haiku-4-5") == 8192
+
+
+def test_pick_max_tokens_unknown_model_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ORION_MAX_TOKENS_PER_TURN", raising=False)
+    # catalog 不認識 → 16384 default
+    assert pick_max_tokens_per_turn("anthropic", "claude-future-99") == _DEFAULT_MAX_TOKENS_PER_TURN
 
 
 @pytest.mark.asyncio

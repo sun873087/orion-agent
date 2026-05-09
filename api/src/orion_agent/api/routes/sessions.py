@@ -23,7 +23,7 @@ from orion_agent.api.deps import (
     get_session_manager,
 )
 from orion_agent.api.session_manager import SessionManager
-from orion_agent.core.conversation import Conversation
+from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_agent.llm.catalog import list_catalog, validate
 from orion_agent.llm.provider import LLMProvider, get_provider
 from orion_agent.storage.paths import session_paths
@@ -88,6 +88,9 @@ async def create_session(
         provider=provider_for_session,
         user_id=user_id,
         tools=build_default_tool_set(),
+        max_tokens_per_turn=pick_max_tokens_per_turn(
+            provider_for_session.name, provider_for_session.model,
+        ),
     )
     sid = await sm.create(
         user_id=user_id, session_id=conv.session_id, conversation=conv,

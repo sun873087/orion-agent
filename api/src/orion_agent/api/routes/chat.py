@@ -231,12 +231,16 @@ async def chat_stream(
     # ─── lookup / auto-create conversation ──────────────────────────────
     conv = await sm.get(user_id, session_id)
     if conv is None:
+        from orion_agent.core.conversation import pick_max_tokens_per_turn
         from orion_agent.tools.builtin_set import build_default_tool_set
         conv = Conversation(
             provider=provider,
             user_id=user_id,
             session_id=session_id,
             tools=build_default_tool_set(),
+            max_tokens_per_turn=pick_max_tokens_per_turn(
+                provider.name, provider.model,
+            ),
         )
         await sm.create(
             user_id=user_id, session_id=session_id, conversation=conv,

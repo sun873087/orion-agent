@@ -1,8 +1,18 @@
-"""llm/catalog.py — model allowlist 驗證 + listing。"""
+"""llm/catalog.py — model allowlist 驗證 + listing + JSON loader。"""
 
 from __future__ import annotations
 
-from orion_agent.llm.catalog import MODELS, list_catalog, validate
+import json
+from pathlib import Path
+
+import pytest
+
+from orion_agent.llm.catalog import (
+    get_max_output_tokens,
+    list_catalog,
+    reset_cache_for_tests,
+    validate,
+)
 
 
 def test_validate_known_anthropic_models() -> None:
@@ -46,14 +56,60 @@ def test_list_catalog_shape() -> None:
         for m in p["models"]:
             assert "id" in m
             assert "label" in m
+            assert "max_output_tokens" in m
+            assert isinstance(m["max_output_tokens"], int)
 
 
-def test_catalog_models_match_constants() -> None:
-    """list_catalog 的內容該對得上 MODELS dict。"""
-    cat = list_catalog()
-    providers = {p["id"]: p for p in cat["providers"]}  # type: ignore[index,union-attr]
-    for prov_id, entries in MODELS.items():
-        listed = providers[prov_id]["models"]  # type: ignore[index]
-        listed_ids = [m["id"] for m in listed]
-        constant_ids = [e["id"] for e in entries]
-        assert listed_ids == constant_ids
+def test_get_max_output_tokens_known() -> None:
+    # 從 default models.json (or built-in fallback) 應該都有 sensible 值
+    assert get_max_output_tokens("anthropic", "claude-sonnet-4-6") == 64000
+    assert get_max_output_tokens("anthropic", "claude-haiku-4-5") == 8192
+
+
+def test_get_max_output_tokens_unknown() -> None:
+    assert get_max_output_tokens("anthropic", "claude-fake") is None
+    assert get_max_output_tokens("nope", "x") is None
+
+
+def test_json_override_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    p = tmp_path / "custom.json"
+    p.write_text(
+        json.dumps(
+            {
+                "providers": [
+                    {
+                        "id": "anthropic",
+                        "label": "Anthropic",
+                        "models": [
+                            {
+                                "id": "claude-future-99",
+                                "label": "Claude Future 99",
+                                "max_output_tokens": 200000,
+                            },
+                        ],
+                    },
+                ],
+            },
+        ),
+    )
+    monkeypatch.setenv("ORION_MODELS_FILE", str(p))
+    reset_cache_for_tests()
+    try:
+        assert validate("anthropic", "claude-future-99")
+        assert get_max_output_tokens("anthropic", "claude-future-99") == 200000
+        # 原本內建的就不存在了(JSON 完全覆蓋)
+        assert not validate("anthropic", "claude-sonnet-4-6")
+    finally:
+        reset_cache_for_tests()
+
+
+def test_json_invalid_falls_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    p = tmp_path / "broken.json"
+    p.write_text("{not valid json")
+    monkeypatch.setenv("ORION_MODELS_FILE", str(p))
+    reset_cache_for_tests()
+    try:
+        # parse 失敗 → 用內建,sonnet 還在
+        assert validate("anthropic", "claude-sonnet-4-6")
+    finally:
+        reset_cache_for_tests()
