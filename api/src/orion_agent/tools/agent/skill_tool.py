@@ -24,6 +24,13 @@ class SkillInput(ToolInput):
         default="",
         description="Skill name (without .md). Leave empty to list all available skills.",
     )
+    args: str = Field(
+        default="",
+        description=(
+            "Optional argument string forwarded to the skill (e.g. user instruction, "
+            "interval, file paths). Appended at the end of the skill body as 'Arguments'."
+        ),
+    )
 
 
 class SkillTool:
@@ -39,9 +46,9 @@ class SkillTool:
     async def call(
         self,
         input: SkillInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
-        skills: list[Skill] = load_all_skills()
+        skills: list[Skill] = load_all_skills(user_id=ctx.user_id or None)
 
         if not input.skill_name.strip():
             if not skills:
@@ -73,6 +80,10 @@ class SkillTool:
             out_lines.append(f"\n{match.description}")
         out_lines.append("")
         out_lines.append(match.body)
+        args = input.args.strip()
+        if args:
+            out_lines.append("\n## Arguments\n")
+            out_lines.append(args)
         yield TextEvent(text="\n".join(out_lines))
 
     def is_concurrency_safe(self, input: SkillInput) -> bool:  # noqa: ARG002

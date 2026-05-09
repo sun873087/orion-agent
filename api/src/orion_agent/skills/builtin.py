@@ -1,51 +1,19 @@
-"""內建 skill 列表 — Phase 8。
+"""Bundled skills 入口 — 為 backwards-compat 留 builtin_skills() function。
 
-對應 TS skills/bundledSkills.ts。內建 skill 跟 user 自寫 skill 一樣 expose,
-但寫死在程式碼,不掃 disk。
+實際內容已搬到 `orion_agent/skills/bundled/<name>/SKILL.md` 一個 skill 一個資料夾,
+由 loader._bundled_skills() 透過 importlib.resources 讀取(支援 wheel / zip 安裝)。
+
+舊呼叫 `builtin_skills()` 仍可用,內部就是 `_bundled_skills()` alias。
 """
 
 from __future__ import annotations
 
-from orion_agent.skills.loader import Skill
-
-_BE_CONCISE_BODY = """\
-You should respond as concisely as possible. Skip preamble, restating, or
-summarizing. Answer in one sentence when possible.\
-"""
-
-_REVIEW_DIFF_BODY = """\
-You are reviewing a code diff. For each change:
-
-1. **Bugs / logic errors** — flag explicitly.
-2. **Style** — only mention if non-trivial.
-3. **Tests** — note missing test coverage.
-4. **Security** — flag sensitive patterns (eval, shell injection, etc).
-
-Be concise. Group findings by severity. End with one-line verdict.\
-"""
+from orion_agent.skills.loader import Skill, _bundled_skills
 
 
 def builtin_skills() -> list[Skill]:
-    """回傳內建 skill list。"""
-    return [
-        Skill(
-            name="be-concise",
-            description="Force concise responses (no preamble, no summary).",
-            body=_BE_CONCISE_BODY,
-        ),
-        Skill(
-            name="review-diff",
-            description="Review a code diff for bugs / style / tests / security.",
-            body=_REVIEW_DIFF_BODY,
-            parameters={
-                "type": "object",
-                "properties": {
-                    "diff": {
-                        "type": "string",
-                        "description": "The unified diff text to review.",
-                    },
-                },
-                "required": ["diff"],
-            },
-        ),
-    ]
+    """回傳 bundled skill list(從 `skills/bundled/` 子資料夾載入)。"""
+    return _bundled_skills()
+
+
+__all__ = ["builtin_skills"]
