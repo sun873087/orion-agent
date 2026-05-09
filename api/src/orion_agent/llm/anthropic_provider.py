@@ -11,6 +11,10 @@ from typing import Any, cast
 
 from anthropic import AsyncAnthropic
 
+from orion_agent.llm.catalog import (
+    get_max_context_tokens,
+    get_supports_reasoning,
+)
 from orion_agent.llm.events import (
     MessageStartEvent,
     MessageStopEvent,
@@ -32,11 +36,7 @@ from orion_agent.llm.translation.anthropic import (
 )
 from orion_agent.llm.types import NormalizedMessage
 
-_ANTHROPIC_CONTEXT_LIMITS = {
-    "claude-opus-4-7": 200_000,
-    "claude-sonnet-4-6": 200_000,
-    "claude-haiku-4-5": 200_000,
-}
+_DEFAULT_CONTEXT_TOKENS = 200_000
 
 _REASONING_BUDGET = {
     "minimal": 1024,
@@ -58,18 +58,15 @@ class AnthropicProvider:
     ) -> None:
         self.model = model
         self.client = client or AsyncAnthropic()
-        # capability:看 model 字首推 reasoning 支援(Claude 4.7 / 4.7+ Opus 有 thinking)
-        supports_thinking = model.startswith("claude-opus-4-7") or model.startswith(
-            "claude-sonnet-4-7"
-        )
         self.capabilities = ProviderCapabilities(
             prompt_caching=True,
             auto_caching=False,
             parallel_tool_calls=True,
             native_mcp=True,
             structured_output=False,
-            reasoning_blocks=supports_thinking,
-            max_context_tokens=_ANTHROPIC_CONTEXT_LIMITS.get(model, 200_000),
+            reasoning_blocks=get_supports_reasoning(self.name, model),
+            max_context_tokens=get_max_context_tokens(self.name, model)
+            or _DEFAULT_CONTEXT_TOKENS,
         )
 
     async def stream(

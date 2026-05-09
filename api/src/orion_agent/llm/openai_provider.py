@@ -13,6 +13,10 @@ from typing import Any, cast
 
 from openai import AsyncOpenAI
 
+from orion_agent.llm.catalog import (
+    get_max_context_tokens,
+    get_supports_reasoning,
+)
 from orion_agent.llm.events import (
     MessageStartEvent,
     MessageStopEvent,
@@ -33,19 +37,7 @@ from orion_agent.llm.translation.openai import (
 )
 from orion_agent.llm.types import NormalizedMessage
 
-_OPENAI_CONTEXT_LIMITS = {
-    "gpt-5.4": 1_000_000,
-    "gpt-5": 1_000_000,
-    "gpt-5-mini": 1_000_000,
-    "gpt-4o": 128_000,
-    "gpt-4o-mini": 128_000,
-    "o3": 200_000,
-}
-
-
-def _is_reasoning_model(model: str) -> bool:
-    """o-series / GPT-5 系列支援 reasoning effort。"""
-    return model.startswith("o") or model.startswith("gpt-5")
+_DEFAULT_CONTEXT_TOKENS = 128_000
 
 
 class OpenAIProvider:
@@ -66,8 +58,9 @@ class OpenAIProvider:
             parallel_tool_calls=True,
             native_mcp=True,
             structured_output=True,
-            reasoning_blocks=_is_reasoning_model(model),
-            max_context_tokens=_OPENAI_CONTEXT_LIMITS.get(model, 128_000),
+            reasoning_blocks=get_supports_reasoning(self.name, model),
+            max_context_tokens=get_max_context_tokens(self.name, model)
+            or _DEFAULT_CONTEXT_TOKENS,
         )
 
     async def stream(
