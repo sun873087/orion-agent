@@ -20,6 +20,7 @@
 ## 整合 / 操作文件(非單一 phase)
 
 - [MANUAL_TESTING.md](MANUAL_TESTING.md) — 手動測試 API + UI 的 step-by-step 指南
+- [PROJECT_LAYOUT.md](PROJECT_LAYOUT.md) — bundled / system / project / user / extra_dirs 五層資料夾結構詳解
 
 ## 已完成
 

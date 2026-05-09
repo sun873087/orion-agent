@@ -55,6 +55,8 @@ model: claude-opus-4-7     # 可選 — 強制這個 skill 用某個 model
 (MCP connector 依賴)、`verify` + `verify-content`(ANT-only + SKILL_FILES)、`lorem-ipsum`
 (282 行 word list 資料)。
 
+> **完整目錄結構**(不只 skills,還有 settings / mcp.json / plugins / instructions / sessions / uploads / memory):見 `orion-agent/docs/PROJECT_LAYOUT.md`。
+
 ## 五層 Skill 來源(`load_all_skills` 順序,**後者覆蓋前者**)
 
 ```
