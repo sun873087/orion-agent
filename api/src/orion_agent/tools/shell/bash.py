@@ -72,6 +72,9 @@ class BashTool:
             if not os.path.isdir(cwd):
                 yield ErrorEvent(message=f"cwd does not exist or is not a directory: {cwd}")
                 return
+        else:
+            # 沒指定 → fallback 到 ctx.cwd(per-session workspace,避免污染 server cwd)
+            cwd = str(ctx.cwd)
 
         # 用 /bin/bash -c 跑,語意與 user 在 terminal 鍵入相同
         argv = ["/bin/bash", "-c", input.command]

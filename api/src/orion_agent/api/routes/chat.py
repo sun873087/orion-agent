@@ -72,6 +72,7 @@ from orion_agent.llm.types import (
     ToolResultBlock,
     ToolUseBlock,
 )
+from orion_agent.storage.paths import session_paths
 
 router = APIRouter()
 
@@ -271,12 +272,17 @@ async def chat_stream(
                 except Exception:  # noqa: BLE001 — ws 死了就退
                     return
 
+    # 建 per-session workspace dir(模型用 Bash / Write 等寫檔的隔離 cwd)
+    sp = session_paths(session_id)
+    sp.ensure_dirs()
+
     async def runner(user_text: str) -> None:
         async with turn_lock:
             ctx = AgentContext(
                 session_id=session_id,
                 user_id=user_id,
                 abort_event=abort_event,
+                cwd=sp.workspace_dir,
             )
             try:
                 async for loop_ev in conv.send(user_text, ctx=ctx):

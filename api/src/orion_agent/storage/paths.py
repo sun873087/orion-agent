@@ -51,6 +51,13 @@ class SessionPaths:
     def meta(self) -> Path:
         return self.root / "meta.json"
 
+    @property
+    def workspace_dir(self) -> Path:
+        """Per-session 工作區 — 模型用 Bash / Write / Edit 等工具產出的檔案落這。
+        每 conversation 一個隔離的工作區,session 刪掉 workspace 一起清。
+        """
+        return self.root / "workspace"
+
     def tool_result_path(self, tool_use_id: str) -> Path:
         return self.tool_results_dir / f"{tool_use_id}.txt"
 
@@ -62,6 +69,7 @@ class SessionPaths:
         self.root.mkdir(parents=True, exist_ok=True)
         self.tool_results_dir.mkdir(exist_ok=True)
         self.file_history_dir.mkdir(exist_ok=True)
+        self.workspace_dir.mkdir(exist_ok=True)
 
 
 def session_paths(session_id: UUID, root: Path | None = None) -> SessionPaths:

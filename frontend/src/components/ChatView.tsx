@@ -12,6 +12,7 @@ import { type FlowEntry, MessageList } from './MessageList'
 import { InputBox } from './InputBox'
 import { ModelBadge } from './ModelBadge'
 import { ModelPicker } from './ModelPicker'
+import { WorkspaceFiles } from './WorkspaceFiles'
 
 interface Props {
   sessionId: string | null
@@ -245,6 +246,7 @@ export function ChatView({
             model={currentSession?.model}
             catalog={catalog}
           />
+          <WorkspaceFiles sessionId={sessionId} refreshKey={turnCount} />
           <CostBadge sessionId={sessionId} refreshKey={turnCount} />
           <button
             onClick={onOpenSettings}

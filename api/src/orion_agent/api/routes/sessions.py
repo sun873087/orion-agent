@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from orion_agent.api.deps import (
@@ -25,6 +26,7 @@ from orion_agent.api.session_manager import SessionManager
 from orion_agent.core.conversation import Conversation
 from orion_agent.llm.catalog import list_catalog, validate
 from orion_agent.llm.provider import LLMProvider, get_provider
+from orion_agent.storage.paths import session_paths
 from orion_agent.telemetry.cost_tracker import get_session_summary
 from orion_agent.tools.builtin_set import build_default_tool_set
 
@@ -170,6 +172,57 @@ async def delete_session(
     deleted = await sm.delete(user_id, session_id)
     if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+
+
+class WorkspaceFile(BaseModel):
+    name: str
+    size: int
+    mtime: float
+
+
+@router.get("/sessions/{session_id}/files", response_model=list[WorkspaceFile])
+async def list_session_files(
+    session_id: UUID,
+    user_id: Annotated[str, Depends(current_user)],
+    sm: Annotated[SessionManager, Depends(get_session_manager)],
+) -> list[WorkspaceFile]:
+    """列出 session workspace dir 內的檔案(模型用 Bash/Write 產出的檔)。"""
+    conv = await sm.get(user_id, session_id)
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    sp = session_paths(session_id)
+    ws = sp.workspace_dir
+    if not ws.exists():
+        return []
+    out: list[WorkspaceFile] = []
+    for p in sorted(ws.iterdir()):
+        if not p.is_file():
+            continue
+        st = p.stat()
+        out.append(WorkspaceFile(name=p.name, size=st.st_size, mtime=st.st_mtime))
+    return out
+
+
+@router.get("/sessions/{session_id}/files/{filename}")
+async def download_session_file(
+    session_id: UUID,
+    filename: str,
+    user_id: Annotated[str, Depends(current_user)],
+    sm: Annotated[SessionManager, Depends(get_session_manager)],
+) -> FileResponse:
+    """下載 workspace 內單一檔案。"""
+    conv = await sm.get(user_id, session_id)
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    sp = session_paths(session_id)
+    ws = sp.workspace_dir.resolve()
+    target = (ws / filename).resolve()
+    # path traversal guard:resolved 路徑必須仍在 workspace 底下
+    if ws not in target.parents:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid filename")
+    if not target.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "file not found")
+    return FileResponse(target, filename=target.name)
 
 
 @router.get("/models")
