@@ -118,7 +118,7 @@ export function MessageList({
               return (
                 <div
                   key={e.id}
-                  className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-[13px]"
+                  className="rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 px-3 py-2 text-[13px]"
                 >
                   {e.message}
                 </div>
@@ -143,7 +143,7 @@ export function MessageList({
       {!sticky && (
         <button
           onClick={jumpToBottom}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-claude-border shadow-md text-[12px] text-claude-textDim hover:text-claude-text hover:bg-claude-cream transition"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-claude-panel border border-claude-border shadow-md dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] text-[12px] text-claude-textDim hover:text-claude-text hover:bg-claude-cream dark:hover:bg-claude-panel/80 transition"
           title="Scroll to latest"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">

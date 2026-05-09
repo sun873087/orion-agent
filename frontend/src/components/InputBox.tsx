@@ -94,13 +94,13 @@ export function InputBox({ disabled, onSend, onAbort }: Props) {
     >
       <div className="max-w-3xl mx-auto">
         {error && (
-          <div className="mb-2 text-[13px] text-red-700 bg-red-50 border border-red-100 px-3 py-1.5 rounded-md">
+          <div className="mb-2 text-[13px] text-red-700 bg-red-50 border border-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-900/60 px-3 py-1.5 rounded-md">
             {error}
           </div>
         )}
 
         <div
-          className={`relative rounded-2xl bg-white shadow-input transition-shadow ${
+          className={`relative rounded-2xl bg-white dark:bg-claude-panel shadow-input dark:shadow-none dark:ring-1 dark:ring-claude-border transition-shadow ${
             dragActive ? 'ring-2 ring-claude-orange/40' : ''
           }`}
         >

@@ -108,7 +108,7 @@ export function ToolRow({ item }: Props) {
         onClick={() => setOpen((v) => !v)}
       >
         <ToolIcon toolName={item.toolName} />
-        <span className={`truncate ${isError ? 'text-red-700' : ''}`}>
+        <span className={`truncate ${isError ? 'text-red-700 dark:text-red-300' : ''}`}>
           {desc}
         </span>
         {inProgress && (

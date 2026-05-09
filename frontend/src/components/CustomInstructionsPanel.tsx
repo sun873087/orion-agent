@@ -86,7 +86,7 @@ export function CustomInstructionsPanel({ sessionId }: Props) {
         hint="Persistent across all conversations. Tell Orion how to address you, your role, your preferences."
       >
         <textarea
-          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none"
+          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white dark:bg-claude-cream text-claude-text placeholder:text-claude-textFaint focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none"
           placeholder="e.g. I'm a senior Python engineer; prefer terse explanations."
           value={user}
           onChange={(e) => setUser(e.target.value)}
@@ -102,7 +102,7 @@ export function CustomInstructionsPanel({ sessionId }: Props) {
         }
       >
         <textarea
-          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none disabled:bg-claude-panel/40"
+          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white dark:bg-claude-cream text-claude-text placeholder:text-claude-textFaint focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none disabled:bg-claude-panel/40 dark:disabled:bg-claude-panel/40"
           placeholder="e.g. Reviewing a Python migration script; focus on safety."
           value={conv}
           onChange={(e) => setConv(e.target.value)}
@@ -111,7 +111,7 @@ export function CustomInstructionsPanel({ sessionId }: Props) {
       </Section>
 
       {error && (
-        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-md">
+        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-900/60 px-3 py-2 rounded-md">
           {error}
         </div>
       )}
@@ -119,7 +119,7 @@ export function CustomInstructionsPanel({ sessionId }: Props) {
       <div className="flex items-center justify-between pt-1">
         <div className="text-[12px] text-claude-textFaint">
           {savedAt && (
-            <span className="text-emerald-700">
+            <span className="text-emerald-700 dark:text-emerald-400">
               ✓ Saved {new Date(savedAt).toLocaleTimeString()}
             </span>
           )}

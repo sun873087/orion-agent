@@ -59,7 +59,7 @@ export function WorkspaceFiles({ sessionId, refreshKey }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 w-72 max-h-72 overflow-y-auto bg-white border border-claude-border rounded-lg shadow-lg z-20 py-1">
+        <div className="absolute right-0 mt-1.5 w-72 max-h-72 overflow-y-auto bg-white dark:bg-claude-panel border border-claude-border rounded-lg shadow-lg dark:shadow-[0_10px_30px_-8px_rgba(0,0,0,0.5)] z-20 py-1">
           <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-claude-textFaint border-b border-claude-borderSoft">
             Workspace
           </div>

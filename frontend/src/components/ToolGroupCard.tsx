@@ -48,7 +48,7 @@ export function ToolGroupCard({ items }: Props) {
           {!inProgress && (
             <div
               className={`pl-3 py-1 flex items-center gap-1.5 ${
-                hasError ? 'text-red-700' : 'text-emerald-700'
+                hasError ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-400'
               }`}
             >
               {hasError ? (

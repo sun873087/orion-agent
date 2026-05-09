@@ -2,6 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light theme — default. Values are space-separated RGB so Tailwind's
+   rgb(var(--c-x) / <alpha-value>) syntax works. */
+:root {
+  --c-cream: 250 249 245;
+  --c-panel: 240 238 230;
+  --c-border: 229 227 218;
+  --c-border-soft: 236 233 223;
+  --c-text: 38 38 36;
+  --c-text-dim: 121 119 114;
+  --c-text-faint: 168 165 159;
+  --c-orange: 204 120 92;
+  --c-orange-hover: 184 103 78;
+  --c-orange-soft: 244 232 225;
+  --c-code: 245 244 238;
+  --c-code-text: 93 91 86;
+  /* scrollbar 也跟主題走 */
+  --c-scroll-thumb: 216 212 197;
+  --c-scroll-thumb-hover: 184 180 165;
+}
+
+/* Dark theme — applied when <html class="dark"> by lib/theme.ts.
+   調色對齊 Claude.ai 的暗模式:深黑底 (#1A1A18)、純奶油白文字 (#FAF9F5)、
+   panel 比 cream 稍亮但仍貼近主背景。border 提高一階確保卡片在 dark 仍看得到邊。 */
+.dark {
+  --c-cream: 26 26 24;          /* #1A1A18 — 主背景,接近全黑 */
+  --c-panel: 38 38 36;          /* #262624 — sidebar / 卡片 / 輸入框 */
+  --c-border: 64 64 60;         /* #40403C — 卡片邊界,在深色上要更亮才看得到 */
+  --c-border-soft: 48 48 44;    /* #30302C — hover / 細分隔 */
+  --c-text: 250 249 245;        /* #FAF9F5 — 純奶油白 */
+  --c-text-dim: 184 181 173;    /* #B8B5AD */
+  --c-text-faint: 132 129 122;  /* #84817A */
+  --c-orange: 209 130 102;      /* #D18266 */
+  --c-orange-hover: 224 144 116;
+  --c-orange-soft: 56 40 34;
+  --c-code: 32 32 30;
+  --c-code-text: 224 220 210;
+  --c-scroll-thumb: 70 70 66;
+  --c-scroll-thumb-hover: 96 96 92;
+}
+
 html,
 body,
 #root {
@@ -9,8 +49,8 @@ body,
 }
 
 body {
-  background: #faf9f5;
-  color: #262624;
+  background: rgb(var(--c-cream));
+  color: rgb(var(--c-text));
   font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -29,7 +69,7 @@ input {
 .prose-msg {
   font-size: 0.9375rem;
   line-height: 1.65;
-  color: #262624;
+  color: rgb(var(--c-text));
 }
 .prose-msg p {
   margin: 0.5rem 0;
@@ -58,18 +98,18 @@ input {
   font-size: 1.0625rem;
 }
 .prose-msg pre {
-  background: #f5f4ee;
-  color: #262624;
+  background: rgb(var(--c-code));
+  color: rgb(var(--c-text));
   padding: 0.75rem 1rem;
   border-radius: 0.5rem;
   overflow-x: auto;
   margin: 0.75rem 0;
   font-size: 0.85em;
-  border: 1px solid #ece9df;
+  border: 1px solid rgb(var(--c-border-soft));
 }
 .prose-msg code {
-  background: #f5f4ee;
-  color: #5d5b56;
+  background: rgb(var(--c-code));
+  color: rgb(var(--c-code-text));
   padding: 0.125rem 0.3125rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
@@ -93,22 +133,22 @@ input {
   margin: 0.125rem 0;
 }
 .prose-msg blockquote {
-  border-left: 3px solid #e5e3da;
+  border-left: 3px solid rgb(var(--c-border));
   padding-left: 1rem;
-  color: #797772;
+  color: rgb(var(--c-text-dim));
   margin: 0.75rem 0;
 }
 .prose-msg a {
-  color: #cc785c;
+  color: rgb(var(--c-orange));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .prose-msg a:hover {
-  color: #b8674e;
+  color: rgb(var(--c-orange-hover));
 }
 .prose-msg hr {
   border: 0;
-  border-top: 1px solid #e5e3da;
+  border-top: 1px solid rgb(var(--c-border));
   margin: 1.25rem 0;
 }
 .prose-msg table {
@@ -118,27 +158,27 @@ input {
 }
 .prose-msg th,
 .prose-msg td {
-  border: 1px solid #e5e3da;
+  border: 1px solid rgb(var(--c-border));
   padding: 0.375rem 0.625rem;
   text-align: left;
 }
 .prose-msg th {
-  background: #f5f4ee;
+  background: rgb(var(--c-code));
   font-weight: 600;
 }
 
-/* 滾動條柔和 */
+/* 滾動條柔和(theme-aware) */
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #d8d4c5;
+  background: rgb(var(--c-scroll-thumb));
   border-radius: 999px;
-  border: 2px solid #faf9f5;
+  border: 2px solid rgb(var(--c-cream));
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #b8b4a5;
+  background: rgb(var(--c-scroll-thumb-hover));
 }
 *::-webkit-scrollbar-track {
   background: transparent;

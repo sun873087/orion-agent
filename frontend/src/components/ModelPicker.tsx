@@ -52,7 +52,7 @@ export function ModelPicker({
     <div ref={ref} className="relative inline-block text-[13px]">
       <button
         type="button"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-claude-border hover:border-claude-orange/50 hover:bg-claude-cream/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-claude-panel border border-claude-border hover:border-claude-orange/50 hover:bg-claude-cream/50 dark:hover:bg-claude-panel/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled || loading}
       >
@@ -77,7 +77,7 @@ export function ModelPicker({
       </button>
 
       {open && catalog && (
-        <div className="absolute left-0 top-full mt-1.5 w-72 z-30 bg-white rounded-xl shadow-modal py-1.5 animate-fade-in max-h-96 overflow-y-auto">
+        <div className="absolute left-0 top-full mt-1.5 w-72 z-30 bg-white dark:bg-claude-panel dark:ring-1 dark:ring-claude-border rounded-xl shadow-modal dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.6)] py-1.5 animate-fade-in max-h-96 overflow-y-auto">
           {catalog.providers.map((p) => (
             <div key={p.id} className="py-1">
               <div className="px-3 py-1 flex items-center gap-2 text-[11px] uppercase tracking-wider text-claude-textFaint">

@@ -1,5 +1,29 @@
 import { useEffect, useState } from 'react'
 import { ApiError, apiFetch } from '../api/client'
+import { useTheme } from '../hooks/useTheme'
+import type { ThemePref } from '../lib/theme'
+
+function AppearanceSection() {
+  const { pref, resolved, setPref } = useTheme()
+  return (
+    <div className="space-y-2">
+      <div className="font-medium text-claude-text text-[13px]">Appearance</div>
+      <select
+        value={pref}
+        onChange={(e) => setPref(e.target.value as ThemePref)}
+        className="w-full max-w-xs border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow"
+      >
+        <option value="system">Follow system</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <div className="text-[12px] text-claude-textDim">
+        Currently {resolved}
+        {pref === 'system' && ' (from OS preference)'}.
+      </div>
+    </div>
+  )
+}
 
 export function SettingsPanel() {
   const [settings, setSettings] = useState<Record<string, unknown>>({})
@@ -70,28 +94,33 @@ export function SettingsPanel() {
 
   if (unavailable) {
     return (
-      <div className="p-6 text-[14px] text-claude-textDim">
-        Settings require{' '}
-        <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
-          ORION_DB_URL
-        </code>{' '}
-        on the backend.
+      <div className="p-6 space-y-5 text-[14px]">
+        <AppearanceSection />
+        <div className="pt-2 border-t border-claude-border/60 text-claude-textDim">
+          Server-side settings require{' '}
+          <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
+            ORION_DB_URL
+          </code>{' '}
+          on the backend.
+        </div>
       </div>
     )
   }
 
   const inputClasses =
-    'w-full border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] font-mono bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
+    'w-full border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] font-mono bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
 
   return (
     <div className="p-6 space-y-5 text-[14px]">
+      <AppearanceSection />
+
       {error && (
-        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-md">
+        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-900/60 px-3 py-2 rounded-md">
           {error}
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-2 pt-2 border-t border-claude-border/60">
         <div className="font-medium text-claude-text text-[13px]">
           Stored values
         </div>
@@ -104,7 +133,7 @@ export function SettingsPanel() {
             {Object.entries(settings).map(([key, value]) => (
               <div
                 key={key}
-                className="group flex items-start gap-2 p-2.5 rounded-md bg-white border border-claude-borderSoft"
+                className="group flex items-start gap-2 p-2.5 rounded-md bg-white dark:bg-claude-panel border border-claude-borderSoft"
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-mono text-[12px] font-medium text-claude-text">

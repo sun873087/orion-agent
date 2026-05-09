@@ -38,7 +38,7 @@ export function PermissionDialog({ event, onDecide }: Props) {
         <div>
           <div className="font-medium text-claude-text text-[14px]">
             Allow{' '}
-            <code className="font-mono bg-white/60 px-1.5 py-0.5 rounded text-[13px]">
+            <code className="font-mono bg-white/60 dark:bg-claude-panel/70 px-1.5 py-0.5 rounded text-[13px]">
               {event.tool_name}
             </code>
             ?
@@ -49,7 +49,7 @@ export function PermissionDialog({ event, onDecide }: Props) {
         </div>
       </div>
 
-      <div className="bg-white/70 border border-claude-orange/20 rounded-md px-3 py-2 mb-3 max-h-60 overflow-y-auto">
+      <div className="bg-white/70 dark:bg-claude-panel/70 border border-claude-orange/20 rounded-md px-3 py-2 mb-3 max-h-60 overflow-y-auto">
         <ToolInputView toolName={event.tool_name} input={event.input} />
       </div>
 
@@ -61,19 +61,19 @@ export function PermissionDialog({ event, onDecide }: Props) {
           Allow once
         </button>
         <button
-          className="px-3.5 py-1.5 bg-white border border-claude-border text-claude-text rounded-md hover:bg-claude-borderSoft text-[13px] font-medium transition-colors"
+          className="px-3.5 py-1.5 bg-white dark:bg-claude-panel border border-claude-border text-claude-text rounded-md hover:bg-claude-borderSoft text-[13px] font-medium transition-colors"
           onClick={() => onDecide('always_allow')}
         >
           Always allow
         </button>
         <button
-          className="px-3.5 py-1.5 bg-white border border-claude-border text-claude-textDim rounded-md hover:bg-claude-borderSoft hover:text-claude-text text-[13px] transition-colors"
+          className="px-3.5 py-1.5 bg-white dark:bg-claude-panel border border-claude-border text-claude-textDim rounded-md hover:bg-claude-borderSoft hover:text-claude-text text-[13px] transition-colors"
           onClick={() => onDecide('deny')}
         >
           Deny
         </button>
         <button
-          className="px-3.5 py-1.5 bg-white border border-claude-border text-claude-textDim rounded-md hover:bg-red-50 hover:border-red-200 hover:text-red-700 text-[13px] transition-colors"
+          className="px-3.5 py-1.5 bg-white dark:bg-claude-panel border border-claude-border text-claude-textDim rounded-md hover:bg-red-50 hover:border-red-200 hover:text-red-700 dark:hover:bg-red-950/30 dark:hover:border-red-900/60 dark:hover:text-red-300 text-[13px] transition-colors"
           onClick={() => onDecide('always_deny')}
         >
           Always deny
