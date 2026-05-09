@@ -17,6 +17,19 @@ export default defineConfig({
       '/chat': {
         target: 'ws://localhost:8000',
         ws: true,
+        // EPIPE / ECONNRESET 是 user 切對話 / reconnect 時的常態 — 吞掉
+        // noisy stack trace,其它 error 照常 log 出來。
+        configure: (proxy) => {
+          proxy.on('error', (err: NodeJS.ErrnoException) => {
+            if (
+              err.code === 'EPIPE' ||
+              err.code === 'ECONNRESET' ||
+              err.code === 'ECONNABORTED'
+            ) return
+            // eslint-disable-next-line no-console
+            console.error('[vite proxy /chat]', err)
+          })
+        },
       },
     },
   },

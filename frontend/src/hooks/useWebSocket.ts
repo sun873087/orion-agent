@@ -42,7 +42,6 @@ export function useWebSocket(
 
   useEffect(() => {
     if (!sessionId || !token) {
-      // 沒 session/token,確保 ws 關
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
@@ -60,13 +59,19 @@ export function useWebSocket(
 
     const ws = new WebSocket(url)
     wsRef.current = ws
+    let stale = false
 
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => setConnected(false)
+    ws.onopen = () => {
+      if (!stale) setConnected(true)
+    }
+    ws.onclose = () => {
+      if (!stale) setConnected(false)
+    }
     ws.onerror = () => {
-      // 由 onclose 處理 setConnected;這裡保留 hook for 偵錯
+      // onclose 會 fire 之後處理 connected state;這裡留 hook for future 偵錯
     }
     ws.onmessage = (e) => {
+      if (stale) return
       let parsed: ServerEvent
       try {
         parsed = JSON.parse(e.data) as ServerEvent
@@ -80,8 +85,17 @@ export function useWebSocket(
     }
 
     return () => {
+      // Detach handlers BEFORE close() — close frame round-trip is async, and
+      // late onclose / onmessage events from this stale ws would otherwise
+      // clobber the new ws's state (flicker the connected dot, etc).
+      stale = true
+      ws.onopen = null
+      ws.onclose = null
+      ws.onerror = null
+      ws.onmessage = null
       ws.close()
       wsRef.current = null
+      setConnected(false)
     }
   }, [sessionId, token])
 

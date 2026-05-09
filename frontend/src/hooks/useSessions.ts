@@ -28,27 +28,31 @@ export function useSessions() {
           method: 'POST',
           body: choice ? { provider: choice.provider, model: choice.model } : undefined,
         })
-        await refresh()
+        // Prepend the new session immediately — avoids a second GET /sessions round-trip.
+        setSessions((prev) => [s, ...prev.filter((p) => p.session_id !== s.session_id)])
         return s
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
         return null
       }
     },
-    [refresh],
+    [],
   )
 
-  const remove = useCallback(
-    async (sessionId: string) => {
-      try {
-        await apiFetch(`/sessions/${sessionId}`, { method: 'DELETE' })
-        await refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      }
-    },
-    [refresh],
-  )
+  const remove = useCallback(async (sessionId: string) => {
+    // Optimistic remove — UI updates instantly, rollback on failure.
+    let snapshot: SessionSummary[] = []
+    setSessions((prev) => {
+      snapshot = prev
+      return prev.filter((s) => s.session_id !== sessionId)
+    })
+    try {
+      await apiFetch(`/sessions/${sessionId}`, { method: 'DELETE' })
+    } catch (e) {
+      setSessions(snapshot)
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
 
   useEffect(() => {
     void refresh()
