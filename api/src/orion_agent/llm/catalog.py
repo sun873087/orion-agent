@@ -1,24 +1,38 @@
-"""Model catalog — UI 可選的 (provider, model) 白名單 + 每 model 的 max_output_tokens。
+"""Model catalog — single source of truth for per-(provider, model) attributes.
 
-設計:
-- 內建一份 fallback default(對應 pricing.py 已知 keys)。
-- 啟動時讀 `api/models.json` 或 `ORION_MODELS_FILE` 指定的檔覆蓋掉 default;
-  讀失敗 → 用 default + 記 warning。
-- 嚴格驗(unknown pair 拒),避免 client 在 UI 透過 DevTools 塞任意 model。
+Loaded at startup from packaged `models.json` via `importlib.resources` (always
+present — no built-in Python fallback). `ORION_MODELS_FILE` env overrides for prod
+deployments. Strict validation on (provider, model) pairs blocks UI clients from
+DevTools-injecting unknown models.
 
-JSON schema:
+Schema (all fields except cache_creation are required per model):
+
 {
   "providers": [
     {
       "id": "anthropic",
       "label": "Anthropic",
       "models": [
-        {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6",
-         "max_output_tokens": 64000}
+        {
+          "id": "claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6",
+          "max_output_tokens": 64000,
+          "max_context_tokens": 200000,
+          "supports_reasoning": false,
+          "pricing": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_read": 0.30,
+            "cache_creation": 3.75
+          }
+        }
       ]
     }
   ]
 }
+
+Pricing is USD per 1M tokens (input/output/cache_read required;
+cache_creation optional — Anthropic-only concept).
 """
 
 from __future__ import annotations
@@ -27,53 +41,55 @@ import json
 import logging
 import os
 from functools import cache
+from importlib.resources import files
 from pathlib import Path
 from typing import TypedDict
 
 _log = logging.getLogger(__name__)
 
 
+class Pricing(TypedDict, total=False):
+    input: float
+    output: float
+    cache_read: float
+    cache_creation: float  # optional — only Anthropic models set this
+
+
 class ModelEntry(TypedDict):
     id: str
     label: str
     max_output_tokens: int
+    max_context_tokens: int
+    supports_reasoning: bool
+    pricing: Pricing
 
 
-# 內建 fallback — JSON 讀不到時使用
-_BUILTIN_MODELS: dict[str, list[ModelEntry]] = {
-    "anthropic": [
-        {"id": "claude-opus-4-7", "label": "Claude Opus 4.7", "max_output_tokens": 32000},
-        {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "max_output_tokens": 64000},
-        {"id": "claude-haiku-4-5", "label": "Claude Haiku 4.5", "max_output_tokens": 8192},
-    ],
-    "openai": [
-        {"id": "gpt-5.4", "label": "GPT-5.4", "max_output_tokens": 16384},
-        {"id": "gpt-5", "label": "GPT-5", "max_output_tokens": 16384},
-        {"id": "gpt-5-mini", "label": "GPT-5 mini", "max_output_tokens": 16384},
-        {"id": "gpt-4o", "label": "GPT-4o", "max_output_tokens": 16384},
-        {"id": "gpt-4o-mini", "label": "GPT-4o mini", "max_output_tokens": 16384},
-        {"id": "o3", "label": "o3", "max_output_tokens": 100000},
-    ],
-}
-
-_BUILTIN_PROVIDER_LABELS: dict[str, str] = {
-    "anthropic": "Anthropic",
-    "openai": "OpenAI",
-}
-
-# default 路徑:repo 根 api/models.json
-_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "models.json"
+_PACKAGED_RESOURCE = files("orion_agent.llm").joinpath("models.json")
 
 
-def _resolve_config_path() -> Path:
+def _resolve_override_path() -> Path | None:
     raw = os.environ.get("ORION_MODELS_FILE")
     if raw:
         return Path(raw).expanduser()
-    return _DEFAULT_CONFIG_PATH
+    return None
+
+
+def _parse_pricing(raw: object) -> Pricing | None:
+    if not isinstance(raw, dict):
+        return None
+    out: Pricing = {}
+    for key in ("input", "output", "cache_read"):
+        v = raw.get(key)
+        if not isinstance(v, (int, float)):
+            return None
+        out[key] = float(v)  # type: ignore[literal-required]
+    cc = raw.get("cache_creation")
+    if isinstance(cc, (int, float)):
+        out["cache_creation"] = float(cc)
+    return out
 
 
 def _parse_config(data: object) -> tuple[dict[str, list[ModelEntry]], dict[str, str]] | None:
-    """驗 JSON schema → (models_by_provider, provider_labels)。失敗回 None。"""
     if not isinstance(data, dict):
         return None
     providers_raw = data.get("providers")
@@ -96,41 +112,66 @@ def _parse_config(data: object) -> tuple[dict[str, list[ModelEntry]], dict[str, 
                 return None
             mid = m.get("id")
             mlabel = m.get("label")
-            mmax = m.get("max_output_tokens")
+            mmax_out = m.get("max_output_tokens")
+            mmax_ctx = m.get("max_context_tokens")
+            msupports_reasoning = m.get("supports_reasoning", False)
+            mpricing_raw = m.get("pricing")
             if not isinstance(mid, str):
+                return None
+            if not isinstance(mmax_out, int) or mmax_out < 1:
+                return None
+            if not isinstance(mmax_ctx, int) or mmax_ctx < 1:
+                return None
+            pricing = _parse_pricing(mpricing_raw)
+            if pricing is None:
                 return None
             entries.append(
                 {
                     "id": mid,
                     "label": mlabel if isinstance(mlabel, str) else mid,
-                    "max_output_tokens": mmax if isinstance(mmax, int) and mmax > 0 else 8192,
+                    "max_output_tokens": mmax_out,
+                    "max_context_tokens": mmax_ctx,
+                    "supports_reasoning": bool(msupports_reasoning),
+                    "pricing": pricing,
                 }
             )
         models[pid] = entries
     return models, labels
 
 
-@cache
-def _load() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
-    """讀 JSON config(優先 env path,然後 default 路徑);讀不到 → 用內建。
-
-    cached:server 進程生命週期讀一次。改 JSON 要重啟才生效(跟 .env 一致)。
-    """
-    path = _resolve_config_path()
-    if not path.is_file():
-        _log.info("no models config at %s — using built-in defaults", path)
-        return dict(_BUILTIN_MODELS), dict(_BUILTIN_PROVIDER_LABELS)
-    try:
-        raw = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as e:
-        _log.warning("failed to load %s (%s) — falling back to built-in", path, e)
-        return dict(_BUILTIN_MODELS), dict(_BUILTIN_PROVIDER_LABELS)
+def _read_packaged() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
+    raw = json.loads(_PACKAGED_RESOURCE.read_text(encoding="utf-8"))
     parsed = _parse_config(raw)
     if parsed is None:
-        _log.warning("invalid schema in %s — falling back to built-in", path)
-        return dict(_BUILTIN_MODELS), dict(_BUILTIN_PROVIDER_LABELS)
-    _log.info("loaded models config from %s (%d providers)", path, len(parsed[0]))
+        raise RuntimeError(
+            "packaged models.json failed schema validation — this is a build-time bug",
+        )
     return parsed
+
+
+@cache
+def _load() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
+    """Load catalog. Override path takes priority; otherwise use packaged JSON."""
+    override = _resolve_override_path()
+    if override is not None:
+        if not override.is_file():
+            _log.warning(
+                "ORION_MODELS_FILE=%s not found — falling back to packaged catalog",
+                override,
+            )
+            return _read_packaged()
+        try:
+            raw = json.loads(override.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            _log.warning("failed to load %s (%s) — falling back to packaged", override, e)
+            return _read_packaged()
+        parsed = _parse_config(raw)
+        if parsed is None:
+            _log.warning("invalid schema in %s — falling back to packaged", override)
+            return _read_packaged()
+        _log.info("loaded models config from override %s", override)
+        return parsed
+    return _read_packaged()
 
 
 def _models() -> dict[str, list[ModelEntry]]:
@@ -141,27 +182,66 @@ def _labels() -> dict[str, str]:
     return _load()[1]
 
 
-def validate(provider: str, model: str) -> bool:
-    """嚴格驗 (provider, model) 是否在 catalog 內。不做 prefix fallback。"""
-    entries = _models().get(provider)
-    if entries is None:
-        return False
-    return any(e["id"] == model for e in entries)
-
-
-def get_max_output_tokens(provider: str, model: str) -> int | None:
-    """取該 (provider, model) 的 max_output_tokens;未知 → None,caller fallback default。"""
+def _entry(provider: str, model: str) -> ModelEntry | None:
     entries = _models().get(provider)
     if entries is None:
         return None
     for e in entries:
         if e["id"] == model:
-            return e["max_output_tokens"]
+            return e
     return None
 
 
+def validate(provider: str, model: str) -> bool:
+    """Strict (provider, model) check — no prefix fallback."""
+    return _entry(provider, model) is not None
+
+
+def get_max_output_tokens(provider: str, model: str) -> int | None:
+    e = _entry(provider, model)
+    return e["max_output_tokens"] if e else None
+
+
+def get_max_context_tokens(provider: str, model: str) -> int | None:
+    e = _entry(provider, model)
+    return e["max_context_tokens"] if e else None
+
+
+def get_supports_reasoning(provider: str, model: str) -> bool:
+    """Whether this model supports reasoning blocks (Claude thinking / OpenAI o-series)."""
+    e = _entry(provider, model)
+    return e["supports_reasoning"] if e else False
+
+
+def get_pricing(provider: str, model: str) -> Pricing | None:
+    """Returns pricing dict (USD per 1M tokens) or None if unknown."""
+    e = _entry(provider, model)
+    return dict(e["pricing"]) if e else None  # type: ignore[return-value]
+
+
+def find_pricing_by_model(model: str) -> Pricing | None:
+    """Reverse lookup — used by cost_tracker which only has model name, not provider.
+
+    Scans all providers; first match wins. Model names don't collide across
+    Anthropic (claude-*) and OpenAI (gpt-*/o*), so this is unambiguous in practice.
+    """
+    for entries in _models().values():
+        for e in entries:
+            if e["id"] == model:
+                return dict(e["pricing"])  # type: ignore[return-value]
+    return None
+
+
+def iter_all_entries() -> list[ModelEntry]:
+    """Flat list of every catalog entry across providers — for prefix-match callers."""
+    out: list[ModelEntry] = []
+    for entries in _models().values():
+        out.extend(entries)
+    return out
+
+
 def list_catalog() -> dict[str, object]:
-    """給 GET /models endpoint 用。caller 自行決定 `available` / `default`。"""
+    """For GET /models — caller decides `available` / `default`."""
     models = _models()
     labels = _labels()
     return {
@@ -177,13 +257,19 @@ def list_catalog() -> dict[str, object]:
 
 
 def reset_cache_for_tests() -> None:
-    """測試用:讓 monkeypatch 過 ORION_MODELS_FILE 後可重讀。"""
+    """Clear @cache so monkeypatched ORION_MODELS_FILE takes effect."""
     _load.cache_clear()
 
 
 __all__ = [
     "ModelEntry",
+    "Pricing",
+    "find_pricing_by_model",
+    "get_max_context_tokens",
     "get_max_output_tokens",
+    "get_pricing",
+    "get_supports_reasoning",
+    "iter_all_entries",
     "list_catalog",
     "reset_cache_for_tests",
     "validate",
