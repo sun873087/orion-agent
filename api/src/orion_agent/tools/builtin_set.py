@@ -36,6 +36,7 @@ from orion_agent.tools.task.task_stop import TaskStopTool
 from orion_agent.tools.task.task_update import TaskUpdateTool
 from orion_agent.tools.todo.todo_write import TodoWriteTool
 from orion_agent.tools.web.fetch import WebFetchTool
+from orion_agent.tools.web.search import WebSearchTool
 from orion_agent.tools.workdir.enter import EnterWorkdirTool
 from orion_agent.tools.workdir.exit import ExitWorkdirTool
 
@@ -61,6 +62,7 @@ def build_default_tool_set(
         GlobTool(),
         GrepTool(),
         WebFetchTool(),
+        WebSearchTool(),
         SkillTool(),
         TodoWriteTool(),
         # Phase 9 — workdir

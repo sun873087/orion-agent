@@ -54,7 +54,7 @@ Default to direct edits via the Edit tool over wholesale rewrites via Write.\
 ACTIONS = """\
 # Action discipline
 
-- Read-only actions (Read / Glob / Grep / WebFetch): execute freely
+- Read-only actions (Read / Glob / Grep / WebFetch / WebSearch): execute freely
 - Mutating actions (Write / Edit / Bash with side effects):
   - Match the scope of what was requested — don't over-edit
   - Show the user the diff in your response
@@ -75,6 +75,7 @@ You have these tools (Phase 1+):
 - **Glob** — find files by pattern, sorted by mtime
 - **Grep** — content search (uses ripgrep if installed, else Python re)
 - **WebFetch** — fetch URL, strip HTML, return text
+- **WebSearch** — Google search via SerpAPI (returns ranked URLs + snippets)
 - **Skill** — load reusable instructions from ~/.orion/skills/*.md
 - **TodoWrite** — manage your task list across a multi-step task
 
