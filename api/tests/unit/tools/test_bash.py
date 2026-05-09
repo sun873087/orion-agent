@@ -67,3 +67,19 @@ def test_metadata() -> None:
     inp = BashInput(command="x")
     assert tool.is_concurrency_safe(inp) is False
     assert tool.is_read_only(inp) is False
+
+
+def test_description_field_optional_and_serialized() -> None:
+    # 不帶 description 仍可建,預設空字串(向後相容)
+    inp = BashInput(command="ls")
+    assert inp.description == ""
+
+    # 帶就保留;會走進 ToolUseBlock.input → 流到前端
+    inp2 = BashInput(command="ls -la", description="List session files")
+    dumped = inp2.model_dump()
+    assert dumped["description"] == "List session files"
+
+    # schema 含此欄位 → 模型看得到 hint
+    schema = BashInput.model_json_schema()
+    assert "description" in schema["properties"]
+    assert "imperative" in schema["properties"]["description"]["description"].lower()

@@ -77,43 +77,53 @@ function reduce(state: FlowState, ev: ServerEvent): FlowState {
     case 'assistant_thinking':
       return { ...state, liveThinking: state.liveThinking + ev.text }
     case 'tool_use': {
-      const entries = [...state.entries]
-      if (state.liveAssistant.trim()) {
-        entries.push({
-          kind: 'assistant',
-          id: newId(),
-          text: state.liveAssistant,
-        })
-      }
-      if (state.liveThinking.trim()) {
-        entries.push({
-          kind: 'thinking',
-          id: newId(),
-          text: state.liveThinking,
-        })
-      }
-      entries.push({
-        kind: 'tool_use',
-        id: newId(),
-        tool_name: ev.tool_name,
+      // flushLive 先把累積的 assistant/thinking 文字推 entry —
+      // 這樣下面 last entry 不會是 tool_group(被文字隔開)→ 自動切新 group。
+      const entries = flushLive(
+        state.entries,
+        state.liveAssistant,
+        state.liveThinking,
+      )
+      const last = entries[entries.length - 1]
+      const newItem = {
+        toolUseId: ev.tool_use_id,
+        toolName: ev.tool_name,
         input: ev.input,
-      })
+      }
+      if (last && last.kind === 'tool_group') {
+        // append 進現有 group(同 group 規則:assistant 文字未介入)
+        entries[entries.length - 1] = {
+          ...last,
+          items: [...last.items, newItem],
+        }
+      } else {
+        entries.push({
+          kind: 'tool_group',
+          id: newId(),
+          items: [newItem],
+        })
+      }
       return { ...state, entries, liveAssistant: '', liveThinking: '' }
     }
-    case 'tool_result':
-      return {
-        ...state,
-        entries: [
-          ...state.entries,
-          {
-            kind: 'tool_result',
-            id: newId(),
-            tool_name: ev.tool_name,
-            content: ev.content,
-            isError: ev.is_error ?? false,
-          },
-        ],
+    case 'tool_result': {
+      // 倒序找最後一個 tool_group,在 items 內以 toolUseId match,fill result
+      const entries = [...state.entries]
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const e = entries[i]
+        if (!e || e.kind !== 'tool_group') continue
+        const items = e.items.map((it) =>
+          it.toolUseId === ev.tool_use_id
+            ? {
+                ...it,
+                result: { content: ev.content, isError: ev.is_error ?? false },
+              }
+            : it,
+        )
+        entries[i] = { ...e, items }
+        break
       }
+      return { ...state, entries }
+    }
     case 'turn_complete': {
       const entries = [...state.entries]
       if (state.liveAssistant.trim()) {

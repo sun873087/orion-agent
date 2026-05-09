@@ -2,26 +2,14 @@ import { useEffect, useRef } from 'react'
 import type { PermissionAskEvent } from '../types/events'
 import { MessageBubble } from './MessageBubble'
 import { PermissionDialog } from './PermissionDialog'
-import { ToolResultCard } from './ToolResultCard'
-import { ToolUseCard } from './ToolUseCard'
+import { ToolGroupCard } from './ToolGroupCard'
+import type { ToolGroupItem } from '../lib/toolNarration'
 
 export type FlowEntry =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'assistant'; id: string; text: string }
   | { kind: 'thinking'; id: string; text: string }
-  | {
-      kind: 'tool_use'
-      id: string
-      tool_name: string
-      input: Record<string, unknown>
-    }
-  | {
-      kind: 'tool_result'
-      id: string
-      tool_name: string
-      content: string
-      isError: boolean
-    }
+  | { kind: 'tool_group'; id: string; items: ToolGroupItem[] }
   | {
       kind: 'turn_complete'
       id: string
@@ -76,23 +64,8 @@ export function MessageList({
               return (
                 <MessageBubble key={e.id} role="thinking" text={e.text} />
               )
-            case 'tool_use':
-              return (
-                <ToolUseCard
-                  key={e.id}
-                  toolName={e.tool_name}
-                  input={e.input}
-                />
-              )
-            case 'tool_result':
-              return (
-                <ToolResultCard
-                  key={e.id}
-                  toolName={e.tool_name}
-                  content={e.content}
-                  isError={e.isError}
-                />
-              )
+            case 'tool_group':
+              return <ToolGroupCard key={e.id} items={e.items} />
             case 'turn_complete':
               return (
                 <div

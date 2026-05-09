@@ -37,6 +37,16 @@ class BashInput(ToolInput):
         ...,
         description="The shell command to run. Use absolute paths. Quote arguments containing spaces.",
     )
+    description: str = Field(
+        default="",
+        max_length=200,
+        description=(
+            "Short imperative-mood label of what this command does (5-10 words). "
+            "Shown to the user in the activity feed. "
+            'Examples: "Build the docker image", "List session files", '
+            '"Find TODO comments in src/".'
+        ),
+    )
     timeout_seconds: int = Field(
         default=_DEFAULT_TIMEOUT_S,
         ge=1,
