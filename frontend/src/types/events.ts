@@ -25,6 +25,15 @@ export type ClientEvent =
 
 // ─── Server → Client ────────────────────────────────────────────────────────
 
+export interface UserTextEvent {
+  type: 'user_text'
+  text: string
+}
+
+export interface HistoryReplayDoneEvent {
+  type: 'history_replay_done'
+}
+
 export interface AssistantTextEvent {
   type: 'assistant_text'
   text: string
@@ -77,6 +86,8 @@ export interface ServerErrorEvent {
 }
 
 export type ServerEvent =
+  | UserTextEvent
+  | HistoryReplayDoneEvent
   | AssistantTextEvent
   | AssistantThinkingEvent
   | ToolUseEvent

@@ -12,7 +12,8 @@ export default defineConfig({
       '/sessions': 'http://localhost:8000',
       '/me': 'http://localhost:8000',
       '/uploads': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/models': 'http://localhost:8000',
+      '/healthz': 'http://localhost:8000',
       '/chat': {
         target: 'ws://localhost:8000',
         ws: true,

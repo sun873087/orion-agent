@@ -26,6 +26,7 @@ from uuid import UUID
 import anyio
 import jwt
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel
 
 from orion_agent.api.auth import verify_token
 from orion_agent.api.deps import get_llm_provider, get_session_manager
@@ -34,6 +35,7 @@ from orion_agent.api.event_schema import (
     AssistantTextEvent,
     AssistantThinkingEvent,
     ErrorEvent,
+    HistoryReplayDoneEvent,
     PermissionDecisionEvent,
     ServerEvent,
     TerminalEvent,
@@ -41,6 +43,7 @@ from orion_agent.api.event_schema import (
     ToolUseEvent,
     TurnCompleteEvent,
     UserMessageEvent,
+    UserTextEvent,
     parse_client_event,
     serialize_server_event,
 )
@@ -63,13 +66,72 @@ from orion_agent.core.tool_execution import (
     ToolResultUpdate,
 )
 from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import ToolResultBlock
+from orion_agent.llm.types import (
+    TextBlock,
+    ThinkingBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+)
 
 router = APIRouter()
 
 
 # 寫作 sentinel — None 進 queue → writer 結束
 _QUEUE_SENTINEL = object()
+
+
+async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
+    """把 conversation 已有訊息翻成 ServerEvent 序列推給 client(用於 reconnect / 換 session)。"""
+    tool_id_to_name: dict[str, str] = {}
+
+    async def _send(ev: BaseModel) -> None:
+        with contextlib.suppress(Exception):
+            await websocket.send_json(serialize_server_event(ev))
+
+    for msg in conv.state_messages:
+        content = msg.content
+        blocks = (
+            [TextBlock(text=content)]
+            if isinstance(content, str)
+            else list(content)
+        )
+        for block in blocks:
+            if isinstance(block, TextBlock):
+                if msg.role == "user":
+                    await _send(UserTextEvent(text=block.text))
+                elif msg.role == "assistant":
+                    await _send(AssistantTextEvent(text=block.text))
+                # system role 不顯示
+            elif isinstance(block, ThinkingBlock):
+                await _send(AssistantThinkingEvent(text=block.text))
+            elif isinstance(block, ToolUseBlock):
+                tool_id_to_name[block.id] = block.name
+                await _send(
+                    ToolUseEvent(
+                        tool_use_id=block.id,
+                        tool_name=block.name,
+                        input=block.input,
+                    ),
+                )
+            elif isinstance(block, ToolResultBlock):
+                if isinstance(block.content, str):
+                    content_str = block.content
+                else:
+                    content_str = "\n".join(
+                        b.text for b in block.content
+                        if isinstance(b, TextBlock)
+                    )
+                await _send(
+                    ToolResultEvent(
+                        tool_use_id=block.tool_use_id,
+                        tool_name=tool_id_to_name.get(block.tool_use_id, ""),
+                        content=content_str,
+                        is_error=block.is_error,
+                    ),
+                )
+            # ImageBlock / TombstoneBlock skip(replay 不顯示)
+
+    await _send(HistoryReplayDoneEvent())
 
 
 def _loop_to_server_events(ev: LoopEvent) -> list[ServerEvent]:
@@ -168,12 +230,22 @@ async def chat_stream(
     # ─── lookup / auto-create conversation ──────────────────────────────
     conv = await sm.get(user_id, session_id)
     if conv is None:
-        conv = Conversation(provider=provider, user_id=user_id, session_id=session_id)
+        from orion_agent.tools.builtin_set import build_default_tool_set
+        conv = Conversation(
+            provider=provider,
+            user_id=user_id,
+            session_id=session_id,
+            tools=build_default_tool_set(),
+        )
         await sm.create(
             user_id=user_id, session_id=session_id, conversation=conv,
         )
 
     await websocket.accept()
+
+    # ─── 重播歷史 ───────────────────────────────────────────────────────
+    # 把 conv.state_messages 翻回 ServerEvent 序列,讓剛連上的 client 看到過去對話
+    await _replay_history(websocket, conv)
 
     # ─── 共享 state ─────────────────────────────────────────────────────
     outbound_send, outbound_recv = anyio.create_memory_object_stream[Any](

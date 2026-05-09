@@ -44,6 +44,19 @@ ClientEvent = Annotated[
 # ─── Server → Client ────────────────────────────────────────────────────────
 
 
+class UserTextEvent(BaseModel):
+    """重播歷史時用 — server 送 user 過去說過的訊息給 client 顯示(client 自己送的不會收到回送)。"""
+
+    type: Literal["user_text"] = "user_text"
+    text: str
+
+
+class HistoryReplayDoneEvent(BaseModel):
+    """歷史重播完成標記 — client 用來 flush 任何 pending streaming state。"""
+
+    type: Literal["history_replay_done"] = "history_replay_done"
+
+
 class AssistantTextEvent(BaseModel):
     """模型 streaming 文字增量。"""
 
@@ -112,7 +125,9 @@ class ErrorEvent(BaseModel):
 
 
 ServerEvent = Annotated[
-    AssistantTextEvent
+    UserTextEvent
+    | HistoryReplayDoneEvent
+    | AssistantTextEvent
     | AssistantThinkingEvent
     | ToolUseEvent
     | ToolResultEvent

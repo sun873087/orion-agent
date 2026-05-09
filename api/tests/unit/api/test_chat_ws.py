@@ -88,6 +88,9 @@ def test_ws_unknown_session_auto_created(app_with_mock_provider: TestClient) -> 
     with client.websocket_connect(
         f"/chat/stream/{new_sid}?token={token}",
     ) as ws:
+        # 連線時 server 先送 history_replay_done(空 history)
+        first = ws.receive_json()
+        assert first["type"] == "history_replay_done"
         ws.send_json({"type": "user_message", "content": "hi"})
         # 收到任何 server event 即表示 ws 通了
         ev = ws.receive_json()
@@ -100,6 +103,9 @@ def test_ws_bad_client_event_emits_error(app_with_mock_provider: TestClient) -> 
     with _session(client, token) as (sid, _), client.websocket_connect(
         f"/chat/stream/{sid}?token={token}",
     ) as ws:
+        # 連線時 server 會先送 history_replay_done(空 history)
+        first = ws.receive_json()
+        assert first["type"] == "history_replay_done"
         ws.send_json({"type": "garbage"})
         ev = ws.receive_json()
         assert ev["type"] == "error"

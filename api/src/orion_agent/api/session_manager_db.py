@@ -25,6 +25,7 @@ from orion_agent.core.conversation import Conversation
 from orion_agent.llm.provider import get_provider
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import Session as SessionRow
+from orion_agent.tools.builtin_set import build_default_tool_set
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,10 @@ class DbSessionManager:
             )
             return None
         conv = Conversation(
-            provider=provider, user_id=user_id, session_id=session_id,
+            provider=provider,
+            user_id=user_id,
+            session_id=session_id,
+            tools=build_default_tool_set(),
         )
         self._cache[(user_id, session_id)] = conv
         return conv

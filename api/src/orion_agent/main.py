@@ -35,37 +35,9 @@ from orion_agent.core.tool_execution import (  # noqa: E402
 )
 from orion_agent.llm.provider import get_provider  # noqa: E402
 from orion_agent.services.feature_flags import load_feature_flags  # noqa: E402
-from orion_agent.tools.agent.skill_tool import SkillTool  # noqa: E402
-from orion_agent.tools.config.config_tool import ConfigTool  # noqa: E402
-from orion_agent.tools.cron.cron_create import CronCreateTool  # noqa: E402
-from orion_agent.tools.cron.cron_delete import CronDeleteTool  # noqa: E402
-from orion_agent.tools.cron.cron_list import CronListTool  # noqa: E402
-from orion_agent.tools.file.edit import FileEditTool  # noqa: E402
-from orion_agent.tools.file.notebook_edit import NotebookEditTool  # noqa: E402
-from orion_agent.tools.file.read import FileReadTool  # noqa: E402
-from orion_agent.tools.file.write import FileWriteTool  # noqa: E402
 from orion_agent.tools.interactive.ask_user import (  # noqa: E402
-    AskUserQuestionTool,
     make_stdin_asker,
 )
-from orion_agent.tools.search.glob import GlobTool  # noqa: E402
-from orion_agent.tools.search.grep import GrepTool  # noqa: E402
-from orion_agent.tools.shell.bash import BashTool  # noqa: E402
-from orion_agent.tools.special.sleep import SleepTool  # noqa: E402
-from orion_agent.tools.special.synthetic_output import (  # noqa: E402
-    SyntheticOutputTool,
-)
-from orion_agent.tools.special.tool_search import ToolSearchTool  # noqa: E402
-from orion_agent.tools.task.task_create import TaskCreateTool  # noqa: E402
-from orion_agent.tools.task.task_get import TaskGetTool  # noqa: E402
-from orion_agent.tools.task.task_list import TaskListTool  # noqa: E402
-from orion_agent.tools.task.task_output import TaskOutputTool  # noqa: E402
-from orion_agent.tools.task.task_stop import TaskStopTool  # noqa: E402
-from orion_agent.tools.task.task_update import TaskUpdateTool  # noqa: E402
-from orion_agent.tools.todo.todo_write import TodoWriteTool  # noqa: E402
-from orion_agent.tools.web.fetch import WebFetchTool  # noqa: E402
-from orion_agent.tools.workdir.enter import EnterWorkdirTool  # noqa: E402
-from orion_agent.tools.workdir.exit import ExitWorkdirTool  # noqa: E402
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -75,48 +47,12 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
 def _build_tools() -> list[Tool[Any]]:
-    """註冊所有內建工具。AgentTool 不放這(避免子 agent 自我遞迴)。
+    """CLI 註冊內建工具(用 stdin asker 給 AskUserQuestionTool)。
 
-    Phase 10 加 ~17 個新工具(special / config / interactive / notebook / task / cron / workdir)。
+    Web chat 場景請改用 `tools.builtin_set.build_default_tool_set()`(無 asker)。
     """
-    base: list[Tool[Any]] = [
-        # Phase 1 — 基礎
-        FileReadTool(),
-        FileWriteTool(),
-        FileEditTool(),
-        BashTool(),
-        GlobTool(),
-        GrepTool(),
-        WebFetchTool(),
-        SkillTool(),
-        TodoWriteTool(),
-        # Phase 9 — workdir(取代 worktree)
-        EnterWorkdirTool(),
-        ExitWorkdirTool(),
-        # Phase 10 — special
-        SleepTool(),
-        SyntheticOutputTool(),
-        # Phase 10 — config
-        ConfigTool(),
-        # Phase 10 — interactive(CLI 用 stdin asker)
-        AskUserQuestionTool(asker=make_stdin_asker()),
-        # Phase 10 — notebook
-        NotebookEditTool(),
-        # Phase 10 — task
-        TaskCreateTool(),
-        TaskGetTool(),
-        TaskListTool(),
-        TaskUpdateTool(),
-        TaskStopTool(),
-        TaskOutputTool(),
-        # Phase 10 — cron
-        CronCreateTool(),
-        CronListTool(),
-        CronDeleteTool(),
-    ]
-    # ToolSearch 拿 self-aware 全清單(deferred 機制 — 模型可動態載 schema)
-    base.append(ToolSearchTool(all_tools=base))
-    return base
+    from orion_agent.tools.builtin_set import build_default_tool_set
+    return build_default_tool_set(asker=make_stdin_asker())
 
 
 @app.command()

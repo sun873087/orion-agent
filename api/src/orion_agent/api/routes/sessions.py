@@ -26,6 +26,7 @@ from orion_agent.core.conversation import Conversation
 from orion_agent.llm.catalog import list_catalog, validate
 from orion_agent.llm.provider import LLMProvider, get_provider
 from orion_agent.telemetry.cost_tracker import get_session_summary
+from orion_agent.tools.builtin_set import build_default_tool_set
 
 router = APIRouter()
 
@@ -81,7 +82,11 @@ async def create_session(
             )
         provider_for_session = get_provider(body.provider, body.model)
 
-    conv = Conversation(provider=provider_for_session, user_id=user_id)
+    conv = Conversation(
+        provider=provider_for_session,
+        user_id=user_id,
+        tools=build_default_tool_set(),
+    )
     sid = await sm.create(
         user_id=user_id, session_id=conv.session_id, conversation=conv,
     )
