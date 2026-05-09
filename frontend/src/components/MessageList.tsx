@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PermissionAskEvent } from '../types/events'
 import { MessageBubble } from './MessageBubble'
 import { PermissionDialog } from './PermissionDialog'
@@ -39,17 +39,43 @@ export function MessageList({
   onPermissionDecide,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  // sticky:user 已在底部 → 新訊息時自動 scroll;user 滾上去 → 不打擾
+  const [sticky, setSticky] = useState(true)
+
+  // user 手動滾動時更新 sticky:近底(< 80px)即重新黏底
+  function onScroll() {
+    const el = ref.current
+    if (!el) return
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setSticky(distFromBottom < 80)
+  }
 
   useEffect(() => {
+    if (!sticky) return
     const el = ref.current
     if (!el) return
     el.scrollTop = el.scrollHeight
-  }, [entries.length, liveAssistant, liveThinking, pendingPermissions.length])
+  }, [
+    entries.length,
+    liveAssistant,
+    liveThinking,
+    pendingPermissions.length,
+    sticky,
+  ])
+
+  function jumpToBottom() {
+    const el = ref.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    setSticky(true)
+  }
 
   return (
+    <div className="relative flex-1 min-h-0">
     <div
       ref={ref}
-      className="flex-1 overflow-y-auto"
+      onScroll={onScroll}
+      className="absolute inset-0 overflow-y-auto"
     >
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-3">
         {entries.map((e) => {
@@ -113,6 +139,25 @@ export function MessageList({
           />
         ))}
       </div>
+    </div>
+      {!sticky && (
+        <button
+          onClick={jumpToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-claude-border shadow-md text-[12px] text-claude-textDim hover:text-claude-text hover:bg-claude-cream transition"
+          title="Scroll to latest"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Latest
+        </button>
+      )}
     </div>
   )
 }

@@ -306,6 +306,7 @@ export function ChatView({
         </div>
       ) : (
         <MessageList
+          key={sessionId ?? 'none'}
           entries={flow.entries}
           pendingPermissions={ws.pendingPermissions}
           liveAssistant={flow.liveAssistant}
