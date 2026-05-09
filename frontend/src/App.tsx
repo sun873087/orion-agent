@@ -1,17 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clearAuth, getToken, getUsername, isLoggedIn } from './api/auth'
 import { ChatView } from './components/ChatView'
 import { Login } from './components/Login'
-import { RightSidebar } from './components/RightSidebar'
 import { SessionsSidebar } from './components/SessionsSidebar'
+import { SettingsModal } from './components/SettingsModal'
+import { useModelCatalog } from './hooks/useModelCatalog'
 import { useSessions } from './hooks/useSessions'
+import {
+  getPreferredModel,
+  setPreferredModel,
+  type ModelChoice,
+} from './lib/preferredModel'
 
 export default function App() {
   const [authed, setAuthed] = useState(isLoggedIn())
   const [currentSid, setCurrentSid] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const { sessions, loading, error, create, remove, refresh } = useSessions()
+  const { catalog } = useModelCatalog()
 
-  // 401 偵測 — 簡化版用 storage 事件追蹤
   useEffect(() => {
     function onStorage() {
       setAuthed(isLoggedIn())
@@ -20,12 +27,10 @@ export default function App() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  // 換 user / 新 login 時 refresh sessions
   useEffect(() => {
     if (authed) void refresh()
   }, [authed, refresh])
 
-  // 自動選最新 session
   useEffect(() => {
     if (!currentSid && sessions.length > 0) {
       setCurrentSid(sessions[0]!.session_id)
@@ -35,40 +40,82 @@ export default function App() {
     }
   }, [sessions, currentSid])
 
+  const currentSession = useMemo(
+    () => sessions.find((s) => s.session_id === currentSid) ?? null,
+    [sessions, currentSid],
+  )
+
+  function defaultChoice(): ModelChoice | undefined {
+    const stored = getPreferredModel()
+    if (stored) return stored
+    if (catalog) return catalog.default
+    return undefined
+  }
+
   if (!authed) {
     return <Login onLoggedIn={() => setAuthed(true)} />
   }
 
   async function newSession() {
-    const s = await create()
-    if (s) setCurrentSid(s.session_id)
+    const s = await create(defaultChoice())
+    if (s) {
+      setCurrentSid(s.session_id)
+      setPreferredModel({ provider: s.provider, model: s.model })
+    }
+  }
+
+  async function onModelChange(choice: ModelChoice) {
+    // 把上一個 empty session 刪掉(picker 只在 empty state 出現,這必為空)
+    if (currentSid && currentSession && currentSession.n_messages === 0) {
+      await remove(currentSid)
+    }
+    const s = await create(choice)
+    if (s) {
+      setCurrentSid(s.session_id)
+      setPreferredModel({ provider: s.provider, model: s.model })
+    }
   }
 
   function logout() {
     clearAuth()
     setAuthed(false)
     setCurrentSid(null)
+    setSettingsOpen(false)
   }
 
   const token = getToken()
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex bg-claude-cream text-claude-text">
       <SessionsSidebar
         sessions={sessions}
         currentSessionId={currentSid}
         username={getUsername()}
         loading={loading}
         error={error}
+        catalog={catalog}
         onSelect={setCurrentSid}
         onNew={() => void newSession()}
         onDelete={(sid) => void remove(sid)}
         onLogout={logout}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      <ChatView sessionId={currentSid} token={token} />
+      <ChatView
+        sessionId={currentSid}
+        token={token}
+        currentSession={currentSession}
+        catalog={catalog}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onModelChange={(c) => void onModelChange(c)}
+      />
 
-      <RightSidebar sessionId={currentSid} />
+      {settingsOpen && (
+        <SettingsModal
+          sessionId={currentSid}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   )
 }

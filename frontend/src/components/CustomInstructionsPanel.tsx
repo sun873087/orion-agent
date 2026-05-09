@@ -69,60 +69,87 @@ export function CustomInstructionsPanel({ sessionId }: Props) {
 
   if (unavailable) {
     return (
-      <div className="text-sm text-gray-500 p-3">
-        Custom Instructions require <code>ORION_DB_URL</code> on the backend.
+      <div className="p-6 text-[14px] text-claude-textDim">
+        Custom Instructions require{' '}
+        <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
+          ORION_DB_URL
+        </code>{' '}
+        on the backend.
       </div>
     )
   }
 
   return (
-    <div className="p-3 space-y-3 text-sm">
-      <div>
-        <div className="font-semibold mb-1">About you (per-user)</div>
+    <div className="p-6 space-y-5 text-[14px]">
+      <Section
+        label="About you"
+        hint="Persistent across all conversations. Tell Orion how to address you, your role, your preferences."
+      >
         <textarea
-          className="w-full h-32 border border-gray-300 rounded p-2 text-sm font-mono"
+          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none"
           placeholder="e.g. I'm a senior Python engineer; prefer terse explanations."
           value={user}
           onChange={(e) => setUser(e.target.value)}
         />
-      </div>
+      </Section>
 
-      <div>
-        <div className="font-semibold mb-1">
-          This conversation context{' '}
-          {!sessionId && (
-            <span className="text-xs text-gray-400">(select a session)</span>
-          )}
-        </div>
+      <Section
+        label="This conversation"
+        hint={
+          sessionId
+            ? 'Applies only to the current conversation.'
+            : 'Select a conversation to set context-specific instructions.'
+        }
+      >
         <textarea
-          className="w-full h-32 border border-gray-300 rounded p-2 text-sm font-mono disabled:bg-gray-50"
+          className="w-full h-32 border border-claude-border rounded-lg p-3 text-[13px] bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none disabled:bg-claude-panel/40"
           placeholder="e.g. Reviewing a Python migration script; focus on safety."
           value={conv}
           onChange={(e) => setConv(e.target.value)}
           disabled={!sessionId}
         />
-      </div>
+      </Section>
 
       {error && (
-        <div className="text-red-600 bg-red-50 p-2 rounded text-xs">
+        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-md">
           {error}
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pt-1">
+        <div className="text-[12px] text-claude-textFaint">
+          {savedAt && (
+            <span className="text-emerald-700">
+              ✓ Saved {new Date(savedAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
         <button
           onClick={() => void save()}
           disabled={busy}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm disabled:bg-gray-300"
+          className="px-4 py-1.5 bg-claude-orange hover:bg-claude-orangeHover disabled:bg-claude-border disabled:text-claude-textFaint text-white rounded-md text-[13px] font-medium transition-colors"
         >
           {busy ? 'Saving…' : 'Save'}
         </button>
-        {savedAt && (
-          <span className="text-xs text-green-600">
-            ✓ saved {new Date(savedAt).toLocaleTimeString()}
-          </span>
-        )}
       </div>
+    </div>
+  )
+}
+
+function Section({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="font-medium text-claude-text text-[13px]">{label}</div>
+      <div className="text-[12px] text-claude-textDim">{hint}</div>
+      <div className="pt-1">{children}</div>
     </div>
   )
 }

@@ -4,7 +4,6 @@ import type { CostSummary } from '../types/events'
 
 interface Props {
   sessionId: string | null
-  /** trigger 重抓的依賴(送完 turn 時 bump 即重新拉);可傳 events.length。 */
   refreshKey?: number | string
 }
 
@@ -26,9 +25,7 @@ export function CostBadge({ sessionId, refreshKey }: Props) {
           setError(null)
         }
       } catch (e) {
-        if (alive) {
-          setError(e instanceof Error ? e.message : String(e))
-        }
+        if (alive) setError(e instanceof Error ? e.message : String(e))
       }
     })()
     return () => {
@@ -36,29 +33,15 @@ export function CostBadge({ sessionId, refreshKey }: Props) {
     }
   }, [sessionId, refreshKey])
 
-  if (!sessionId) {
-    return <span className="text-xs text-gray-400">no session</span>
-  }
-  if (error) {
-    return (
-      <span
-        className="text-xs text-red-500"
-        title={error}
-      >
-        cost ?
-      </span>
-    )
-  }
-  if (!cost) {
-    return <span className="text-xs text-gray-400">loading…</span>
-  }
+  if (!sessionId || !cost) return null
+  if (error) return null
+
   return (
     <span
-      className="text-xs text-gray-700 font-mono"
+      className="text-[12px] font-mono text-claude-textDim px-2 py-0.5 rounded-md bg-claude-panel"
       title={`input ${cost.input_tokens} · output ${cost.output_tokens} · cache_read ${cost.cache_read_tokens}`}
     >
-      $
-      {cost.total_cost_usd.toFixed(4)}
+      ${cost.total_cost_usd.toFixed(4)}
     </span>
   )
 }

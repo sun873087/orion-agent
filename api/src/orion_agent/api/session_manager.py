@@ -28,6 +28,8 @@ class SessionInfo:
     user_id: str
     n_messages: int
     n_turns: int
+    provider: str
+    model: str
 
 
 @dataclass
@@ -70,6 +72,8 @@ class SessionManager:
                         user_id=uid,
                         n_messages=len(conv.state_messages),
                         n_turns=conv.stats.turns,
+                        provider=conv.provider.name,
+                        model=conv.provider.model,
                     )
                 )
             return out

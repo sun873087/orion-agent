@@ -35,7 +35,6 @@ export type FlowEntry =
 interface Props {
   entries: FlowEntry[]
   pendingPermissions: PermissionAskEvent[]
-  /** 目前 streaming 中尚未 turn_complete 的 assistant text;非空時掛在最後。 */
   liveAssistant?: string
   liveThinking?: string
   onPermissionDecide: (
@@ -62,84 +61,85 @@ export function MessageList({
   return (
     <div
       ref={ref}
-      className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50"
+      className="flex-1 overflow-y-auto"
     >
-      {entries.map((e) => {
-        switch (e.kind) {
-          case 'user':
-            return <MessageBubble key={e.id} role="user" text={e.text} />
-          case 'assistant':
-            return <MessageBubble key={e.id} role="assistant" text={e.text} />
-          case 'thinking':
-            return <MessageBubble key={e.id} role="thinking" text={e.text} />
-          case 'tool_use':
-            return (
-              <ToolUseCard
-                key={e.id}
-                toolName={e.tool_name}
-                input={e.input}
-              />
-            )
-          case 'tool_result':
-            return (
-              <ToolResultCard
-                key={e.id}
-                toolName={e.tool_name}
-                content={e.content}
-                isError={e.isError}
-              />
-            )
-          case 'turn_complete':
-            return (
-              <div
-                key={e.id}
-                className="text-xs text-gray-400 text-right pr-2"
-              >
-                turn end · {e.stop_reason} · {e.input_tokens} in /{' '}
-                {e.output_tokens} out
-              </div>
-            )
-          case 'terminal':
-            return (
-              <div
-                key={e.id}
-                className="text-center text-gray-400 text-sm py-2 border-t border-gray-200"
-              >
-                ━━ {e.reason} ({e.total_turns} turns) ━━
-              </div>
-            )
-          case 'error':
-            return (
-              <div
-                key={e.id}
-                className="bg-red-50 text-red-700 p-3 rounded border border-red-200"
-              >
-                ❌ {e.message}
-              </div>
-            )
-        }
-      })}
+      <div className="max-w-3xl mx-auto px-6 py-6 space-y-5">
+        {entries.map((e) => {
+          switch (e.kind) {
+            case 'user':
+              return <MessageBubble key={e.id} role="user" text={e.text} />
+            case 'assistant':
+              return (
+                <MessageBubble key={e.id} role="assistant" text={e.text} />
+              )
+            case 'thinking':
+              return (
+                <MessageBubble key={e.id} role="thinking" text={e.text} />
+              )
+            case 'tool_use':
+              return (
+                <ToolUseCard
+                  key={e.id}
+                  toolName={e.tool_name}
+                  input={e.input}
+                />
+              )
+            case 'tool_result':
+              return (
+                <ToolResultCard
+                  key={e.id}
+                  toolName={e.tool_name}
+                  content={e.content}
+                  isError={e.isError}
+                />
+              )
+            case 'turn_complete':
+              return (
+                <div
+                  key={e.id}
+                  className="text-[11px] text-claude-textFaint pt-1"
+                >
+                  {e.input_tokens} in · {e.output_tokens} out · {e.stop_reason}
+                </div>
+              )
+            case 'terminal':
+              return (
+                <div
+                  key={e.id}
+                  className="flex items-center gap-3 text-[11px] text-claude-textFaint py-2"
+                >
+                  <span className="flex-1 h-px bg-claude-border" />
+                  <span>
+                    {e.reason} · {e.total_turns} turns
+                  </span>
+                  <span className="flex-1 h-px bg-claude-border" />
+                </div>
+              )
+            case 'error':
+              return (
+                <div
+                  key={e.id}
+                  className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-[13px]"
+                >
+                  {e.message}
+                </div>
+              )
+          }
+        })}
 
-      {/* live thinking */}
-      {liveThinking && <MessageBubble role="thinking" text={liveThinking} />}
+        {liveThinking && <MessageBubble role="thinking" text={liveThinking} />}
+        {liveAssistant && (
+          <MessageBubble role="assistant" text={liveAssistant} />
+        )}
 
-      {/* live assistant streaming */}
-      {liveAssistant && <MessageBubble role="assistant" text={liveAssistant} />}
-
-      {/* pending permission dialogs */}
-      {pendingPermissions.map((p) => (
-        <PermissionDialog
-          key={p.request_id}
-          event={p}
-          onDecide={(d) => onPermissionDecide(p.request_id, d)}
-        />
-      ))}
-
-      {entries.length === 0 && !liveAssistant && !liveThinking && (
-        <div className="text-center text-gray-400 text-sm pt-12">
-          Start a conversation by typing below.
-        </div>
-      )}
+        {pendingPermissions.map((p) => (
+          <PermissionDialog
+            key={p.request_id}
+            event={p}
+            onDecide={(d) => onPermissionDecide(p.request_id, d)}
+          />
+        ))}
+      </div>
     </div>
   )
 }

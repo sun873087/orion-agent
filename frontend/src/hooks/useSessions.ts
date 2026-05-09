@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { SessionSummary } from '../types/events'
+import type { ModelChoice } from '../lib/preferredModel'
 
 export function useSessions() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -20,16 +21,22 @@ export function useSessions() {
     }
   }, [])
 
-  const create = useCallback(async (): Promise<SessionSummary | null> => {
-    try {
-      const s = await apiFetch<SessionSummary>('/sessions', { method: 'POST' })
-      await refresh()
-      return s
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      return null
-    }
-  }, [refresh])
+  const create = useCallback(
+    async (choice?: ModelChoice): Promise<SessionSummary | null> => {
+      try {
+        const s = await apiFetch<SessionSummary>('/sessions', {
+          method: 'POST',
+          body: choice ? { provider: choice.provider, model: choice.model } : undefined,
+        })
+        await refresh()
+        return s
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        return null
+      }
+    },
+    [refresh],
+  )
 
   const remove = useCallback(
     async (sessionId: string) => {

@@ -27,6 +27,108 @@ def test_create_session(client_with_token: tuple[TestClient, str]) -> None:
     assert body["user_id"] == "alice"
     assert body["n_messages"] == 0
     assert body["n_turns"] == 0
+    # 沒帶 body → 走 server default(env ORION_PROVIDER / ORION_MODEL)
+    assert body["provider"] == "anthropic"
+    assert body["model"] == "claude-sonnet-4-6"
+
+
+def test_create_session_explicit_anthropic(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    client, token = client_with_token
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "anthropic", "model": "claude-opus-4-7"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["provider"] == "anthropic"
+    assert body["model"] == "claude-opus-4-7"
+
+
+def test_create_session_explicit_openai(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-openai-key")
+    client, token = client_with_token
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "openai", "model": "gpt-5"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["provider"] == "openai"
+    assert body["model"] == "gpt-5"
+
+
+def test_create_session_invalid_pair_returns_422(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    client, token = client_with_token
+    # 跨 provider — anthropic + gpt-5 不合法
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "anthropic", "model": "gpt-5"},
+    )
+    assert r.status_code == 422
+    assert "invalid" in r.json()["detail"].lower()
+
+
+def test_create_session_partial_pair_returns_422(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    client, token = client_with_token
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "anthropic"},
+    )
+    assert r.status_code == 422
+    assert "both" in r.json()["detail"].lower()
+
+
+def test_create_session_missing_api_key_returns_503(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client, token = client_with_token
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "openai", "model": "gpt-5"},
+    )
+    assert r.status_code == 503
+    assert "OPENAI_API_KEY" in r.json()["detail"]
+
+
+def test_list_models_endpoint(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client, token = client_with_token
+    r = client.get(
+        "/models", headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    providers = {p["id"]: p for p in body["providers"]}
+    assert "anthropic" in providers
+    assert "openai" in providers
+    assert providers["anthropic"]["available"] is True
+    assert providers["openai"]["available"] is False
+    # default 來自 env(client_with_token fixture 已設)
+    assert body["default"]["provider"] == "anthropic"
+    assert body["default"]["model"] == "claude-sonnet-4-6"
+    # models list 非空
+    assert len(providers["anthropic"]["models"]) >= 3
+    assert len(providers["openai"]["models"]) >= 3
 
 
 def test_list_sessions_empty(client_with_token: tuple[TestClient, str]) -> None:

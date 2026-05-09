@@ -93,6 +93,25 @@ export interface SessionSummary {
   user_id: string
   n_messages: number
   n_turns: number
+  provider: string
+  model: string
+}
+
+export interface ModelEntry {
+  id: string
+  label: string
+}
+
+export interface ProviderEntry {
+  id: string
+  label: string
+  available: boolean
+  models: ModelEntry[]
+}
+
+export interface ModelCatalog {
+  providers: ProviderEntry[]
+  default: { provider: string; model: string }
 }
 
 export interface CostSummary {

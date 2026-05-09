@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import type { ServerEvent, UploadSummary } from '../types/events'
+import type {
+  ModelCatalog,
+  ServerEvent,
+  SessionSummary,
+  UploadSummary,
+} from '../types/events'
+import type { ModelChoice } from '../lib/preferredModel'
 import { CostBadge } from './CostBadge'
 import { type FlowEntry, MessageList } from './MessageList'
 import { InputBox } from './InputBox'
+import { ModelBadge } from './ModelBadge'
+import { ModelPicker } from './ModelPicker'
 
 interface Props {
   sessionId: string | null
   token: string | null
+  currentSession: SessionSummary | null
+  catalog: ModelCatalog | null
+  onOpenSettings: () => void
+  onModelChange: (choice: ModelChoice) => void
 }
 
 let _flowId = 0
@@ -17,7 +29,6 @@ interface FlowState {
   entries: FlowEntry[]
   liveAssistant: string
   liveThinking: string
-  /** 模型仍在 streaming(turn_complete 之前)— UI 鎖輸入框。 */
   inFlight: boolean
 }
 
@@ -28,10 +39,6 @@ const EMPTY: FlowState = {
   inFlight: false,
 }
 
-/**
- * 把 server events 摺成 FlowEntry 列表;assistant_text 累積進 liveAssistant,
- * 在第一個 tool_use / turn_complete 時凝固成 entry。
- */
 function reduce(state: FlowState, ev: ServerEvent): FlowState {
   switch (ev.type) {
     case 'assistant_text':
@@ -104,7 +111,6 @@ function reduce(state: FlowState, ev: ServerEvent): FlowState {
         entries,
         liveAssistant: '',
         liveThinking: '',
-        // 還在 in-flight,直到 terminal 才釋放
       }
     }
     case 'terminal':
@@ -135,20 +141,24 @@ function reduce(state: FlowState, ev: ServerEvent): FlowState {
   }
 }
 
-export function ChatView({ sessionId, token }: Props) {
+export function ChatView({
+  sessionId,
+  token,
+  currentSession,
+  catalog,
+  onOpenSettings,
+  onModelChange,
+}: Props) {
   const ws = useWebSocket(sessionId, token)
 
-  // events 是累積 list — 我們自己 reduce 成 FlowState
   const [flow, setFlow] = useState<FlowState>(EMPTY)
   const [processedCount, setProcessedCount] = useState(0)
 
-  // 換 session 重置
   useEffect(() => {
     setFlow(EMPTY)
     setProcessedCount(0)
   }, [sessionId])
 
-  // 增量 reduce events
   useEffect(() => {
     if (ws.events.length <= processedCount) return
     let next = flow
@@ -164,9 +174,7 @@ export function ChatView({ sessionId, token }: Props) {
     let combined = text
     if (attachments.length > 0) {
       const refs = attachments
-        .map(
-          (a) => `[Attached: ${a.filename} (upload_id=${a.upload_id})]`,
-        )
+        .map((a) => `[Attached: ${a.filename} (upload_id=${a.upload_id})]`)
         .join('\n')
       combined = combined ? `${combined}\n\n${refs}` : refs
     }
@@ -184,33 +192,85 @@ export function ChatView({ sessionId, token }: Props) {
     [flow.entries],
   )
 
+  const isEmpty =
+    flow.entries.length === 0 && !flow.liveAssistant && !flow.liveThinking
+
   return (
-    <main className="flex-1 flex flex-col min-w-0">
-      <header className="border-b border-gray-200 bg-white px-4 py-2 flex items-center justify-between text-sm">
-        <div className="flex items-center gap-3">
+    <main className="flex-1 flex flex-col min-w-0 bg-claude-cream">
+      <header className="flex items-center justify-between px-5 py-3 text-[13px]">
+        <div className="flex items-center gap-2.5 text-claude-textDim">
           <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              ws.connected ? 'bg-green-500' : 'bg-gray-400'
+            className={`inline-block h-2 w-2 rounded-full transition-colors ${
+              ws.connected ? 'bg-emerald-500' : 'bg-claude-textFaint'
             }`}
             title={ws.connected ? 'connected' : 'disconnected'}
           />
-          <span className="font-mono text-xs text-gray-700">
-            {sessionId ? sessionId.slice(0, 8) + '…' : 'no session'}
+          <span className="font-mono text-claude-textDim">
+            {sessionId ? `${sessionId.slice(0, 8)}…` : 'no session'}
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">turns: {turnCount}</span>
+          <ModelBadge
+            provider={currentSession?.provider}
+            model={currentSession?.model}
+            catalog={catalog}
+          />
           <CostBadge sessionId={sessionId} refreshKey={turnCount} />
+          <button
+            onClick={onOpenSettings}
+            className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-panel hover:text-claude-text transition-colors"
+            title="Settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle
+                cx="8"
+                cy="8"
+                r="2"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
       </header>
 
-      <MessageList
-        entries={flow.entries}
-        pendingPermissions={ws.pendingPermissions}
-        liveAssistant={flow.liveAssistant}
-        liveThinking={flow.liveThinking}
-        onPermissionDecide={ws.answerPermission}
-      />
+      {isEmpty && sessionId ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-claude-orange text-white text-lg font-semibold mb-4">
+            O
+          </div>
+          <div className="text-[22px] font-medium text-claude-text mb-1">
+            What can I help with today?
+          </div>
+          <div className="text-[14px] text-claude-textDim mb-5">
+            Pick a model below, then type your first message.
+          </div>
+          {currentSession && (
+            <ModelPicker
+              value={{
+                provider: currentSession.provider,
+                model: currentSession.model,
+              }}
+              catalog={catalog}
+              onChange={onModelChange}
+            />
+          )}
+        </div>
+      ) : (
+        <MessageList
+          entries={flow.entries}
+          pendingPermissions={ws.pendingPermissions}
+          liveAssistant={flow.liveAssistant}
+          liveThinking={flow.liveThinking}
+          onPermissionDecide={ws.answerPermission}
+        />
+      )}
 
       <InputBox
         disabled={!sessionId || !ws.connected || flow.inFlight}

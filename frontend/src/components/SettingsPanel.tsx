@@ -37,7 +37,7 @@ export function SettingsPanel() {
       try {
         parsed = JSON.parse(newValue)
       } catch {
-        parsed = newValue // 純字串
+        parsed = newValue
       }
       await apiFetch(`/me/settings/${encodeURIComponent(newKey)}`, {
         method: 'PUT',
@@ -70,67 +70,92 @@ export function SettingsPanel() {
 
   if (unavailable) {
     return (
-      <div className="text-sm text-gray-500 p-3">
-        Settings require <code>ORION_DB_URL</code> on the backend.
+      <div className="p-6 text-[14px] text-claude-textDim">
+        Settings require{' '}
+        <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
+          ORION_DB_URL
+        </code>{' '}
+        on the backend.
       </div>
     )
   }
 
-  return (
-    <div className="p-3 space-y-3 text-sm">
-      <div className="font-semibold">User Settings</div>
+  const inputClasses =
+    'w-full border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] font-mono bg-white focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
 
+  return (
+    <div className="p-6 space-y-5 text-[14px]">
       {error && (
-        <div className="text-red-600 bg-red-50 p-2 rounded text-xs">
+        <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 px-3 py-2 rounded-md">
           {error}
         </div>
       )}
 
       <div className="space-y-2">
-        {Object.keys(settings).length === 0 && (
-          <div className="text-xs text-gray-500">(empty)</div>
-        )}
-        {Object.entries(settings).map(([key, value]) => (
-          <div
-            key={key}
-            className="border border-gray-200 rounded p-2 bg-gray-50 flex items-start justify-between gap-2"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="font-mono text-xs font-semibold">{key}</div>
-              <pre className="text-xs text-gray-700 whitespace-pre-wrap break-all mt-0.5">
-                {JSON.stringify(value)}
-              </pre>
-            </div>
-            <button
-              onClick={() => void deleteKey(key)}
-              className="text-gray-400 hover:text-red-600 text-sm"
-            >
-              ×
-            </button>
+        <div className="font-medium text-claude-text text-[13px]">
+          Stored values
+        </div>
+        {Object.keys(settings).length === 0 ? (
+          <div className="text-[13px] text-claude-textFaint italic">
+            No settings stored yet.
           </div>
-        ))}
+        ) : (
+          <div className="space-y-1.5">
+            {Object.entries(settings).map(([key, value]) => (
+              <div
+                key={key}
+                className="group flex items-start gap-2 p-2.5 rounded-md bg-white border border-claude-borderSoft"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-[12px] font-medium text-claude-text">
+                    {key}
+                  </div>
+                  <pre className="text-[12px] text-claude-textDim font-mono whitespace-pre-wrap break-all mt-0.5">
+                    {JSON.stringify(value)}
+                  </pre>
+                </div>
+                <button
+                  onClick={() => void deleteKey(key)}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-claude-textFaint hover:text-red-600 transition"
+                  aria-label="delete"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M4 4l8 8M12 4l-8 8"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-gray-200 pt-3 space-y-1">
-        <div className="font-semibold text-xs">Add / Update</div>
+      <div className="space-y-2 pt-2 border-t border-claude-border/60">
+        <div className="font-medium text-claude-text text-[13px]">
+          Add or update
+        </div>
         <input
-          className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-mono"
+          className={inputClasses}
           placeholder="key (e.g. model)"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
         />
         <input
-          className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-mono"
-          placeholder='value (JSON or string, e.g. "claude-opus-4-7")'
+          className={inputClasses}
+          placeholder='value — JSON or string (e.g. "claude-opus-4-7")'
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
         />
         <button
           onClick={() => void setKey()}
           disabled={busy || !newKey}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded py-1 text-xs disabled:bg-gray-300"
+          className="px-4 py-1.5 bg-claude-orange hover:bg-claude-orangeHover disabled:bg-claude-border disabled:text-claude-textFaint text-white rounded-md text-[13px] font-medium transition-colors"
         >
-          Save
+          {busy ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
