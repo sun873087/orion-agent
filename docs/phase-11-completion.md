@@ -216,7 +216,7 @@ print(asyncio.run(HelpCommand().execute('', None, None)).text)
 
 | 項目 | 留給 |
 |---|---|
-| `!shell` 直接執行(走 Phase 7 sandbox + ORION_ALLOW_SHELL_INPUT 升旗) | Phase 11c(`docs/phases/25-extra-slash-and-shell.md`) |
+| `!shell` 直接執行(走 Phase 7 sandbox + ORION_ALLOW_SHELL_INPUT 升旗) | Phase 11c(`docs/phases/11c-extra-slash-and-shell.md`) |
 | `@file` ref(自動讀檔注入)— 改用 upload | Phase 11c(若仍想保留 CLI 體驗) |
 | 6 個 CLI 內建(/clear / /compact / /init / /memory / /cost / /history) | Phase 11c |
 | WebSocket UserMessageEvent.attachments 欄位整合(目前 /uploads 用 separate REST)| Phase 11c |

@@ -235,7 +235,7 @@ make check
 
 | 項目 | 留給 |
 |---|---|
-| Plugin Marketplace(curated registry + signature 驗證) | Phase 8c(`docs/phases/22-plugin-marketplace.md`) |
+| Plugin Marketplace(curated registry + signature 驗證) | Phase 8c(`docs/phases/8c-plugin-marketplace.md`) |
 | Plugin 從 git URL 安裝 | Phase 8c |
 | Plugin 沙盒(限制 hook 能做什麼) | Phase 8c |
 | Hot reload skill / hook | Phase 9+ |

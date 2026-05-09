@@ -257,7 +257,7 @@ uv run orion run --no-mcp --no-memory \
 
 | 項目 | 留給 |
 |---|---|
-| stress test + capacity planning(production data 後) | Phase 10c(`docs/phases/24-stress-capacity.md`) |
+| stress test + capacity planning(production data 後) | Phase 10c(`docs/phases/10c-stress-capacity.md`) |
 | Sentinel-based long-lived SubprocessPool 工人 | Phase 10c |
 | AgentTool 接 sandbox_factory(Phase 9 已有 fork,plug factory)+ Team / SendMessage | 後續 |
 | LSP integration(pylsp / pyright) | 後續 |

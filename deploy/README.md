@@ -1,7 +1,7 @@
 # orion-agent — Deploy
 
 Phase 7 部署檔。本機 stack 跑 Postgres + API + Docker sandbox backend。
-Production K8s / Helm 留到 **Phase 7c**(`docs/phases/21-helm-chart.md`)。
+Production K8s / Helm 留到 **Phase 7c**(`docs/phases/7c-helm-chart.md`)。
 
 ## 檔案
 
