@@ -99,8 +99,8 @@ load_session-end-to-end-repair、no-dangling-unchanged。
 實作過程中再次審視 phase-00 / phase-01 的延後工作,確認均已升級為獨立 phase plan
 (在 `docs/phases/`):
 
-- `phases/16-abort-stream-mid-flight.md` — 中途 stream abort(來源:Phase 0)
-- `phases/17-agenttool-concurrency-limit.md` — AgentTool 全域並發上限(來源:Phase 1)
-- `phases/18-webfetch-cache.md` — WebFetchTool URL caching(來源:Phase 1)
+- `phases/plan/16-abort-stream-mid-flight.md` — 中途 stream abort(來源:Phase 0)
+- `phases/plan/17-agenttool-concurrency-limit.md` — AgentTool 全域並發上限(來源:Phase 1)
+- `phases/plan/18-webfetch-cache.md` — WebFetchTool URL caching(來源:Phase 1)
 
 `final_messages` 滾雪球本就在 Phase 3 spec(memory / compaction)範圍內,不另開。

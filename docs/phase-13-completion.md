@@ -4,7 +4,7 @@
 **Plan doc**:`docs/phases/13-resilience.md`(範圍:5 大塊 — settings migrations、
 ConversationRecovery、permission persistence、custom instructions、output styles。
 spec § 2.8 git/github helpers + /commit /pr /review 升級為新 phase plan
-`docs/phases/21-git-github-workflow.md`,本 phase 不做。)
+`docs/phases/plan/21-git-github-workflow.md`,本 phase 不做。)
 **狀態**:✅ `make check` 全綠 — **677 unit tests passed, 2 skipped**(13.59s),
 ruff clean,mypy --strict 193 files clean。
 
@@ -355,7 +355,7 @@ print(res.text)
 | 5.5 `OutputStyleCommand` 寫 `ctx.feature_flags["active_output_style"]` | 改寫 `conversation.output_style` 欄位 | ctx 短命 per-send;Conversation 才是長命狀態 owner |
 | 1.4 啟動跑 migrations | ✓ 已掛 lifespan,失敗只 log 不阻擋 server | — |
 | 1.7 Phase 2 resume 整合 recovery | ✓ 提供 `load_session_with_recovery` wrapper(caller 可選用替代既有 `load_session`)| 不強制 — 既有 caller 不變,新 caller(陸續 phase)用 wrapper 取得 RecoveryReport |
-| 2.8 git/github helpers + commit/pr/review 命令 | **不做**,升級為 `docs/phases/21-git-github-workflow.md` | 範圍超出「resilience」核心;`/review` 還依賴未到的 Phase 15 |
+| 2.8 git/github helpers + commit/pr/review 命令 | **不做**,升級為 `docs/phases/plan/21-git-github-workflow.md` | 範圍超出「resilience」核心;`/review` 還依賴未到的 Phase 15 |
 
 ---
 

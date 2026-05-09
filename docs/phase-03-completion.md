@@ -1,7 +1,7 @@
 # Phase 3 — Memory / Compaction 完工記錄
 
 **完成日期**:2026-05-07
-**Spec doc**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/03-memory-compaction.md`
+**Spec doc**:`docs/phases/03-memory-compaction.md`
 **狀態**:✅ make check 全綠(204 tests),Anthropic memory load demo 跑通
 
 ---

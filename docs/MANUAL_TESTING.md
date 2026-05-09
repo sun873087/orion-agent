@@ -7,9 +7,20 @@
 
 ## 0. 一次性前置
 
+> **cwd 假設**:本文 `make -C ...` / `cd ...` 都從 `claude-code-source-main/`(專案根)執行。
+> 已在子資料夾內就改用對應命令:
+> - 已在 `orion-agent/` → `cd frontend && npm install` / `cd api && make install`
+> - 已在 `orion-agent/api/` → `make install`(取代 `make -C orion-agent/api install`)
+> - 已在 `orion-agent/frontend/` → `npm install`
+>
+> ⚠️ **`npm install` 必須在 `orion-agent/frontend/` 內跑**。`claude-code-source-main/` 有上游
+> `@anthropic-ai/claude-code` 的 `package.json`;若你在更上層跑 `npm install`,npm 會 walk-up
+> 抓到它,觸發 `prepare` hook 報 `ERROR: Direct publishing is not allowed`。
+
 ```bash
-# 後端 deps
+# 後端 deps(在專案根)
 make -C orion-agent/api install
+# 或:cd orion-agent/api && make install
 
 # 前端 deps(第一次 30-60 秒)
 cd orion-agent/frontend && npm install
@@ -32,7 +43,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 cd orion-agent/api
 
 # DB 模式(custom instructions / user settings / 樂觀鎖才能用)
-ORION_DB_URL=sqlite+aiosqlite:///tmp/orion-dev.db \
+ORION_DB_URL=sqlite+aiosqlite:////tmp/orion-dev.db \
   uv run orion serve --port 8000
 ```
 
@@ -45,7 +56,7 @@ ORION_DB_URL=sqlite+aiosqlite:///tmp/orion-dev.db \
 
 ```bash
 # 健康
-curl -s http://127.0.0.1:8000/health | jq
+curl -s http://127.0.0.1:8000/healthz | jq
 # 預期:{"status":"ok"}
 
 # 註冊
@@ -246,11 +257,12 @@ Vite proxy 已設好,前端打 `/auth /sessions /me /uploads /chat` 自動轉
 | 症狀 | 原因 / 解 |
 |---|---|
 | 後端起來但 401 connecting WS | `?token=...` 沒帶或過期;重 login |
+| 後端啟動 `sqlite3.OperationalError: unable to open database file` | SQLite URL 斜線數錯。**絕對路徑要 4 斜線**:`sqlite+aiosqlite:////tmp/orion.db`(3 斜線是相對路徑,從 cwd 找) |
 | `/me/settings` 回 503 | 沒設 `ORION_DB_URL`(dev fallback 模式)|
 | `npm run dev` 跑不起來 | 先 `npm install`;Node ≥ 18 必要 |
 | 對話沒回應 | 沒 `ANTHROPIC_API_KEY`,或 key 額度耗盡 — 看 backend log |
 | 拖檔上傳沒反應 | 拖到 InputBox **內部**(灰底邊框)才行,目前不接受拖到整 ChatView |
-| Memory / MCP tab 永遠 placeholder | 設計如此;等 `docs/phases/25-memory-mcp-rest-endpoints.md` 接通 |
+| Memory / MCP tab 永遠 placeholder | 設計如此;等 `docs/phases/plan/25-memory-mcp-rest-endpoints.md` 接通 |
 | UI 改不生效 | Vite HMR 應該秒更新;真沒就 reload |
 | backend mypy/test 跑不起來 | `make -C orion-agent/api install` 重裝(iCloud 偶爾撕掉 .venv pth)|
 
@@ -279,7 +291,7 @@ production 顧的是:**真實 traffic 不掛**。
 | 模式 | 怎麼起 | 涵蓋 |
 |---|---|---|
 | **Dev (no DB)** | `uv run orion serve --port 8000` | auth(任意 username 空密碼)、sessions、chat WS、uploads。`/me/*` 全 503 |
-| **DB SQLite(本機)** | `ORION_DB_URL=sqlite+aiosqlite:///tmp/orion.db uv run orion serve` | 全部 endpoint,持久;適合手動驗 |
+| **DB SQLite(本機)** | `ORION_DB_URL=sqlite+aiosqlite:////tmp/orion.db uv run orion serve` | 全部 endpoint,持久;適合手動驗 |
 | **DB Postgres(production-ish)** | `ORION_DB_URL=postgresql+asyncpg://... uv run orion serve` | 同上 + Postgres 行為;production 部署前 smoke test |
 
 預設用 SQLite 模式(B 那邊用的),實務上夠涵蓋 90% 場景。

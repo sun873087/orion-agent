@@ -208,7 +208,7 @@ docker info > /dev/null 2>&1 && \
 
 | 項目 | 留給 |
 |---|---|
-| K8s Pod-per-session sandbox + Helm chart | Phase 7c(`docs/phases/7c-helm-chart.md`) |
+| K8s Pod-per-session sandbox + Helm chart | Phase 7c(`docs/phases/plan/7c-helm-chart.md`) |
 | gVisor RuntimeClass / NetworkPolicy / RBAC | Phase 7c |
 | 預熱 ReplicaSet pool | Phase 7c |
 | Cross-instance Conversation 復原(Redis state + transcript replay) | Phase 7c |

@@ -1,7 +1,7 @@
 # Phase 5 — MCP Integration 完工記錄
 
 **完成日期**:2026-05-07
-**Spec doc**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/05-mcp-integration.md`
+**Spec doc**:`docs/phases/05-mcp-integration.md`
 **狀態**:✅ make check 全綠(274 tests),已備好 MCP CLI 接口(實際 server demo 須 npx 環境)
 
 ---

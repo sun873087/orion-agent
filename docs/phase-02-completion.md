@@ -1,7 +1,7 @@
 # Phase 2 — Storage / Resume 完工記錄
 
 **完成日期**:2026-05-07
-**Spec doc**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/02-storage-state.md`
+**Spec doc**:`docs/phases/02-storage-state.md`
 **狀態**:✅ make check 全綠 + 真實 demo 寫 transcript + resume 跑通
 
 ---
@@ -183,8 +183,8 @@ spec 踩雷 #3 提到 process 可能寫一半死掉,留下損壞 JSON 行。
 
 實作中觀察到的延後優化(均升級為獨立 phase plan):
 
-- File history GC → [`docs/phases/19-file-history-gc.md`](../../docs/phases/19-file-history-gc.md)
-- Transcript JSONL gzip → [`docs/phases/20-transcript-compression.md`](../../docs/phases/20-transcript-compression.md)
+- File history GC → [`docs/phases/plan/19-file-history-gc.md`](phases/plan/19-file-history-gc.md)
+- Transcript JSONL gzip → [`docs/phases/plan/20-transcript-compression.md`](phases/plan/20-transcript-compression.md)
 
 ---
 

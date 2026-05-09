@@ -4,7 +4,7 @@
 **Plan doc**:`docs/phases/14-distribution-sync.md`(範圍:Web chat 簡化版 — REST
 CRUD 取代 diff sync;`SecureStorage` 兩 backend(Keychain + EncryptedFile);
 **spec § 5.5 DXT plugin format 升級為新 phase plan
-`docs/phases/22-dxt-plugin-format.md`,本 phase 不做。**
+`docs/phases/plan/22-dxt-plugin-format.md`,本 phase 不做。**
 spec § 5.4 SecretsManagerBackend(AWS / Vault)production 雲端 backend 留待
 SaaS 真正部署時加,不獨立開 phase plan — 介面 `SecureStorageBackend` Protocol 已就位,
 新 backend 直接接即可。)
@@ -291,7 +291,7 @@ ls -la /tmp/orion-secrets/
 | 5.2b SettingsSyncManager pull/push/conflict | **完全不做** | 同上 |
 | 5.3 conflict.py LWW / merge_list / merge_dict | **完全不做** | 同上 |
 | 5.4 SecretsManagerBackend(AWS) | 不實作,介面就位 | production cloud 部署時直接接 SecureStorageBackend Protocol |
-| 5.5 DXT plugin format | **拆出 → `docs/phases/22-dxt-plugin-format.md`** | 主題偏 plugin,不是 sync / secure |
+| 5.5 DXT plugin format | **拆出 → `docs/phases/plan/22-dxt-plugin-format.md`** | 主題偏 plugin,不是 sync / secure |
 | 6.1 `/sync/settings` GET / PUT(diff) | 改 `/me/settings` REST CRUD | 對應 spec § 5.2 web chat 簡化 |
 | 6.2 OAuth token 改 SecureStorage | 介面就位,Phase 5 OAuth 是 stub 沒實際 token 要遷 | 等 OAuth 真做(Phase 5b 或新 phase)再接 |
 

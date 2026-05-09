@@ -65,7 +65,7 @@ deploy/plugin-registry/                  [新] 部署範例
 | 5 | `api/routes/plugins.py`:`GET / POST install / DELETE`(JWT auth) |
 | 6 | unit test for routes |
 | 7 | CLI:`orion plugin install / list / enable / disable` |
-| 8 | docs/phases/8c-plugin-marketplace.md 完工 + `deploy/plugin-registry/plugins.json` 範例 |
+| 8 | docs/phases/plan/8c-plugin-marketplace.md 完工 + `deploy/plugin-registry/plugins.json` 範例 |
 
 ## 簽章驗證
 

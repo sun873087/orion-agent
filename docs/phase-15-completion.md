@@ -3,7 +3,7 @@
 **完成日期**:2026-05-08
 **Plan doc**:`docs/phases/15-multi-agent.md`(範圍:3 大塊 — Coordinator(leader-worker)
 + Swarm(peer-to-peer)+ AgentSummary。**spec § 5.6 AgentTool 整合(`subagent_type=
-coordinator/swarm`)拆出為新 phase plan `docs/phases/24-multiagent-tools.md`,本
+coordinator/swarm`)拆出為新 phase plan `docs/phases/plan/24-multiagent-tools.md`,本
 phase 不做** — 動 AgentTool input schema 會破壞既有 model contract,獨立評估。
 Redis cross-process MessageBus、worker token budget 共用、voting/consensus 等
 spec § 6 故意不做的項目,維持不做。)
@@ -141,7 +141,7 @@ dataclass(可以調 max_rounds 等)。spec 範例混用,本實作明確分。
 
 ### 16. AgentTool input schema 不動(對應 spec § 5.6 拆出去)
 本 phase 純 Python API,呼叫端是另一段 Python 程式碼,**不暴露給模型**。
-對應 spec § 5.6 的 AgentTool 整合 → `docs/phases/24-multiagent-tools.md`。
+對應 spec § 5.6 的 AgentTool 整合 → `docs/phases/plan/24-multiagent-tools.md`。
 這樣既有 `test_agent_tool.py` 全綠不動,model contract 不變。
 
 ---
@@ -274,7 +274,7 @@ asyncio.run(main())
 | 5.3 Swarm `subscribe()` 回 AsyncIterator | 改回 `MemoryObjectReceiveStream`(原始 stream) | 支援 idle_timeout(spec § 9 踩雷 #3 要求);async for 也仍可用 |
 | 5.3 Swarm `_agent_turn` 用 side_query | 改用 `provider.stream` + 累積 history | side_query 是 single-call、不維護歷史;swarm 多輪需要 agent 看過之前對話 |
 | 5.4 RedisMessageBus | **完全不做**,介面 in-process | spec § 6 設計決策已標明 in-process 預設;Redis 留新 phase 視需求 |
-| 5.6 AgentTool 改 input schema 整合 | **拆出 → `docs/phases/24-multiagent-tools.md`** | 動 input 破壞既有 model contract / test;獨立 phase 評估 |
+| 5.6 AgentTool 改 input schema 整合 | **拆出 → `docs/phases/plan/24-multiagent-tools.md`** | 動 input 破壞既有 model contract / test;獨立 phase 評估 |
 | 6 worker token budget 共用 | **不做**,留新 phase | 設計爭議大(共用 vs 獨立 fairness);留 phase 24 連同 AgentTool 整合一起想 |
 | 6 SubagentStart hook 整合 | **不做**(本 phase Python API 不過 tool 介面)| Phase 8 hook 是 tool 級別,Phase 15 是 lib 級別,等 phase 24 工具化再加 |
 

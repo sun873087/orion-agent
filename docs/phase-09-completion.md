@@ -206,7 +206,7 @@ curl -s http://127.0.0.1:8765/sessions/$SID/cost -H "Authorization: Bearer $TOKE
 
 | 項目 | 留給 |
 |---|---|
-| Jaeger / Prometheus / Grafana docker-compose stack | Phase 9d(`docs/phases/9d-grafana-stack.md`) |
+| Jaeger / Prometheus / Grafana docker-compose stack | Phase 9d(`docs/phases/plan/9d-grafana-stack.md`) |
 | Grafana dashboard JSON(per-user / per-tool / per-turn 視圖) | Phase 9d |
 | OTLP HTTP exporter / multi-tenant attribute filtering | Phase 9d |
 | Quota engine(用 cost_tracker 做 per-user / per-org 限額) | Phase 11+ |

@@ -90,7 +90,7 @@ stream → tool_use 一個就 add_tool 立即跑 →
 
 ## 觀察到的延後工作(均升級為獨立 phase plan)
 
-- 中途 abort + sibling abort 中止 running 工具 → [`docs/phases/16-abort-stream-mid-flight.md`](../../docs/phases/16-abort-stream-mid-flight.md)
+- 中途 abort + sibling abort 中止 running 工具 → [`docs/phases/plan/16-abort-stream-mid-flight.md`](phases/plan/16-abort-stream-mid-flight.md)
 
 ## 設計回顧
 

@@ -1,7 +1,7 @@
 # Phase 4 — System Prompt + Cache Control 完工記錄
 
 **完成日期**:2026-05-07
-**Spec doc**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/04-system-prompt.md`
+**Spec doc**:`docs/phases/04-system-prompt.md`
 **狀態**:✅ make check 全綠(234 tests),Anthropic dynamic-env demo 跑通
 
 ---

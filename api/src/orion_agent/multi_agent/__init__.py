@@ -13,7 +13,7 @@
 本套 API 是 **Python 函式 / class 介面**;Phase 15 沒改 AgentTool input(避免破
 壞既有 model contract)。把 multi-agent 暴露給模型(`subagent_type=coordinator/swarm`
 + `CoordinatorTool` / `SwarmTool`)留新 phase plan
-`docs/phases/24-multiagent-tools.md`。
+`docs/phases/plan/24-multiagent-tools.md`。
 """
 
 from orion_agent.multi_agent.agent_summary import generate_agent_summary

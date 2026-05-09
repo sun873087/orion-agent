@@ -78,7 +78,7 @@ frontend/
 | CustomInstructionsPanel | Phase 13 | ✓(無 DB 顯示「require ORION_DB_URL」) |
 | SettingsPanel | Phase 14 | ✓ |
 | CostBadge | Phase 9 | ✓ |
-| Memory tab | Phase 3 fs only,**沒 REST endpoint** | placeholder → `docs/phases/25-memory-mcp-rest-endpoints.md` |
+| Memory tab | Phase 3 fs only,**沒 REST endpoint** | placeholder → `docs/phases/plan/25-memory-mcp-rest-endpoints.md` |
 | MCP tab | Phase 5 OAuth 是 stub(raise NotImplementedError)| placeholder → 同上 |
 
 ---
@@ -179,7 +179,7 @@ npm run dev         # → http://localhost:5173
 
 | 項目 | 升級到 |
 |---|---|
-| Memory list / CRUD UI(Phase 3 backend 沒 REST endpoint) | `docs/phases/25-memory-mcp-rest-endpoints.md` |
+| Memory list / CRUD UI(Phase 3 backend 沒 REST endpoint) | `docs/phases/plan/25-memory-mcp-rest-endpoints.md` |
 | MCP OAuth connection(Phase 5 oauth 是 stub) | 同上 |
 | Mobile / responsive 排版 | 不開 phase(範圍外)|
 | Dark mode / theme | 不開 phase(範圍外)|

@@ -1,7 +1,7 @@
 # Phase 6 — FastAPI Layer 完工記錄
 
 **完成日期**:2026-05-07
-**Spec doc**:`/Users/yuan-sencheng/Desktop/claude-code-source-main/docs/phases/06-fastapi-layer.md`
+**Spec doc**:`docs/phases/06-fastapi-layer.md`
 **狀態**:✅ make check 全綠(311 tests),uvicorn live demo REST 流程跑通
 
 ---
