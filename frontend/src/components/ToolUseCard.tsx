@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ToolInputView } from './ToolInputView'
+import { ToolInputView, summarizeToolInput } from './ToolInputView'
 
 interface Props {
   toolName: string
@@ -8,48 +8,42 @@ interface Props {
 
 export function ToolUseCard({ toolName, input }: Props) {
   const [open, setOpen] = useState(false)
+  const summary = summarizeToolInput(toolName, input)
+
   return (
-    <div className="rounded-lg border border-claude-border bg-claude-cream/50 text-[13px]">
+    <div className="text-[13px] border-l-2 border-claude-borderSoft pl-3">
       <button
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-claude-borderSoft/40 transition-colors rounded-lg"
+        className="w-full flex items-center gap-2 py-1 text-left hover:text-claude-text transition-colors group"
         onClick={() => setOpen((v) => !v)}
       >
         <svg
-          width="14"
-          height="14"
+          width="12"
+          height="12"
           viewBox="0 0 16 16"
           fill="none"
-          className="shrink-0 text-claude-orange"
+          className={`shrink-0 text-claude-textFaint transition-transform ${
+            open ? 'rotate-90' : ''
+          }`}
         >
           <path
-            d="M3.5 5l3.5 3.5L11 5M3.5 9l3.5 3.5L11 9"
+            d="M6 4l4 4-4 4"
             stroke="currentColor"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         </svg>
-        <span className="font-medium text-claude-text">{toolName}</span>
-        <span className="ml-auto text-claude-textFaint">
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 16 16"
-            fill="none"
-            className={`transition-transform ${open ? 'rotate-180' : ''}`}
-          >
-            <path
-              d="M4 6l4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+        <span className="font-medium text-claude-textDim group-hover:text-claude-text">
+          {toolName}
         </span>
+        {summary && (
+          <span className="font-mono text-[12px] px-1.5 py-0.5 rounded bg-claude-panel text-claude-textDim truncate max-w-[40ch]">
+            {summary}
+          </span>
+        )}
       </button>
       {open && (
-        <div className="mx-3 mb-3">
+        <div className="mt-1.5 mb-2">
           <ToolInputView toolName={toolName} input={input} />
         </div>
       )}
