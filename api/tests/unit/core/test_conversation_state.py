@@ -4,8 +4,29 @@ from __future__ import annotations
 
 import pytest
 
-from orion_agent.core.conversation import Conversation
+from orion_agent.core.conversation import (
+    _DEFAULT_MAX_TOKENS_PER_TURN,
+    Conversation,
+    _default_max_tokens_per_turn,
+)
 from tests.conftest import MockProvider, MockTurn
+
+
+def test_default_max_tokens_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ORION_MAX_TOKENS_PER_TURN", raising=False)
+    assert _default_max_tokens_per_turn() == _DEFAULT_MAX_TOKENS_PER_TURN
+
+
+def test_default_max_tokens_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORION_MAX_TOKENS_PER_TURN", "32768")
+    assert _default_max_tokens_per_turn() == 32768
+
+
+def test_default_max_tokens_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORION_MAX_TOKENS_PER_TURN", "garbage")
+    assert _default_max_tokens_per_turn() == _DEFAULT_MAX_TOKENS_PER_TURN
+    monkeypatch.setenv("ORION_MAX_TOKENS_PER_TURN", "0")
+    assert _default_max_tokens_per_turn() == _DEFAULT_MAX_TOKENS_PER_TURN
 
 
 @pytest.mark.asyncio

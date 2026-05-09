@@ -14,6 +14,8 @@ Phase 2 加入:JSONL transcript persistence + ContentReplacementState 共用 +
 
 from __future__ import annotations
 
+import logging
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,6 +49,32 @@ from orion_agent.prompt.assembler import (
 from orion_agent.storage.replacement_state import ContentReplacementState
 from orion_agent.storage.session import SessionStorage
 
+_log = logging.getLogger(__name__)
+
+_DEFAULT_MAX_TOKENS_PER_TURN = 16384
+
+
+def _default_max_tokens_per_turn() -> int:
+    """讀 ORION_MAX_TOKENS_PER_TURN 環境變數;非正整數 / 不存在 → fallback 16384。
+
+    Anthropic Sonnet/Opus 4.x 支援到 64000;OpenAI Responses API 也很大。
+    這是 *上限* 不是預配置,只在模型真的吐這麼多時才花費。
+    """
+    raw = os.environ.get("ORION_MAX_TOKENS_PER_TURN")
+    if not raw:
+        return _DEFAULT_MAX_TOKENS_PER_TURN
+    try:
+        n = int(raw)
+        if n < 1:
+            raise ValueError
+        return n
+    except (TypeError, ValueError):
+        _log.warning(
+            "ORION_MAX_TOKENS_PER_TURN=%r invalid, falling back to %d",
+            raw, _DEFAULT_MAX_TOKENS_PER_TURN,
+        )
+        return _DEFAULT_MAX_TOKENS_PER_TURN
+
 
 @dataclass
 class ConversationStats:
@@ -72,7 +100,7 @@ class Conversation:
     can_use_tool: CanUseToolFn = always_allow
     hooks: HookRegistry = field(default_factory=HookRegistry)
     max_turns: int = 30
-    max_tokens_per_turn: int = 4096
+    max_tokens_per_turn: int = field(default_factory=_default_max_tokens_per_turn)
     reasoning_effort: ReasoningEffort | None = None
 
     state_messages: list[NormalizedMessage] = field(default_factory=list)
