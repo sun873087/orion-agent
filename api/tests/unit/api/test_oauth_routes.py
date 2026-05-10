@@ -58,8 +58,51 @@ def test_list_providers_includes_dev_mock(
     r = client.get("/oauth/providers", headers=_h(token))
     assert r.status_code == 200
     names = {p["name"] for p in r.json()}
-    assert "dev-mock" in names
-    assert "github" in names
+    assert {"dev-mock", "github", "linear", "google", "microsoft"} <= names
+
+
+def test_google_authorize_url_has_offline_access_params(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Google 必須帶 access_type=offline + prompt=consent 才會回 refresh_token。"""
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "fake-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "fake-secret")
+    client, token = client_with_token
+    r = client.post(
+        "/oauth/start", headers=_h(token), json={"server": "google"},
+    )
+    assert r.status_code == 200, r.json()
+    url = r.json()["authorize_url"]
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    assert parsed.netloc == "accounts.google.com"
+    assert qs["access_type"] == ["offline"]
+    assert qs["prompt"] == ["consent"]
+    assert qs["response_type"] == ["code"]
+    assert qs["client_id"] == ["fake-client-id"]
+    assert "openid" in qs["scope"][0]
+
+
+def test_microsoft_authorize_url_has_offline_access_scope(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Microsoft 必須包含 offline_access scope 才會回 refresh_token。"""
+    monkeypatch.setenv("MICROSOFT_OAUTH_CLIENT_ID", "fake-client-id")
+    monkeypatch.setenv("MICROSOFT_OAUTH_CLIENT_SECRET", "fake-secret")
+    client, token = client_with_token
+    r = client.post(
+        "/oauth/start", headers=_h(token), json={"server": "microsoft"},
+    )
+    assert r.status_code == 200, r.json()
+    url = r.json()["authorize_url"]
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    assert "login.microsoftonline.com" in parsed.netloc
+    assert "/common/oauth2/v2.0/authorize" in parsed.path
+    assert "offline_access" in qs["scope"][0].split()
+    assert "User.Read" in qs["scope"][0].split()
 
 
 def test_status_unconfigured_provider(

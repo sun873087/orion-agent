@@ -66,6 +66,9 @@ class OAuthProvider:
     client_id_env: str | None = None
     """env var 名稱;None → 不需要 client(目前只有 dev-mock)。"""
     client_secret_env: str | None = None
+    extra_authorize_params: dict[str, str] = field(default_factory=dict)
+    """provider-specific authorize URL query params(e.g. Google 要
+    access_type=offline 才會回 refresh_token)。merge 進通用 params,同 key 會覆蓋。"""
 
     def client_id(self) -> str | None:
         if self.client_id_env is None:
@@ -109,6 +112,38 @@ _BUILTIN_PROVIDERS: list[OAuthProvider] = [
         scopes=["read", "write"],
         client_id_env="LINEAR_OAUTH_CLIENT_ID",
         client_secret_env="LINEAR_OAUTH_CLIENT_SECRET",
+    ),
+    OAuthProvider(
+        name="google",
+        label="Google",
+        authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+        token_url="https://oauth2.googleapis.com/token",
+        # Default scopes:basic profile + email。要 Drive / Gmail / Calendar
+        # 等需在 Google Cloud Console 啟對應 API + 在 OAuth consent screen 加 scope
+        # 後再追加(format 都是 https://www.googleapis.com/auth/<resource>)。
+        scopes=["openid", "email", "profile"],
+        client_id_env="GOOGLE_OAUTH_CLIENT_ID",
+        client_secret_env="GOOGLE_OAUTH_CLIENT_SECRET",
+        extra_authorize_params={
+            # 沒設 access_type=offline → Google 不發 refresh_token
+            "access_type": "offline",
+            # prompt=consent 確保重連也重發 refresh_token(Google 預設只在首次給)
+            "prompt": "consent",
+        },
+    ),
+    OAuthProvider(
+        name="microsoft",
+        label="Microsoft",
+        # /common 接受任何 work / school / personal 帳號;只想單一 tenant 換
+        # 成 tenant id(GUID 或 domain)
+        authorize_url="https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        token_url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        # offline_access 一定要,不然 Microsoft 不發 refresh_token
+        # User.Read 是 Graph API 最基本(讀自己 profile);要 Mail / Files
+        # 等 scope 在 Azure portal API permissions 加完再追加
+        scopes=["openid", "email", "profile", "offline_access", "User.Read"],
+        client_id_env="MICROSOFT_OAUTH_CLIENT_ID",
+        client_secret_env="MICROSOFT_OAUTH_CLIENT_SECRET",
     ),
 ]
 
@@ -236,12 +271,13 @@ async def start_web_oauth_flow(
             f"{provider.client_id_env} and {provider.client_secret_env}.",
         )
 
-    params = {
+    params: dict[str, str] = {
         "client_id": provider.client_id() or "",
         "redirect_uri": redirect_uri,
         "scope": " ".join(provider.scopes),
         "state": state,
         "response_type": "code",
+        **provider.extra_authorize_params,
     }
     return f"{provider.authorize_url}?{urlencode(params)}", state
 

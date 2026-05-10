@@ -147,11 +147,19 @@ export function ConnectionsPanel() {
       <div>
         <div className="font-medium text-claude-text">Connections</div>
         <div className="text-[12px] text-claude-textDim">
-          OAuth tokens are stored encrypted (OS keychain or{' '}
+          OAuth tokens are stored in your OS credential store (macOS
+          Keychain, Windows Credential Manager, or Linux Secret Service —
+          search{' '}
+          <span className="font-mono text-[11px]">orion-agent</span>).
+          Falls back to encrypted file{' '}
           <code className="font-mono text-[11px] bg-claude-code px-1 py-0.5 rounded">
             ~/.orion/secrets.enc
+          </code>{' '}
+          when no keychain is available or{' '}
+          <code className="font-mono text-[11px] bg-claude-code px-1 py-0.5 rounded">
+            ORION_DISABLE_KEYCHAIN=1
           </code>
-          ).
+          .
         </div>
       </div>
 
