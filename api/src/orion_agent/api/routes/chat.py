@@ -361,6 +361,11 @@ async def chat_stream(
                 await outbound_send.send(
                     ErrorEvent(message=f"{type(e).__name__}: {e}"),
                 )
+            finally:
+                # turn 結束(成功 / abort / 例外)都把 stats 落 DB,讓 sidebar 顯示
+                # 真實 n_messages / n_turns 而不是 0。in-memory SessionManager 是 no-op。
+                with contextlib.suppress(Exception):
+                    await sm.sync_stats(user_id, session_id)
 
     async def reader(tg: anyio.abc.TaskGroup) -> None:
         try:

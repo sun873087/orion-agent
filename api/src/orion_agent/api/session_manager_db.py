@@ -25,6 +25,7 @@ from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_agent.llm.provider import get_provider
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import Session as SessionRow
+from orion_agent.storage.resume import load_session
 from orion_agent.tools.builtin_set import build_default_tool_set
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,6 @@ class DbSessionManager:
             return cached
         # cache miss — DB row 存在表示曾建過,用 row 的 provider/model 重建 Conversation
         # 確保 server 重啟 / cache evict 後仍維持原來選的 model(否則沉默降級到 default)
-        # state_messages 不從 transcript replay(留 Phase 7c)— 重建是空白歷史
         async with db_session(self.engine) as db:
             stmt = select(SessionRow).where(
                 SessionRow.id == str(session_id),
@@ -82,6 +82,12 @@ class DbSessionManager:
                 session_id, row.provider,
             )
             return None
+        # 從磁碟 JSONL transcript 重建 state_messages / replacement_state。
+        # transcript 不存在 → load_session 回空 snapshot(不是 error),等同空白歷史。
+        snapshot = load_session(session_id)
+        if snapshot.warnings:
+            for w in snapshot.warnings:
+                logger.warning("resume %s: %s", session_id, w)
         conv = Conversation(
             provider=provider,
             user_id=user_id,
@@ -90,6 +96,8 @@ class DbSessionManager:
             max_tokens_per_turn=pick_max_tokens_per_turn(
                 provider.name, provider.model,
             ),
+            state_messages=snapshot.messages,
+            replacement_state=snapshot.replacement_state,
         )
         self._cache[(user_id, session_id)] = conv
         return conv

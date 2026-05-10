@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from orion_agent.api.session_manager_db import DbSessionManager
+from orion_agent.llm.types import NormalizedMessage
 from orion_agent.storage.db.engine import create_db_engine, db_session, init_db
 from orion_agent.storage.db.models import User
+from orion_agent.storage.session import SessionStorage
 
 
 class _DummyProvider:
@@ -85,6 +88,39 @@ async def test_size() -> None:
     await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
     await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
     assert await mgr.size() == 2
+    await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_get_cache_miss_replays_messages_from_transcript(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API 重啟後 in-memory cache 清空 — get() 應從磁碟 transcript 重建 messages,
+    而不是回空白 Conversation(舊行為:Phase 7c 待辦)。"""
+    monkeypatch.setenv("ORION_SESSIONS_DIR", str(tmp_path))
+
+    engine = create_db_engine("sqlite+aiosqlite:///:memory:")
+    await init_db(engine)
+    uid = await _new_user(engine, "alice")
+    mgr = DbSessionManager(engine=engine)
+
+    # 走 create 取得真 sid + DB row
+    sid = await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
+
+    # 模擬之前的 turn 寫過 transcript:meta + 兩則 message
+    store = SessionStorage.open(sid)
+    await store.record_meta(provider="anthropic", model="claude-sonnet-4-6")
+    await store.record_message(NormalizedMessage(role="user", content="hi"))
+    await store.record_message(NormalizedMessage(role="assistant", content="hello"))
+
+    # 模擬重啟:清空 cache,新建一個 manager 用同一份 DB
+    mgr2 = DbSessionManager(engine=engine)
+    conv = await mgr2.get(uid, sid)
+
+    assert conv is not None
+    assert len(conv.state_messages) == 2
+    assert conv.state_messages[0].role == "user"
+    assert conv.state_messages[1].role == "assistant"
     await engine.dispose()
 
 

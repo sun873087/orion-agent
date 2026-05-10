@@ -81,3 +81,11 @@ class SessionManager:
     async def size(self) -> int:
         async with self._lock:
             return len(self._sessions)
+
+    async def sync_stats(self, user_id: str, session_id: UUID) -> None:
+        """In-memory 版不需要持久化 — list_for_user 直接讀 conv.state_messages。
+
+        DbSessionManager 有實作把 cache stats 同步進 DB row;這裡是 no-op,讓
+        chat handler 可以無條件呼叫,protocol 對齊。
+        """
+        _ = (user_id, session_id)
