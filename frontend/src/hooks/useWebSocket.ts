@@ -157,13 +157,19 @@ export function useWebSocket(
 
       ws.onmessage = (e) => {
         if (disposed) return
-        let parsed: ServerEvent
+        let parsed: unknown
         try {
-          parsed = JSON.parse(e.data) as ServerEvent
+          parsed = JSON.parse(e.data)
         } catch {
           return
         }
-        pendingEventsRef.current.push(parsed)
+        // Server batches replay-history events as a JSON array(一個 frame
+        // 包多個 events)— 偵測到 array 就 spread,單 event 走 push。
+        if (Array.isArray(parsed)) {
+          pendingEventsRef.current.push(...(parsed as ServerEvent[]))
+        } else {
+          pendingEventsRef.current.push(parsed as ServerEvent)
+        }
         scheduleFlush()
       }
 

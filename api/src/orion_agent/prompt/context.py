@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,14 +21,24 @@ _INSTRUCTIONS_FILE = "instructions.md"
 _INSTRUCTIONS_MAX_BYTES = 100 * 1024
 _GIT_LOG_LINES = 5
 _GIT_TIMEOUT_S = 3.0
+_GIT_CONTEXT_TTL_S = 10.0
+_git_context_cache: dict[str, tuple[float, str]] = {}
 
 
 async def get_git_context(cwd: Path | None = None) -> str:
     """回傳 git 分支 + 最近 N 個 commit 摘要。
 
     沒 git / 不在 repo / git 卡住 → 回空字串。
+    Per-cwd TTL cache(10s)— 避免每 turn spawn 兩個 git 子進程,
+    workspace dir 本身不是 git repo 時尤其值得快取(每 turn ~50–200ms 沒幫助)。
     """
     cwd = cwd or Path.cwd()
+    key = str(cwd)
+    now = time.monotonic()
+    cached = _git_context_cache.get(key)
+    if cached is not None and now - cached[0] < _GIT_CONTEXT_TTL_S:
+        return cached[1]
+
     try:
         with anyio.move_on_after(_GIT_TIMEOUT_S):
             branch = await _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)
@@ -35,9 +46,11 @@ async def get_git_context(cwd: Path | None = None) -> str:
                 ["log", f"-{_GIT_LOG_LINES}", "--oneline"], cwd,
             )
     except Exception:  # noqa: BLE001
+        _git_context_cache[key] = (now, "")
         return ""
 
     if not branch:
+        _git_context_cache[key] = (now, "")
         return ""
 
     parts = [f"branch: {branch.strip()}"]
@@ -45,7 +58,9 @@ async def get_git_context(cwd: Path | None = None) -> str:
         parts.append("recent commits:")
         for line in log.strip().splitlines()[:_GIT_LOG_LINES]:
             parts.append(f"  {line}")
-    return "\n".join(parts)
+    result = "\n".join(parts)
+    _git_context_cache[key] = (now, result)
+    return result
 
 
 async def _run_git(args: list[str], cwd: Path) -> str:

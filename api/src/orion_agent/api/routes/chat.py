@@ -20,6 +20,8 @@ Lifecycle:
 from __future__ import annotations
 
 import contextlib
+import json
+import time
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -81,13 +83,28 @@ router = APIRouter()
 _QUEUE_SENTINEL = object()
 
 
-async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
-    """把 conversation 已有訊息翻成 ServerEvent 序列推給 client(用於 reconnect / 換 session)。"""
-    tool_id_to_name: dict[str, str] = {}
+_REPLAY_BATCH_SIZE = 100
 
-    async def _send(ev: BaseModel) -> None:
+
+async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
+    """把 conversation 已有訊息翻成 ServerEvent 序列推給 client(用於 reconnect / 換 session)。
+
+    Batched:每 100 events 包成 JSON array 送一個 frame,frontend 偵測 array
+    就 spread 進 pending buffer。長 session(數百 blocks)不再一個一個 await
+    ws.send_json,proxy 來回 + JSON encode 的 N×overhead 砍 ~100×。
+    """
+    tool_id_to_name: dict[str, str] = {}
+    batch: list[dict[str, Any]] = []
+
+    async def flush() -> None:
+        if not batch:
+            return
         with contextlib.suppress(Exception):
-            await websocket.send_json(serialize_server_event(ev))
+            await websocket.send_text(json.dumps(batch))
+        batch.clear()
+
+    def push(ev: BaseModel) -> None:
+        batch.append(serialize_server_event(ev))
 
     for msg in conv.state_messages:
         content = msg.content
@@ -99,15 +116,15 @@ async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
         for block in blocks:
             if isinstance(block, TextBlock):
                 if msg.role == "user":
-                    await _send(UserTextEvent(text=block.text))
+                    push(UserTextEvent(text=block.text))
                 elif msg.role == "assistant":
-                    await _send(AssistantTextEvent(text=block.text))
+                    push(AssistantTextEvent(text=block.text))
                 # system role 不顯示
             elif isinstance(block, ThinkingBlock):
-                await _send(AssistantThinkingEvent(text=block.text))
+                push(AssistantThinkingEvent(text=block.text))
             elif isinstance(block, ToolUseBlock):
                 tool_id_to_name[block.id] = block.name
-                await _send(
+                push(
                     ToolUseEvent(
                         tool_use_id=block.id,
                         tool_name=block.name,
@@ -122,7 +139,7 @@ async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
                         b.text for b in block.content
                         if isinstance(b, TextBlock)
                     )
-                await _send(
+                push(
                     ToolResultEvent(
                         tool_use_id=block.tool_use_id,
                         tool_name=tool_id_to_name.get(block.tool_use_id, ""),
@@ -132,7 +149,14 @@ async def _replay_history(websocket: WebSocket, conv: Conversation) -> None:
                 )
             # ImageBlock / TombstoneBlock skip(replay 不顯示)
 
-    await _send(HistoryReplayDoneEvent())
+            if len(batch) >= _REPLAY_BATCH_SIZE:
+                await flush()
+
+    await flush()
+    with contextlib.suppress(Exception):
+        await websocket.send_json(
+            serialize_server_event(HistoryReplayDoneEvent()),
+        )
 
 
 def _loop_to_server_events(ev: LoopEvent) -> list[ServerEvent]:
@@ -288,15 +312,52 @@ async def chat_stream(
                 abort_event=abort_event,
                 cwd=sp.workspace_dir,
             )
+
+            # Coalesce text/thinking deltas — 避免每 token 一個 ws frame
+            # (Anthropic 50–100 tokens/s × frame overhead 在 vite proxy 後
+            # 容易塞)。30ms 視窗 opportunistic flush:延遲可忽略,frame 數
+            # 砍 5–10×。非 delta event 來時強制先 flush 保持順序。
+            text_buf: list[str] = []
+            think_buf: list[str] = []
+            last_flush = time.monotonic()
+            FLUSH_INTERVAL = 0.03
+
+            async def flush_text() -> None:
+                nonlocal last_flush
+                if text_buf:
+                    await outbound_send.send(
+                        AssistantTextEvent(text="".join(text_buf)),
+                    )
+                    text_buf.clear()
+                if think_buf:
+                    await outbound_send.send(
+                        AssistantThinkingEvent(text="".join(think_buf)),
+                    )
+                    think_buf.clear()
+                last_flush = time.monotonic()
+
             try:
                 async for loop_ev in conv.send(user_text, ctx=ctx):
                     for sev in _loop_to_server_events(loop_ev):
-                        await outbound_send.send(sev)
+                        if isinstance(sev, AssistantTextEvent):
+                            text_buf.append(sev.text)
+                            if time.monotonic() - last_flush >= FLUSH_INTERVAL:
+                                await flush_text()
+                        elif isinstance(sev, AssistantThinkingEvent):
+                            think_buf.append(sev.text)
+                            if time.monotonic() - last_flush >= FLUSH_INTERVAL:
+                                await flush_text()
+                        else:
+                            await flush_text()
+                            await outbound_send.send(sev)
                     # AssistantTurnComplete 後立刻附帶 ToolUseEvent(讓 UI 早顯示)
                     if isinstance(loop_ev, AssistantTurnComplete):
+                        await flush_text()
                         for tu_ev in await _emit_tool_use_for_assistant_turn(loop_ev):
                             await outbound_send.send(tu_ev)
+                await flush_text()
             except Exception as e:  # noqa: BLE001
+                await flush_text()
                 await outbound_send.send(
                     ErrorEvent(message=f"{type(e).__name__}: {e}"),
                 )
