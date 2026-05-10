@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  applyTheme,
   getThemePref,
   resolveTheme,
   setThemePref,
+  subscribeTheme,
   type ResolvedTheme,
   type ThemePref,
 } from '../lib/theme'
@@ -16,7 +16,10 @@ import {
  * - `resolved` is what's currently applied (light | dark) — useful for icon swaps
  * - `setPref` persists + re-applies
  *
- * Listens to `prefers-color-scheme` changes when pref is 'system'.
+ * The OS-level prefers-color-scheme watcher lives at module level (started
+ * from main.tsx via startSystemThemeWatcher); this hook only subscribes to
+ * the resolved-theme channel so it re-renders whatever caller (e.g. icon)
+ * needs the current value.
  */
 export function useTheme(): {
   pref: ThemePref
@@ -28,18 +31,11 @@ export function useTheme(): {
     resolveTheme(getThemePref()),
   )
 
-  useEffect(() => {
-    if (pref !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => setResolved(applyTheme('system'))
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [pref])
+  useEffect(() => subscribeTheme(setResolved), [])
 
   function setPref(p: ThemePref) {
     setPrefState(p)
-    setThemePref(p)
-    setResolved(resolveTheme(p))
+    setThemePref(p) // applyTheme runs inside → notifies subscribers → setResolved
   }
 
   return { pref, resolved, setPref }

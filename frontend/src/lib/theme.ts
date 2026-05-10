@@ -42,10 +42,44 @@ export function resolveTheme(pref: ThemePref): ResolvedTheme {
   return pref
 }
 
+type ThemeListener = (resolved: ResolvedTheme) => void
+const listeners = new Set<ThemeListener>()
+
+/** Subscribe to resolved-theme changes (called whenever applyTheme runs). */
+export function subscribeTheme(cb: ThemeListener): () => void {
+  listeners.add(cb)
+  return () => {
+    listeners.delete(cb)
+  }
+}
+
 export function applyTheme(pref: ThemePref): ResolvedTheme {
   const resolved = resolveTheme(pref)
   const root = document.documentElement
   if (resolved === 'dark') root.classList.add('dark')
   else root.classList.remove('dark')
+  for (const cb of listeners) cb(resolved)
   return resolved
+}
+
+let watcherStarted = false
+
+/**
+ * Set up a global listener for OS-level prefers-color-scheme changes.
+ *
+ * Idempotent — call once from main.tsx. When pref === 'system' and the OS
+ * theme flips (e.g. user toggles macOS dark, or scheduled night mode kicks
+ * in), this re-applies the theme so the app follows. Without this watcher
+ * at module level, only SettingsPanel-mounted instances of useTheme would
+ * react — and that's almost never (modal closed = no listener).
+ */
+export function startSystemThemeWatcher(): void {
+  if (watcherStarted) return
+  watcherStarted = true
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  const mq = window.matchMedia('(prefers-color-scheme: dark)')
+  const onChange = () => {
+    if (getThemePref() === 'system') applyTheme('system')
+  }
+  mq.addEventListener('change', onChange)
 }
