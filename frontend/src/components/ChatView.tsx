@@ -19,6 +19,10 @@ interface Props {
   token: string | null
   currentSession: SessionSummary | null
   catalog: ModelCatalog | null
+  /** Draft mode: 使用者按 New chat 但還沒送訊息;sessionId 會是 null。 */
+  draft: ModelChoice | null
+  /** Draft mode 送第一則訊息時呼叫,實際建立 session 並回傳 sid。 */
+  onCommitDraft: () => Promise<string | null>
   onOpenSettings: () => void
   onModelChange: (choice: ModelChoice) => void
 }
@@ -195,6 +199,8 @@ export function ChatView({
   token,
   currentSession,
   catalog,
+  draft,
+  onCommitDraft,
   onOpenSettings,
   onModelChange,
 }: Props) {
@@ -202,11 +208,28 @@ export function ChatView({
 
   const [flow, setFlow] = useState<FlowState>(EMPTY)
   const processedCountRef = useRef(0)
+  // draft → real session 之間的 pending message。sessionId 變動時 flow 會被
+  // 重置成 EMPTY,所以這個訊息只能存在 ref 裡才不會被洗掉。WS open 後 flush。
+  const pendingDraftSendRef = useRef<string | null>(null)
 
   useEffect(() => {
     setFlow(EMPTY)
     processedCountRef.current = 0
   }, [sessionId])
+
+  // draft 模式下 commit 完 sid,等 WS open 後把訊息送出
+  useEffect(() => {
+    if (sessionId && ws.status === 'open' && pendingDraftSendRef.current) {
+      const text = pendingDraftSendRef.current
+      pendingDraftSendRef.current = null
+      setFlow((s) => ({
+        ...s,
+        entries: [...s.entries, { kind: 'user', id: newId(), text }],
+        inFlight: true,
+      }))
+      ws.send({ type: 'user_message', content: text })
+    }
+  }, [sessionId, ws.status, ws])
 
   // server 在 reconnect 會 replay history → useWebSocket reset events 為 [],
   // 我們也得把處理過的 cursor 同步歸零,否則新 events 會被當成「已處理」跳過。
@@ -242,7 +265,6 @@ export function ChatView({
   }, [ws.status])
 
   function send(text: string, attachments: UploadSummary[]) {
-    if (!sessionId) return
     let combined = text
     if (attachments.length > 0) {
       const refs = attachments
@@ -251,6 +273,15 @@ export function ChatView({
       combined = combined ? `${combined}\n\n${refs}` : refs
     }
     if (!combined) return
+    if (!sessionId) {
+      // draft 模式:先建 session,WS open 後才實際發訊息
+      if (!draft) return
+      pendingDraftSendRef.current = combined
+      void onCommitDraft().then((sid) => {
+        if (!sid) pendingDraftSendRef.current = null
+      })
+      return
+    }
     setFlow((s) => ({
       ...s,
       entries: [...s.entries, { kind: 'user', id: newId(), text: combined }],
@@ -282,7 +313,11 @@ export function ChatView({
             title={ws.status}
           />
           <span className="font-mono text-claude-textDim">
-            {sessionId ? `${sessionId.slice(0, 8)}…` : 'no session'}
+            {sessionId
+              ? `${sessionId.slice(0, 8)}…`
+              : draft
+                ? 'new chat'
+                : 'no session'}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -298,20 +333,18 @@ export function ChatView({
             className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-panel hover:text-claude-text transition-colors"
             title="Settings"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle
-                cx="8"
-                cy="8"
-                r="2"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
-              <path
-                d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
             </svg>
           </button>
         </div>
@@ -324,7 +357,7 @@ export function ChatView({
         </div>
       )}
 
-      {isEmpty && sessionId ? (
+      {(isEmpty && sessionId) || (!sessionId && draft) ? (
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-claude-orange text-white text-lg font-semibold mb-4">
             O
@@ -335,12 +368,16 @@ export function ChatView({
           <div className="text-[14px] text-claude-textDim mb-5">
             Pick a model below, then type your first message.
           </div>
-          {currentSession && (
+          {(currentSession || draft) && (
             <ModelPicker
-              value={{
-                provider: currentSession.provider,
-                model: currentSession.model,
-              }}
+              value={
+                currentSession
+                  ? {
+                      provider: currentSession.provider,
+                      model: currentSession.model,
+                    }
+                  : draft!
+              }
               catalog={catalog}
               onChange={onModelChange}
             />
@@ -360,8 +397,10 @@ export function ChatView({
       <InputBox
         // 連線抖動時(connecting / reconnecting)仍允許打字 — useWebSocket 會把
         // send queue 起來,open 時 flush。只有真的 closed (token 失效 / 重試耗盡)
-        // 或已知 inFlight 才 disable。
-        disabled={!sessionId || ws.status === 'closed' || flow.inFlight}
+        // 或已知 inFlight 才 disable。draft 模式無 sessionId 但允許輸入。
+        disabled={
+          (!sessionId && !draft) || ws.status === 'closed' || flow.inFlight
+        }
         onSend={send}
         onAbort={ws.abort}
       />

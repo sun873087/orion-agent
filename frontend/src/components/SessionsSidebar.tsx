@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { ModelCatalog, SessionSummary } from '../types/events'
 
 interface Props {
@@ -7,11 +8,136 @@ interface Props {
   loading: boolean
   error: string | null
   catalog: ModelCatalog | null
+  collapsed: boolean
+  onToggleCollapsed: () => void
   onSelect: (sid: string) => void
   onNew: () => void
   onDelete: (sid: string) => void
   onLogout: () => void
   onOpenSettings: () => void
+}
+
+interface UserMenuProps {
+  username: string | null
+  variant: 'rail' | 'expanded'
+  onOpenSettings: () => void
+  onLogout: () => void
+}
+
+function UserMenu({
+  username,
+  variant,
+  onOpenSettings,
+  onLogout,
+}: UserMenuProps) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const initial = (username ?? '?').charAt(0).toUpperCase()
+
+  return (
+    <div ref={wrapRef} className="relative">
+      {variant === 'rail' ? (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium hover:ring-2 hover:ring-claude-borderSoft transition"
+          title={username ?? '?'}
+          aria-label="User menu"
+          aria-haspopup="menu"
+          aria-expanded={open}
+        >
+          {initial}
+        </button>
+      ) : (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-claude-text hover:bg-claude-borderSoft/70 transition-colors"
+          aria-haspopup="menu"
+          aria-expanded={open}
+        >
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium">
+            {initial}
+          </span>
+          <span className="truncate flex-1 text-left">{username ?? '?'}</span>
+        </button>
+      )}
+
+      {open && (
+        <div
+          role="menu"
+          className={`absolute z-30 w-60 rounded-lg border border-claude-border/60 bg-claude-panel shadow-lg py-1.5 ${
+            variant === 'rail'
+              ? 'bottom-0 left-full ml-2'
+              : 'bottom-full left-0 mb-2'
+          }`}
+        >
+          <div className="px-3 py-2 text-[12px] text-claude-textDim truncate">
+            {username ?? '?'}
+          </div>
+          <div className="h-px bg-claude-border/60 my-1" />
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onOpenSettings()
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-claude-text hover:bg-claude-borderSoft/70 transition-colors"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Settings
+          </button>
+          <div className="h-px bg-claude-border/60 my-1" />
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onLogout()
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-claude-text hover:bg-claude-borderSoft/70 transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M10 11l3-3-3-3M13 8H6M9 13H3.5A1.5 1.5 0 012 11.5v-7A1.5 1.5 0 013.5 3H9"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function shortModelLabel(
@@ -34,22 +160,106 @@ export function SessionsSidebar({
   loading,
   error,
   catalog,
+  collapsed,
+  onToggleCollapsed,
   onSelect,
   onNew,
   onDelete,
   onLogout,
   onOpenSettings,
 }: Props) {
+  if (collapsed) {
+    return (
+      <aside className="w-[56px] shrink-0 bg-claude-panel flex flex-col items-center py-3 gap-1">
+        <button
+          onClick={onToggleCollapsed}
+          className="p-2 rounded-md text-claude-textDim hover:bg-claude-borderSoft hover:text-claude-text transition-colors"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <rect
+              x="2"
+              y="3"
+              width="12"
+              height="10"
+              rx="1.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path d="M6 3v10" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        </button>
+        <button
+          onClick={onNew}
+          className="p-2 rounded-full text-claude-textDim hover:bg-claude-borderSoft hover:text-claude-text transition-colors"
+          title="New chat"
+          aria-label="New chat"
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <circle
+              cx="8"
+              cy="8"
+              r="6.5"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              opacity="0.55"
+            />
+            <path
+              d="M8 5v6M5 8h6"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+
+        <div className="flex-1" />
+
+        <UserMenu
+          username={username}
+          variant="rail"
+          onOpenSettings={onOpenSettings}
+          onLogout={onLogout}
+        />
+      </aside>
+    )
+  }
   return (
     <aside className="w-[260px] shrink-0 bg-claude-panel flex flex-col">
       <div className="px-3 pt-4 pb-2">
-        <div className="flex items-center gap-2 px-2 pb-3">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-claude-orange text-white text-sm font-semibold">
-            O
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight">
-            Orion
-          </span>
+        <div className="flex items-center justify-between gap-2 px-2 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-claude-orange text-white text-sm font-semibold">
+              O
+            </span>
+            <span className="text-[15px] font-semibold tracking-tight">
+              Orion
+            </span>
+          </div>
+          <button
+            onClick={onToggleCollapsed}
+            className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-borderSoft hover:text-claude-text transition-colors"
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect
+                x="2"
+                y="3"
+                width="12"
+                height="10"
+                rx="1.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M6 3v10"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+            </svg>
+          </button>
         </div>
         <button
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium hover:bg-claude-borderSoft transition-colors"
@@ -133,49 +343,13 @@ export function SessionsSidebar({
         })}
       </div>
 
-      <div className="border-t border-claude-border/60 p-2 flex items-center gap-1">
-        <div className="flex-1 flex items-center gap-2 px-2 py-1.5 text-sm text-claude-text">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium">
-            {(username ?? '?').charAt(0).toUpperCase()}
-          </span>
-          <span className="truncate">{username ?? '?'}</span>
-        </div>
-        <button
-          onClick={onOpenSettings}
-          className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-borderSoft hover:text-claude-text transition-colors"
-          title="Settings"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle
-              cx="8"
-              cy="8"
-              r="2"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-        <button
-          onClick={onLogout}
-          className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-borderSoft hover:text-claude-text transition-colors"
-          title="Logout"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M10 11l3-3-3-3M13 8H6M9 13H3.5A1.5 1.5 0 012 11.5v-7A1.5 1.5 0 013.5 3H9"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+      <div className="border-t border-claude-border/60 p-2">
+        <UserMenu
+          username={username}
+          variant="expanded"
+          onOpenSettings={onOpenSettings}
+          onLogout={onLogout}
+        />
       </div>
     </aside>
   )

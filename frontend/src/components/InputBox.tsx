@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiUpload } from '../api/client'
 import type { UploadSummary } from '../types/events'
 
@@ -16,6 +16,16 @@ export function InputBox({ disabled, onSend, onAbort }: Props) {
   const [dragActive, setDragActive] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const prevDisabledRef = useRef(disabled)
+
+  // 訊息送出 → inFlight=true → textarea 被 disable,瀏覽器自動 blur。
+  // 回應結束 disabled 變回 false 時把 focus 拉回來。
+  useEffect(() => {
+    if (prevDisabledRef.current && !disabled) {
+      taRef.current?.focus()
+    }
+    prevDisabledRef.current = disabled
+  }, [disabled])
 
   async function uploadFiles(files: FileList | null) {
     if (!files || files.length === 0) return
