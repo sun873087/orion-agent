@@ -295,14 +295,16 @@
   <header>
     <h1>Orion Agent — provider.stream() 請求結構</h1>
     <div class="meta">
-      Phase 4 + Phase 5 + Phase 13 累積後的實際代碼
+      Phase 4 + Phase 5 + Phase 13 + cache 優化(2026-05-10)累積後的實際代碼
       <span class="sep">•</span> 7 靜態段
-      <span class="sep">•</span> 8 動態段
-      <span class="sep">•</span> 1 cache breakpoint
+      <span class="sep">•</span> 7 session-stable 段
+      <span class="sep">•</span> 2 per-turn 段
+      <span class="sep">•</span> 4 / 4 cache breakpoints
     </div>
-    <div style="margin-top: 14px; display: inline-block; padding: 8px 16px; border: 1px solid var(--orange-border); background: var(--orange-bg); border-radius: 6px; color: var(--orange); font-size: 12.5px;">
-      ⚠ 修正記錄:cache_control 原本誤標在 list[-1](dynamic),導致每 turn cache miss。
-      已修為 list[-2](static),畫圖時驗代碼才發現。
+    <div style="margin-top: 14px; display: inline-block; padding: 10px 18px; border: 1px solid var(--cyan-border); background: var(--cyan-bg); border-radius: 6px; color: var(--cyan); font-size: 12.5px; text-align: left; max-width: 880px; line-height: 1.7;">
+      架構摘要:system list 兩段都享 cache(static 1h / session 1h),
+      messages 用 rolling 2 bp(5m TTL),memory + git_status 改注入 user message
+      避免破壞 prefix。Anthropic 4 個 bp 已用滿;OpenAI 自動 cache 同一份 prompt 結構即可。
     </div>
   </header>
 
@@ -323,7 +325,7 @@
         <div class="layer-header">
           <span class="dot"></span>
           <span class="layer-title">list[0] — static_block</span>
-          <span class="layer-meta">cached · register_section</span>
+          <span class="layer-meta">cached · 1h TTL · register_section</span>
         </div>
         <div class="layer-desc">
           7 段固定 prompt — 跨 conversation / 跨 user 共用。由
@@ -340,28 +342,54 @@
         </div>
       </div>
 
-      <div class="breakpoint-marker">▸ cache_control: ephemeral 標在 list[0] 結尾(_build_system_param: cache_idx = max(0, len-2))</div>
+      <div class="breakpoint-marker">▸ cache_control 標在每段非空 block(_build_system_param: enumerate),list[0] 套 static TTL(1h),list[1+] 套 session TTL(1h)</div>
 
-      <!-- list[1] dynamic -->
+      <!-- list[1] session-stable -->
       <div class="layer green">
         <div class="layer-header">
           <span class="dot"></span>
-          <span class="layer-title">list[1] — dynamic_block</span>
-          <span class="layer-meta">每 turn 重算 · 並行蒐集</span>
+          <span class="layer-title">list[1] — session_stable_block</span>
+          <span class="layer-meta">每 turn 重算 · 1h TTL · 享 cache</span>
         </div>
         <div class="layer-desc">
-          動態段 — 由 <code style="color:var(--green)">fetch_system_prompt_parts()</code> 並行拉,
-          空字串自動過濾。實際代碼有 8 段(超出 Phase 4 doc 寫的 6 段 — Phase 5 加 mcp、Phase 13 加 custom_instructions)。
+          session-stable 動態段 — 由 <code style="color:var(--green)">fetch_system_prompt_parts()</code>
+          同步組裝(7 段都是無 I/O 計算)。session 內幾乎不變,享 cache hit。
+          空字串段自動過濾(<code>assembler.py:136-148</code>)。
         </div>
         <div class="chips">
-          <span class="chip">env_info — cwd / date / git status</span>
+          <span class="chip">env_info_stable — cwd / date / platform</span>
           <span class="chip">instructions — ~/.orion + cwd/.orion</span>
           <span class="chip">custom_instructions <span style="opacity:0.6">· Phase 13</span></span>
-          <span class="chip">memory — Phase 3 ranker 篩選</span>
           <span class="chip">mcp_instructions <span style="opacity:0.6">· Phase 5</span></span>
           <span class="chip optional">language(可選)</span>
           <span class="chip optional">output_style(可選)</span>
           <span class="chip optional">session_guidance(可選)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Per-turn injection(不是獨立 API param,而是 cache 保護機制)═══ -->
+    <div class="param">
+      <div class="param-header">
+        <span class="param-name">per_turn_text</span>
+        <span class="param-type">: str → injected into last user message</span>
+        <span class="param-tag">不是 API param / cache prefix 保護機制</span>
+      </div>
+      <div class="layer pink">
+        <div class="layer-header">
+          <span class="dot"></span>
+          <span class="layer-title">memory + git_status</span>
+          <span class="layer-meta">每 turn 重算 · 並行蒐集 · 注入 user msg</span>
+        </div>
+        <div class="layer-desc">
+          Volatile 內容由 <code style="color:var(--pink)">asyncio.gather(git_task, memory_task)</code> 並行拉,
+          再用 <code style="color:var(--pink)">inject_per_turn_into_user_message()</code> 拼到當前 user message 開頭。
+          <strong>不</strong>進 system prompt — 避免 volatile 段切斷 system → messages 的 cache prefix。
+          過去 turn 的 user message 已 frozen,維持 cache hit。
+        </div>
+        <div class="chips">
+          <span class="chip">memory — Phase 3 ranker 篩選</span>
+          <span class="chip">git_status — porcelain output</span>
         </div>
       </div>
     </div>
@@ -404,14 +432,17 @@
         <div class="layer-header">
           <span class="dot"></span>
           <span class="layer-title">state_messages</span>
-          <span class="layer-meta">每 turn append</span>
+          <span class="layer-meta">每 turn append · rolling 2 bp · 5m TTL</span>
         </div>
         <div class="layer-desc">
           對話累積 — 同一個 Conversation 物件持有 state,user / assistant / tool_use / tool_result
-          輪流堆疊。Phase 4 未啟用對話歷史的 cache breakpoint(Anthropic 提供 4 個,目前只用 1 個)。
+          輪流堆疊。<code style="color:var(--cyan)">compute_message_breakpoints()</code> 每 turn
+          標 2 個 cache_control:bp #1 = 最後 message(寫入此 turn cache),
+          bp #2 = 倒數第二個 user message(讀上 turn cache)。
+          長對話 cache hit rate 接近 100%(僅當前 turn 新內容付 1.25× 寫入,過去全部 0.1× 讀取)。
         </div>
         <div class="chips">
-          <span class="chip">role: user — 使用者輸入</span>
+          <span class="chip">role: user — 使用者輸入(最後一則含 per_turn_text 注入)</span>
           <span class="chip">role: assistant — 模型回應(可含 tool_use)</span>
           <span class="chip">role: tool — tool_result</span>
         </div>
@@ -435,17 +466,32 @@
         <tr>
           <td>list[0] / list[1] 切分</td>
           <td>build_system_prompt_list()</td>
-          <td>永遠 2 元素,即使 dynamic 為空也保留空字串</td>
+          <td>永遠 2 元素,即使 session-stable 為空也保留空字串</td>
         </tr>
         <tr>
-          <td>cache breakpoint</td>
+          <td>system cache breakpoint</td>
           <td>_build_system_param()</td>
-          <td>標 cache_idx = max(0, len-2) → [static, dynamic] 時即 list[0]</td>
+          <td>enumerate 全標,每段非空 block 都套 cache_control(list[0] static TTL,list[1+] session TTL)</td>
+        </tr>
+        <tr>
+          <td>messages cache breakpoint</td>
+          <td>compute_message_breakpoints()</td>
+          <td>rolling 2 bp:最後 message + 倒數第二個 user msg,5m TTL</td>
+        </tr>
+        <tr>
+          <td>per-turn 注入</td>
+          <td>inject_per_turn_into_user_message()</td>
+          <td>memory + git_status 拼到當前 user msg 開頭,不進 system prompt</td>
+        </tr>
+        <tr>
+          <td>cache TTL 配置</td>
+          <td>cache_config.py</td>
+          <td><code>ORION_CACHE_TTL_{STATIC,SESSION,MESSAGES}</code>,預設 1h / 1h / 5m</td>
         </tr>
         <tr>
           <td>OpenAI 行為</td>
           <td>OpenAIProvider</td>
-          <td><code>"\n\n".join(list)</code> → 自動 cache &gt; 1024 tokens prefix</td>
+          <td><code>"\n\n".join(list)</code> → 自動 cache &gt; 1024 tokens prefix(忽略 cache_breakpoints)</td>
         </tr>
         <tr>
           <td>靜態段 cache 機制</td>
@@ -453,8 +499,8 @@
           <td>跨 conversation 共用 / use_cache=False 可繞過</td>
         </tr>
         <tr>
-          <td>動態段空段過濾</td>
-          <td>assembler.py:135</td>
+          <td>session-stable 段過濾</td>
+          <td>assembler.py:136-148</td>
           <td><code>if b.strip()</code> — 沒內容的段不送</td>
         </tr>
       </tbody>
@@ -463,7 +509,8 @@
 
   <div class="footnote">
     來源:<code>api/src/orion_agent/prompt/{assembler,static_sections,dynamic_sections}.py</code>
-    + <code>api/src/orion_agent/core/conversation.py:266-310</code>
+    · <code>api/src/orion_agent/core/{conversation.py:266-310, message_cache.py, query_loop.py:172-180}</code>
+    · <code>api/src/orion_agent/llm/{anthropic_provider.py:54-78, openai_provider.py:79, cache_config.py}</code>
   </div>
 
 </div>
