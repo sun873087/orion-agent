@@ -263,10 +263,13 @@ class Conversation:
         if store is not None:
             await store.record_message(user_msg)
 
-        # ─── Phase 4:組裝 system prompt(7 段靜態 + 動態 + memory + MCP)─────
+        # ─── Phase 4 + cache 優化:組裝 system prompt + per-turn 注入 ────────
+        # system prompt = [static, session_stable](皆 cacheable)
+        # per_turn_text(memory + git_status)注入最後一個 user message,
+        # 避免 volatile 內容破壞 system → messages 的 cache prefix 連續性。
         effective_system_prompt: str | list[str]
         if self.system_prompt:
-            # caller 給了完整 prompt → 直接用
+            # caller 給了完整 prompt → 直接用,不做 per-turn 注入
             effective_system_prompt = self.system_prompt
         else:
             try:
@@ -283,6 +286,18 @@ class Conversation:
                     output_style=self.output_style,
                 )
                 effective_system_prompt = build_system_prompt_list(parts)
+
+                # per-turn 注入:替換 state 末尾的 bare user_msg 為 rendered 版
+                # 過去 turn 的 user_msg 已 frozen,維持 cache hit
+                if parts.per_turn_text and self.state_messages:
+                    from orion_agent.prompt.assembler import (
+                        inject_per_turn_into_user_message,
+                    )
+                    last = self.state_messages[-1]
+                    if last.role == "user":
+                        self.state_messages[-1] = inject_per_turn_into_user_message(
+                            last, parts.per_turn_text
+                        )
             except Exception:  # noqa: BLE001 — fallback 到純靜態 block
                 from orion_agent.prompt.static_sections import render_static_block
                 effective_system_prompt = render_static_block()

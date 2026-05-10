@@ -2,8 +2,14 @@
 
 對應 spec § 5 dynamic 部分。
 
-這些段 each turn 都重算(內容會隨 cwd / git status / 新 memory 而變)。
-跟靜態段不同,**不**進 section_cache。
+**Volatility 分類**(2026-05-10 cache 優化後):
+- session-stable(進 system prompt 的 session_stable_block,享 cache):
+  instructions / custom_instructions / mcp_instructions / language / output_style /
+  session_guidance / env_info_stable(platform / cwd / date)
+- per-turn(不進 system prompt,改注入 user message,避免破壞 cache prefix):
+  memory / git_status
+
+跟靜態段不同,**不**進 section_cache(每次重新計算,但內容多半不變 → cache hit)。
 """
 
 from __future__ import annotations
@@ -24,8 +30,29 @@ from orion_agent.prompt.context import (
 )
 
 
+def env_info_stable_section(cwd: Path | None = None) -> str:
+    """session-stable env info(platform / cwd / date)— 不含 git。
+
+    git_status 抽到 git_status_section(per-turn,不進 system prompt)。
+    """
+    env = get_env_info(cwd)
+    return f"# Environment\n\n{env}"
+
+
+async def git_status_section(cwd: Path | None = None) -> str:
+    """per-turn git status — 抽出獨立段供 user-message 注入。"""
+    git = await get_git_context(cwd)
+    if not git:
+        return ""
+    return f"# Git status\n\n{git}"
+
+
 async def env_info_section(cwd: Path | None = None) -> str:
-    """env info + git status 拼成一段。"""
+    """[deprecated] env info + git status 拼成一段。
+
+    保留給 backward-compat / 測試使用。新代碼請分別用
+    env_info_stable_section + git_status_section。
+    """
     env = get_env_info(cwd)
     git = await get_git_context(cwd)
     if git:

@@ -47,19 +47,24 @@ _REASONING_BUDGET = {
 
 
 def _build_system_param(system: str | list[str]) -> str | list[dict[str, Any]]:
-    """str → 直傳;list[str] → text blocks,cache_control 標在「倒數第二段」結尾。
+    """str → 直傳;list[str] → 每段都標 cache_control(Anthropic 限 4 個 bp)。
 
-    慣例:list 最後一段為 volatile dynamic block(每 turn 重算),
-    cache breakpoint 標在倒數第二段讓穩定 prefix 享 cache。
-    單元素 list 退化為標在唯一一段(整個 system 都 cache)。
+    慣例:caller 保證 list 內每段都是 cacheable(session-stable 或更穩定)。
+    volatile per-turn 內容應由 caller 注入 user message,不放在 system list。
+
+    每段標 cache_control 讓多層 cache 各自獨立比對:
+    - block[0] = static prompt(跨 session 不變)→ 寫入 cache 1
+    - block[1] = session-stable dynamic → 寫入 cache 2
+    - 若 caller 多送幾段(例如 user-level / conversation-level)→ cache 3, 4
+
+    空字串段會跳過 cache_control(API 拒收 cache_control on empty block)。
     """
     if isinstance(system, str):
         return system
     blocks: list[dict[str, Any]] = []
-    cache_idx = max(0, len(system) - 2)
-    for i, s in enumerate(system):
+    for s in system:
         block: dict[str, Any] = {"type": "text", "text": s}
-        if i == cache_idx:
+        if s.strip():
             block["cache_control"] = {"type": "ephemeral"}
         blocks.append(block)
     return blocks
