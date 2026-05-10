@@ -33,13 +33,7 @@ export default {
           'Helvetica Neue',
           'sans-serif',
         ],
-        serif: [
-          'ui-serif',
-          'Georgia',
-          'Cambria',
-          'Times New Roman',
-          'serif',
-        ],
+        serif: ['ui-serif', 'Georgia', 'Cambria', 'Times New Roman', 'serif'],
         mono: [
           'ui-monospace',
           'SFMono-Regular',
@@ -51,8 +45,7 @@ export default {
       },
       boxShadow: {
         soft: '0 1px 2px 0 rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.04)',
-        input:
-          '0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.04)',
+        input: '0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.04)',
         modal:
           '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)',
       },

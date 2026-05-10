@@ -26,8 +26,8 @@ export default defineConfig({
               err.code === 'EPIPE' ||
               err.code === 'ECONNRESET' ||
               err.code === 'ECONNABORTED'
-            ) return
-            // eslint-disable-next-line no-console
+            )
+              return
             console.error('[vite proxy /chat]', err)
           })
         },

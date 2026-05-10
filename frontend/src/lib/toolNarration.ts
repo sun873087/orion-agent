@@ -6,7 +6,7 @@
  * - formatGroupSummary(): 把多個 tool 概括成 "Ran 2 commands, viewed 1 file"
  */
 
-import { summarizeToolInput } from '../components/ToolInputView'
+import { summarizeToolInput } from './toolSummary'
 
 export interface ToolGroupItem {
   toolUseId: string
@@ -15,7 +15,10 @@ export interface ToolGroupItem {
   result?: { content: string; isError: boolean }
 }
 
-function basenameOrFile(toolName: string, input: Record<string, unknown>): string {
+function basenameOrFile(
+  toolName: string,
+  input: Record<string, unknown>,
+): string {
   return summarizeToolInput(toolName, input) ?? 'file'
 }
 
@@ -152,7 +155,9 @@ export function formatGroupSummary(items: ToolGroupItem[]): string {
       `searched ${buckets.searched} ${plural(buckets.searched, 'time')}`,
     )
   if (buckets.fetched)
-    parts.push(`fetched ${buckets.fetched} URL${buckets.fetched > 1 ? 's' : ''}`)
+    parts.push(
+      `fetched ${buckets.fetched} URL${buckets.fetched > 1 ? 's' : ''}`,
+    )
   if (buckets.other)
     parts.push(
       `used ${buckets.other} other tool${buckets.other > 1 ? 's' : ''}`,

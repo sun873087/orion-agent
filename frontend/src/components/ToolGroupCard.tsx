@@ -48,12 +48,20 @@ export function ToolGroupCard({ items }: Props) {
           {!inProgress && (
             <div
               className={`pl-3 py-1 flex items-center gap-1.5 ${
-                hasError ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-400'
+                hasError
+                  ? 'text-red-700 dark:text-red-300'
+                  : 'text-emerald-700 dark:text-emerald-400'
               }`}
             >
               {hasError ? (
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
                   <path
                     d="M5.5 5.5l5 5M10.5 5.5l-5 5"
                     stroke="currentColor"

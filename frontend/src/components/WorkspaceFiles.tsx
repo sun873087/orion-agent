@@ -15,9 +15,12 @@ function fmtSize(bytes: number): string {
 
 async function downloadFile(sessionId: string, name: string) {
   // 用 fetch + Authorization header,blob 化後觸發下載
-  const r = await fetch(`/sessions/${sessionId}/files/${encodeURIComponent(name)}`, {
-    headers: { Authorization: `Bearer ${getToken() ?? ''}` },
-  })
+  const r = await fetch(
+    `/sessions/${sessionId}/files/${encodeURIComponent(name)}`,
+    {
+      headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+    },
+  )
   if (!r.ok) {
     alert(`download failed: HTTP ${r.status}`)
     return
@@ -55,7 +58,9 @@ export function WorkspaceFiles({ sessionId, refreshKey }: Props) {
             strokeLinejoin="round"
           />
         </svg>
-        <span>{files.length} {files.length === 1 ? 'file' : 'files'}</span>
+        <span>
+          {files.length} {files.length === 1 ? 'file' : 'files'}
+        </span>
       </button>
 
       {open && (
@@ -69,7 +74,9 @@ export function WorkspaceFiles({ sessionId, refreshKey }: Props) {
               className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-claude-cream"
               onClick={() => void downloadFile(sessionId, f.name)}
             >
-              <span className="font-mono text-claude-text truncate">{f.name}</span>
+              <span className="font-mono text-claude-text truncate">
+                {f.name}
+              </span>
               <span className="text-[11px] text-claude-textFaint shrink-0">
                 {fmtSize(f.size)}
               </span>

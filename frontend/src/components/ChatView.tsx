@@ -59,14 +59,22 @@ function reduce(state: FlowState, ev: ServerEvent): FlowState {
   switch (ev.type) {
     case 'user_text': {
       // 重播時 server 送過去 user 訊息給 client 顯示
-      const entries = flushLive(state.entries, state.liveAssistant, state.liveThinking)
+      const entries = flushLive(
+        state.entries,
+        state.liveAssistant,
+        state.liveThinking,
+      )
       entries.push({ kind: 'user', id: newId(), text: ev.text })
       return { ...state, entries, liveAssistant: '', liveThinking: '' }
     }
     case 'history_replay_done':
       return {
         ...state,
-        entries: flushLive(state.entries, state.liveAssistant, state.liveThinking),
+        entries: flushLive(
+          state.entries,
+          state.liveAssistant,
+          state.liveThinking,
+        ),
         liveAssistant: '',
         liveThinking: '',
         // 重播不應該讓 inFlight 鎖住輸入

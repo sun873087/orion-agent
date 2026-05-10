@@ -115,9 +115,7 @@ export function Login({ onLoggedIn }: Props) {
             <input
               className="w-full border border-claude-border rounded-lg px-3 py-2 text-sm bg-white dark:bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow"
               type="password"
-              placeholder={
-                mode === 'login' ? '(empty for dev mode)' : ''
-              }
+              placeholder={mode === 'login' ? '(empty for dev mode)' : ''}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => {
@@ -137,11 +135,7 @@ export function Login({ onLoggedIn }: Props) {
             onClick={() => void submit()}
             disabled={busy}
           >
-            {busy
-              ? '…'
-              : mode === 'login'
-                ? 'Sign in'
-                : 'Create account'}
+            {busy ? '…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </div>
 

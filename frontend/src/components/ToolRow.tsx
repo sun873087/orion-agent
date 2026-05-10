@@ -66,7 +66,13 @@ function ToolIcon({ toolName }: { toolName: string }) {
     case 'WebFetch':
       return (
         <svg viewBox="0 0 16 16" fill="none" className={cls}>
-          <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
+          <circle
+            cx="8"
+            cy="8"
+            r="5.5"
+            stroke="currentColor"
+            strokeWidth="1.3"
+          />
           <path
             d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"
             stroke="currentColor"
@@ -108,7 +114,9 @@ export function ToolRow({ item }: Props) {
         onClick={() => setOpen((v) => !v)}
       >
         <ToolIcon toolName={item.toolName} />
-        <span className={`truncate ${isError ? 'text-red-700 dark:text-red-300' : ''}`}>
+        <span
+          className={`truncate ${isError ? 'text-red-700 dark:text-red-300' : ''}`}
+        >
           {desc}
         </span>
         {inProgress && (

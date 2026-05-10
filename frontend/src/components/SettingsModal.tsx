@@ -148,4 +148,3 @@ export function SettingsModal({ sessionId, onClose }: Props) {
     </div>
   )
 }
-

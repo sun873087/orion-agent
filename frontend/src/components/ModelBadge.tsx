@@ -10,9 +10,7 @@ interface Props {
 export function ModelBadge({ provider, model, catalog }: Props) {
   if (!provider || !model) return null
 
-  const label = catalog
-    ? findLabel(catalog, provider, model) ?? model
-    : model
+  const label = catalog ? (findLabel(catalog, provider, model) ?? model) : model
 
   return (
     <span

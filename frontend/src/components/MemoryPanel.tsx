@@ -23,9 +23,12 @@ const TYPE_LABEL: Record<MemoryType, string> = {
 
 const TYPE_COLOR: Record<MemoryType, string> = {
   user: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
-  feedback: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-  project: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-  reference: 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
+  feedback:
+    'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  project:
+    'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  reference:
+    'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
 }
 
 export function MemoryPanel() {
@@ -133,7 +136,9 @@ export function MemoryPanel() {
                 </span>
               )}
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-claude-text truncate">{m.name}</div>
+                <div className="font-medium text-claude-text truncate">
+                  {m.name}
+                </div>
                 <div className="text-[12px] text-claude-textDim truncate">
                   {m.description}
                 </div>
@@ -213,7 +218,12 @@ function MemoryEditor({ initial, mode, onClose, onSaved }: EditorProps) {
       if (mode === 'create') {
         if (!fname) {
           // default filename from name
-          fname = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40) || 'memory'}.md`
+          fname = `${
+            name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_')
+              .slice(0, 40) || 'memory'
+          }.md`
         }
         if (!fname.endsWith('.md')) fname += '.md'
       }
@@ -275,7 +285,10 @@ function MemoryEditor({ initial, mode, onClose, onSaved }: EditorProps) {
 
         <div className="p-5 space-y-3 overflow-y-auto">
           {mode === 'create' && (
-            <Field label="Filename" hint="auto-generated if blank — must end with .md">
+            <Field
+              label="Filename"
+              hint="auto-generated if blank — must end with .md"
+            >
               <input
                 className={`${inputCls} font-mono`}
                 placeholder="user_role.md"
@@ -298,7 +311,10 @@ function MemoryEditor({ initial, mode, onClose, onSaved }: EditorProps) {
               autoFocus
             />
           </Field>
-          <Field label="Description" hint="One-line summary used by the relevance ranker">
+          <Field
+            label="Description"
+            hint="One-line summary used by the relevance ranker"
+          >
             <input
               className={inputCls}
               placeholder="e.g. user prefers single-paragraph summaries with no headers"

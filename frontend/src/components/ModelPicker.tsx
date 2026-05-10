@@ -39,12 +39,13 @@ export function ModelPicker({
   }, [open])
 
   const currentLabel = catalog
-    ? findLabel(catalog, value) ?? value.model
+    ? (findLabel(catalog, value) ?? value.model)
     : value.model
 
   function pick(choice: ModelChoice) {
     setOpen(false)
-    if (choice.provider === value.provider && choice.model === value.model) return
+    if (choice.provider === value.provider && choice.model === value.model)
+      return
     onChange(choice)
   }
 
@@ -92,8 +93,7 @@ export function ModelPicker({
                 )}
               </div>
               {p.models.map((m) => {
-                const selected =
-                  p.id === value.provider && m.id === value.model
+                const selected = p.id === value.provider && m.id === value.model
                 const disabledRow = !p.available
                 return (
                   <button
@@ -112,9 +112,7 @@ export function ModelPicker({
                     }}
                     disabled={disabledRow}
                     title={
-                      disabledRow
-                        ? `${p.label} key not configured`
-                        : undefined
+                      disabledRow ? `${p.label} key not configured` : undefined
                     }
                   >
                     <span className="flex-1">{m.label}</span>

@@ -26,10 +26,15 @@ export function useSessions() {
       try {
         const s = await apiFetch<SessionSummary>('/sessions', {
           method: 'POST',
-          body: choice ? { provider: choice.provider, model: choice.model } : undefined,
+          body: choice
+            ? { provider: choice.provider, model: choice.model }
+            : undefined,
         })
         // Prepend the new session immediately — avoids a second GET /sessions round-trip.
-        setSessions((prev) => [s, ...prev.filter((p) => p.session_id !== s.session_id)])
+        setSessions((prev) => [
+          s,
+          ...prev.filter((p) => p.session_id !== s.session_id),
+        ])
         return s
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
