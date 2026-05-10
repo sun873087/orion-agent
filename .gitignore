@@ -7,6 +7,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.playwright-mcp/
 
 # 防呆:任何位置出現的 env 檔絕對不 commit
 .env

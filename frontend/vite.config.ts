@@ -5,15 +5,19 @@ import react from '@vitejs/plugin-react'
 //
 // 後端跑 :8000;為了避免 CORS 同 origin 走 vite proxy。
 //
-// HTTP 端 proxy 統一加 `timeout` + `proxyTimeout`(8s):vite 的
-// http-proxy-middleware 預設會 keep-alive backend 連線,backend 一抖
-// (重啟、長 request 把 worker 佔住、甚至 GC pause)那條 socket 變 stale,
-// proxy 無法察覺繼續往死連線丟 → request 卡到底。設 timeout 後 vite 主動
-// 砍 idle 8s 以上的連線,client 端的 retry 才能立即接手。
+// HTTP 端 proxy 設定:
+// - `agent: false`:**完全禁用 agent / connection pool**。vite/http-proxy
+//   預設會 keep-alive 連到 backend 的 socket,backend 一抖(重啟、長 LLM
+//   request 佔 worker、GC pause、macOS App Nap)pool 裡的 socket 變 stale,
+//   proxy 不知道繼續往死連線丟 → 卡到底。`agent: false` 強制每個 request
+//   開全新 socket,完全沒 stale pool。每 request 多 ~1ms TCP handshake,
+//   dev 環境可接受。
+// - `timeout` + `proxyTimeout`(8s):多一道保險。
 const HTTP_TARGET = 'http://localhost:8000'
 const httpProxy = {
   target: HTTP_TARGET,
   changeOrigin: true,
+  agent: false as const,
   timeout: 8_000,
   proxyTimeout: 8_000,
 }
