@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Orion Agent — provider.stream() 請求結構</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #11161d;
+    --bg-deep: #080b10;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-mute: #6e7681;
+    --border: #30363d;
+
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.07);
+    --purple-border: rgba(167, 139, 250, 0.4);
+
+    --green: #4ade80;
+    --green-bg: rgba(74, 222, 128, 0.06);
+    --green-border: rgba(74, 222, 128, 0.35);
+
+    --orange: #fb923c;
+    --orange-bg: rgba(251, 146, 60, 0.06);
+    --orange-border: rgba(251, 146, 60, 0.35);
+
+    --cyan: #38bdf8;
+    --cyan-bg: rgba(56, 189, 248, 0.06);
+    --cyan-border: rgba(56, 189, 248, 0.35);
+
+    --pink: #f472b6;
+    --pink-bg: rgba(244, 114, 182, 0.06);
+    --pink-border: rgba(244, 114, 182, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+
+  header h1 {
+    margin: 0 0 12px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  header .meta {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  header .meta .sep { margin: 0 10px; color: var(--text-mute); }
+
+  /* ─── API call envelope ───────────────────────────────────────── */
+  .api-envelope {
+    background: var(--bg-deep);
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 36px;
+    position: relative;
+  }
+  .envelope-label {
+    position: absolute;
+    top: -12px;
+    left: 24px;
+    background: var(--bg);
+    padding: 2px 14px;
+    color: var(--text-dim);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+  }
+
+  /* ─── Param block(top-level API param)───────────────────────── */
+  .param {
+    margin-bottom: 20px;
+  }
+  .param:last-child { margin-bottom: 0; }
+
+  .param-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+    padding-left: 4px;
+  }
+  .param-name {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .param-type {
+    font-family: ui-monospace, monospace;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .param-tag {
+    font-size: 11.5px;
+    color: var(--text-mute);
+    margin-left: auto;
+    letter-spacing: 0.3px;
+  }
+
+  /* ─── Layered card(for system list)───────────────────────── */
+  .layer {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .layer:last-child { margin-bottom: 0; }
+
+  .layer.purple { border-color: var(--purple-border); background: var(--purple-bg); }
+  .layer.green  { border-color: var(--green-border);  background: var(--green-bg); }
+  .layer.cyan   { border-color: var(--cyan-border);   background: var(--cyan-bg); }
+  .layer.orange { border-color: var(--orange-border); background: var(--orange-bg); }
+  .layer.pink   { border-color: var(--pink-border);   background: var(--pink-bg); }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .purple .dot { background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  .green .dot  { background: var(--green);  box-shadow: 0 0 8px var(--green); }
+  .cyan .dot   { background: var(--cyan);   box-shadow: 0 0 8px var(--cyan); }
+  .orange .dot { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+  .pink .dot   { background: var(--pink);   box-shadow: 0 0 8px var(--pink); }
+
+  .layer-title {
+    font-family: ui-monospace, monospace;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+  .purple .layer-title { color: var(--purple); }
+  .green .layer-title  { color: var(--green); }
+  .cyan .layer-title   { color: var(--cyan); }
+  .orange .layer-title { color: var(--orange); }
+  .pink .layer-title   { color: var(--pink); }
+
+  .layer-meta {
+    margin-left: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .layer-desc {
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 12px;
+    line-height: 1.6;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .chip {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .purple .chip { border-color: var(--purple-border); color: var(--purple); }
+  .green .chip  { border-color: var(--green-border);  color: var(--green); }
+  .cyan .chip   { border-color: var(--cyan-border);   color: var(--cyan); }
+  .orange .chip { border-color: var(--orange-border); color: var(--orange); }
+  .pink .chip   { border-color: var(--pink-border);   color: var(--pink); }
+
+  .chip.optional { opacity: 0.7; font-style: italic; }
+  .chip.phase {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-mute);
+    border-style: dashed;
+  }
+
+  /* ─── Cache breakpoint indicator ───────────────────────────── */
+  .breakpoint-marker {
+    margin: -2px 0 14px;
+    padding-left: 18px;
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--cyan);
+    position: relative;
+  }
+  .breakpoint-marker::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 12px;
+    height: 1px;
+    background: var(--cyan);
+  }
+
+  /* ─── Footer note ─────────────────────────────────────────── */
+  .summary {
+    margin-top: 32px;
+    padding: 22px 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .summary h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--text-dim);
+    letter-spacing: 0.3px;
+  }
+  .summary table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .summary td, .summary th {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .summary th {
+    color: var(--text-mute);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .summary td:first-child {
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+    width: 28%;
+  }
+  .summary td:nth-child(2) { color: var(--text-dim); }
+  .summary tr:last-child td { border-bottom: none; }
+  .summary code {
+    background: rgba(255, 255, 255, 0.04);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .footnote {
+    text-align: center;
+    color: var(--text-mute);
+    font-size: 12px;
+    margin-top: 32px;
+  }
+  .footnote code {
+    background: rgba(255, 255, 255, 0.04);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Orion Agent — provider.stream() 請求結構</h1>
+    <div class="meta">
+      Phase 4 + Phase 5 + Phase 13 累積後的實際代碼
+      <span class="sep">•</span> 7 靜態段
+      <span class="sep">•</span> 8 動態段
+      <span class="sep">•</span> 1 cache breakpoint
+    </div>
+    <div style="margin-top: 14px; display: inline-block; padding: 8px 16px; border: 1px solid var(--orange-border); background: var(--orange-bg); border-radius: 6px; color: var(--orange); font-size: 12.5px;">
+      ⚠ 修正記錄:cache_control 原本誤標在 list[-1](dynamic),導致每 turn cache miss。
+      已修為 list[-2](static),畫圖時驗代碼才發現。
+    </div>
+  </header>
+
+  <!-- API call envelope -->
+  <div class="api-envelope">
+    <div class="envelope-label">provider.stream(...)</div>
+
+    <!-- ═══ Param 1: system ═══ -->
+    <div class="param">
+      <div class="param-header">
+        <span class="param-name">system</span>
+        <span class="param-type">: list[str]</span>
+        <span class="param-tag">由 build_system_prompt_list() 組裝 / 永遠 2 元素</span>
+      </div>
+
+      <!-- list[0] static -->
+      <div class="layer purple">
+        <div class="layer-header">
+          <span class="dot"></span>
+          <span class="layer-title">list[0] — static_block</span>
+          <span class="layer-meta">cached · register_section</span>
+        </div>
+        <div class="layer-desc">
+          7 段固定 prompt — 跨 conversation / 跨 user 共用。由
+          <code style="color:var(--purple)">render_static_block()</code> 串成單字串。
+        </div>
+        <div class="chips">
+          <span class="chip">intro</span>
+          <span class="chip">system_behavior</span>
+          <span class="chip">doing_tasks</span>
+          <span class="chip">actions</span>
+          <span class="chip">tools</span>
+          <span class="chip">tone_style</span>
+          <span class="chip">output_efficiency</span>
+        </div>
+      </div>
+
+      <div class="breakpoint-marker">▸ cache_control: ephemeral 標在 list[0] 結尾(_build_system_param: cache_idx = max(0, len-2))</div>
+
+      <!-- list[1] dynamic -->
+      <div class="layer green">
+        <div class="layer-header">
+          <span class="dot"></span>
+          <span class="layer-title">list[1] — dynamic_block</span>
+          <span class="layer-meta">每 turn 重算 · 並行蒐集</span>
+        </div>
+        <div class="layer-desc">
+          動態段 — 由 <code style="color:var(--green)">fetch_system_prompt_parts()</code> 並行拉,
+          空字串自動過濾。實際代碼有 8 段(超出 Phase 4 doc 寫的 6 段 — Phase 5 加 mcp、Phase 13 加 custom_instructions)。
+        </div>
+        <div class="chips">
+          <span class="chip">env_info — cwd / date / git status</span>
+          <span class="chip">instructions — ~/.orion + cwd/.orion</span>
+          <span class="chip">custom_instructions <span style="opacity:0.6">· Phase 13</span></span>
+          <span class="chip">memory — Phase 3 ranker 篩選</span>
+          <span class="chip">mcp_instructions <span style="opacity:0.6">· Phase 5</span></span>
+          <span class="chip optional">language(可選)</span>
+          <span class="chip optional">output_style(可選)</span>
+          <span class="chip optional">session_guidance(可選)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Param 2: tools ═══ -->
+    <div class="param">
+      <div class="param-header">
+        <span class="param-name">tools</span>
+        <span class="param-type">: list[Tool]</span>
+        <span class="param-tag">與 system 並列 / 不在 system prompt 內</span>
+      </div>
+      <div class="layer orange">
+        <div class="layer-header">
+          <span class="dot"></span>
+          <span class="layer-title">effective_tools</span>
+          <span class="layer-meta">conversation.py:298</span>
+        </div>
+        <div class="layer-desc">
+          built-in tools + Phase 5 MCP servers 註冊的 tools(prefix
+          <code style="color:var(--orange)">mcp__&lt;server&gt;__&lt;tool&gt;</code>)合併。
+        </div>
+        <div class="chips">
+          <span class="chip">Read / Write / Edit</span>
+          <span class="chip">Bash / Glob / Grep</span>
+          <span class="chip">WebFetch / WebSearch</span>
+          <span class="chip">Skill / TodoWrite</span>
+          <span class="chip">mcp__* <span style="opacity:0.6">· Phase 5</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Param 3: messages ═══ -->
+    <div class="param">
+      <div class="param-header">
+        <span class="param-name">messages</span>
+        <span class="param-type">: list[NormalizedMessage]</span>
+        <span class="param-tag">對話歷史 / initial_messages = state_messages</span>
+      </div>
+      <div class="layer cyan">
+        <div class="layer-header">
+          <span class="dot"></span>
+          <span class="layer-title">state_messages</span>
+          <span class="layer-meta">每 turn append</span>
+        </div>
+        <div class="layer-desc">
+          對話累積 — 同一個 Conversation 物件持有 state,user / assistant / tool_use / tool_result
+          輪流堆疊。Phase 4 未啟用對話歷史的 cache breakpoint(Anthropic 提供 4 個,目前只用 1 個)。
+        </div>
+        <div class="chips">
+          <span class="chip">role: user — 使用者輸入</span>
+          <span class="chip">role: assistant — 模型回應(可含 tool_use)</span>
+          <span class="chip">role: tool — tool_result</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── 對照表 ─── -->
+  <div class="summary">
+    <h3>關鍵實作對照</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>項目</th>
+          <th>實際位置</th>
+          <th>備註</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>list[0] / list[1] 切分</td>
+          <td>build_system_prompt_list()</td>
+          <td>永遠 2 元素,即使 dynamic 為空也保留空字串</td>
+        </tr>
+        <tr>
+          <td>cache breakpoint</td>
+          <td>_build_system_param()</td>
+          <td>標 cache_idx = max(0, len-2) → [static, dynamic] 時即 list[0]</td>
+        </tr>
+        <tr>
+          <td>OpenAI 行為</td>
+          <td>OpenAIProvider</td>
+          <td><code>"\n\n".join(list)</code> → 自動 cache &gt; 1024 tokens prefix</td>
+        </tr>
+        <tr>
+          <td>靜態段 cache 機制</td>
+          <td>register_section() / module dict</td>
+          <td>跨 conversation 共用 / use_cache=False 可繞過</td>
+        </tr>
+        <tr>
+          <td>動態段空段過濾</td>
+          <td>assembler.py:135</td>
+          <td><code>if b.strip()</code> — 沒內容的段不送</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footnote">
+    來源:<code>api/src/orion_agent/prompt/{assembler,static_sections,dynamic_sections}.py</code>
+    + <code>api/src/orion_agent/core/conversation.py:266-310</code>
+  </div>
+
+</div>
+</body>
+</html>

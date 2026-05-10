@@ -46,6 +46,25 @@ _REASONING_BUDGET = {
 }
 
 
+def _build_system_param(system: str | list[str]) -> str | list[dict[str, Any]]:
+    """str → 直傳;list[str] → text blocks,cache_control 標在「倒數第二段」結尾。
+
+    慣例:list 最後一段為 volatile dynamic block(每 turn 重算),
+    cache breakpoint 標在倒數第二段讓穩定 prefix 享 cache。
+    單元素 list 退化為標在唯一一段(整個 system 都 cache)。
+    """
+    if isinstance(system, str):
+        return system
+    blocks: list[dict[str, Any]] = []
+    cache_idx = max(0, len(system) - 2)
+    for i, s in enumerate(system):
+        block: dict[str, Any] = {"type": "text", "text": s}
+        if i == cache_idx:
+            block["cache_control"] = {"type": "ephemeral"}
+        blocks.append(block)
+    return blocks
+
+
 class AnthropicProvider:
     """直接呼 Claude Messages API。"""
 
@@ -84,17 +103,8 @@ class AnthropicProvider:
         anthropic_messages = translate_messages_to_anthropic(messages)
         anthropic_tools = translate_tools_to_anthropic(tools or [])
 
-        # System prompt:str 或 list[str](list 模式最後一個加 cache_control)
-        system_param: str | list[dict[str, Any]]
-        if isinstance(system, str):
-            system_param = system
-        else:
-            system_param = []
-            for i, s in enumerate(system):
-                block: dict[str, Any] = {"type": "text", "text": s}
-                if i == len(system) - 1:
-                    block["cache_control"] = {"type": "ephemeral"}
-                system_param.append(block)
+        # System prompt:str 或 list[str](cache_control 邏輯見 _build_system_param)
+        system_param = _build_system_param(system)
 
         if cache_breakpoints:
             anthropic_messages = apply_cache_breakpoints(anthropic_messages, cache_breakpoints)

@@ -86,7 +86,7 @@ list[str] (2 elements)
           └─ Session guidance(若指定)
 ```
 
-**Anthropic provider** 自動把 `list[:-1]` 標 `cache_control: ephemeral`(Phase 0 既有實作)→ 靜態段被 cache。
+**Anthropic provider** 把 `cache_control: ephemeral` 標在「倒數第二段」結尾(`_build_system_param`,cache_idx = max(0, len-2))→ 涵蓋穩定 prefix 即靜態段。⚠ Phase 4 完工時實作有誤(誤標在 list[-1]),2026-05-10 修正,見文末「勘誤」。
 **OpenAI provider** 自動 `\n\n.join(list)` 成單字串(Phase 0 既有實作),自動 cache > 1024 tokens 的 prefix。
 
 兩家 provider 都不需要本 phase 改動 — Phase 0 抽象設計已預留。
@@ -110,7 +110,7 @@ list[str] (2 elements)
 ### 1. LLMProvider.stream 已支援 list[str] system
 
 Phase 0 抽象設計時就考慮了這層 — 不需要為 Phase 4 再改 provider。
-`AnthropicProvider`:list 模式最後 element 之前自動加 cache_control(Phase 0)。
+`AnthropicProvider`:list 模式在「倒數第二段」加 cache_control(2026-05-10 修正前誤標在最後一段,見「勘誤」)。
 `OpenAIProvider`:list 模式 `"\n\n".join(...)` 成單字串(Phase 0)。
 **Phase 4 只在 Conversation 層產 list,provider 層不動** — 抽象有效隔離。
 
@@ -171,3 +171,34 @@ Phase 4 的 instructions 限更嚴(100KB),因為要全文進 prompt 不能截斷
 ## 衍生的新 phase plan
 
 無 — Phase 4 觀察到的全部進範圍。
+
+---
+
+## 勘誤(2026-05-10)
+
+**症狀**:Phase 4 設計上要把 `cache_control: ephemeral` 標在 `list[:-1]`(即靜態段結尾),
+讓穩定 prefix 享 cache、動態段在 breakpoint 之後不影響 cache 比對。
+
+**實際代碼**(`anthropic_provider.py` 至 2026-05-10 前):
+```python
+if i == len(system) - 1:           # ← 標在 list[-1](dynamic 段)
+    block["cache_control"] = {"type": "ephemeral"}
+```
+
+**後果**:cache key 涵蓋整個 system(static + dynamic),
+dynamic 每 turn 變 → cache key 每 turn 變 → **靜態段 cache 完全沒生效**。
+
+**為何沒被發現**:
+- 沒有測試直接驗 cache_control 標記位置(`test_forked_agent.py` 只驗 system list 形狀)
+- Phase 4 完工驗證指標(`in=330` tokens)是 prompt 大小,不是 cache hit rate
+- doc 跟代碼 comment 都寫「最後一段」(comment 配合代碼一起寫成的),自我一致沒人察覺
+- 跨 phase 引用時(Phase 5 / 13)只看「能不能用」,沒回頭驗 cache 行為
+
+**修正**:
+1. 抽出 `_build_system_param()` 純函式,`cache_idx = max(0, len(system) - 2)`
+2. 新增 `tests/unit/llm/test_anthropic_provider.py`(5 case 直接驗標記位置)
+3. 同步修 `test_forked_agent.py:58` 的過時 comment
+4. doc 對應段落(§ System prompt 結構、§ 實作中發現的細節 1)同步更新
+
+**教訓**:設計意圖、代碼、doc、comment 四者必須**互相證偽**,不能只是互相引用。
+未來凡涉及 cache scope 的代碼,測試 MUST 直接斷言「cache_control 在哪個 block 上」。

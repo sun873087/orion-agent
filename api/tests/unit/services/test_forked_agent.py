@@ -55,7 +55,7 @@ async def test_byte_identical_prefix_passes_to_provider() -> None:
         provider=provider,  # type: ignore[arg-type]
     )
     call = provider.captured_calls[0]
-    # system 維持 list[str](Anthropic provider 才會挑最後一段加 cache_control)
+    # system 維持 list[str](Anthropic provider 在倒數第二段加 cache_control)
     assert call["system"] == ["a", "b", "c"]
     # messages = prefix + 新 user_prompt
     sent_msgs = call["messages"]
