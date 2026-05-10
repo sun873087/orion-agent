@@ -2,19 +2,34 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
+//
+// 後端跑 :8000;為了避免 CORS 同 origin 走 vite proxy。
+//
+// HTTP 端 proxy 統一加 `timeout` + `proxyTimeout`(8s):vite 的
+// http-proxy-middleware 預設會 keep-alive backend 連線,backend 一抖
+// (重啟、長 request 把 worker 佔住、甚至 GC pause)那條 socket 變 stale,
+// proxy 無法察覺繼續往死連線丟 → request 卡到底。設 timeout 後 vite 主動
+// 砍 idle 8s 以上的連線,client 端的 retry 才能立即接手。
+const HTTP_TARGET = 'http://localhost:8000'
+const httpProxy = {
+  target: HTTP_TARGET,
+  changeOrigin: true,
+  timeout: 8_000,
+  proxyTimeout: 8_000,
+}
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // 後端跑 :8000;如果用同 origin 開發,可以加 proxy 避免 CORS:
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/sessions': 'http://localhost:8000',
-      '/me': 'http://localhost:8000',
-      '/uploads': 'http://localhost:8000',
-      '/models': 'http://localhost:8000',
-      '/healthz': 'http://localhost:8000',
-      '/oauth': 'http://localhost:8000',
+      '/auth': httpProxy,
+      '/sessions': httpProxy,
+      '/me': httpProxy,
+      '/uploads': httpProxy,
+      '/models': httpProxy,
+      '/healthz': httpProxy,
+      '/oauth': httpProxy,
       '/chat': {
         target: 'ws://localhost:8000',
         ws: true,
