@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -84,7 +85,10 @@ class DbSessionManager:
             return None
         # 從磁碟 JSONL transcript 重建 state_messages / replacement_state。
         # transcript 不存在 → load_session 回空 snapshot(不是 error),等同空白歷史。
-        snapshot = load_session(session_id)
+        # load_session 是同步 file I/O + message 解析,長 transcript 會卡很久 —
+        # offload 到 thread 避免 cache-miss 那一刻把 event loop 整個鎖住
+        # (其他 endpoint 如 /healthz 也會跟著等)。
+        snapshot = await asyncio.to_thread(load_session, session_id)
         if snapshot.warnings:
             for w in snapshot.warnings:
                 logger.warning("resume %s: %s", session_id, w)
