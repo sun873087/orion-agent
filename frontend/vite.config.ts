@@ -14,6 +14,7 @@ export default defineConfig({
       '/uploads': 'http://localhost:8000',
       '/models': 'http://localhost:8000',
       '/healthz': 'http://localhost:8000',
+      '/oauth': 'http://localhost:8000',
       '/chat': {
         target: 'ws://localhost:8000',
         ws: true,

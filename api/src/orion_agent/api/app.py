@@ -27,6 +27,8 @@ from orion_agent.api.deps import _provider_from_env  # noqa: E402
 from orion_agent.api.routes import auth as auth_router  # noqa: E402
 from orion_agent.api.routes import chat as chat_router  # noqa: E402
 from orion_agent.api.routes import health as health_router  # noqa: E402
+from orion_agent.api.routes import memories as memories_router  # noqa: E402
+from orion_agent.api.routes import oauth as oauth_router  # noqa: E402
 from orion_agent.api.routes import preferences as preferences_router  # noqa: E402
 from orion_agent.api.routes import sessions as sessions_router  # noqa: E402
 from orion_agent.api.routes import uploads as uploads_router  # noqa: E402
@@ -144,6 +146,8 @@ def create_app() -> FastAPI:
     app.include_router(uploads_router.router)
     app.include_router(preferences_router.router)
     app.include_router(user_settings_router.router)
+    app.include_router(memories_router.router)
+    app.include_router(oauth_router.router)
     app.include_router(chat_router.router)
 
     return app

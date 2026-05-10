@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { ConnectionsPanel } from './ConnectionsPanel'
 import { CustomInstructionsPanel } from './CustomInstructionsPanel'
+import { MemoryPanel } from './MemoryPanel'
 import { SettingsPanel } from './SettingsPanel'
 
 type Tab = 'instructions' | 'settings' | 'memory' | 'connections'
@@ -138,8 +140,8 @@ export function SettingsModal({ sessionId, onClose }: Props) {
               <CustomInstructionsPanel sessionId={sessionId} />
             )}
             {tab === 'settings' && <SettingsPanel />}
-            {tab === 'memory' && <Placeholder feature="Memory" />}
-            {tab === 'connections' && <Placeholder feature="Connections (MCP)" />}
+            {tab === 'memory' && <MemoryPanel />}
+            {tab === 'connections' && <ConnectionsPanel />}
           </div>
         </div>
       </div>
@@ -147,19 +149,3 @@ export function SettingsModal({ sessionId, onClose }: Props) {
   )
 }
 
-function Placeholder({ feature }: { feature: string }) {
-  return (
-    <div className="p-6 text-[14px] text-claude-textDim space-y-2 max-w-md">
-      <div className="font-medium text-claude-text">
-        {feature} — coming soon
-      </div>
-      <p>
-        REST endpoints for this section haven't been implemented yet. See{' '}
-        <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
-          docs/phases/plan/25-memory-mcp-rest-endpoints.md
-        </code>
-        .
-      </p>
-    </div>
-  )
-}
