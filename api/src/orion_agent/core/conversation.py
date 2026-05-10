@@ -14,6 +14,7 @@ Phase 2 加入:JSONL transcript persistence + ContentReplacementState 共用 +
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -146,6 +147,11 @@ class Conversation:
     _session_storage: SessionStorage | None = None
     """SessionStorage instance,lazy init 在第一次 send() 時。"""
 
+    _pending_extract_tasks: set[asyncio.Task[None]] = field(
+        default_factory=set, init=False, repr=False, compare=False,
+    )
+    """In-flight memory-extract tasks。Strong ref 防 GC,done callback 自動 discard。"""
+
     # ─── Phase 3 ──────────────────────────────────────────────────────────
     user_id: str = field(default_factory=default_user_id)
     """Per-user memory key。CLI 預設 "default";Phase 6 web app 透過 session 注入。"""
@@ -268,6 +274,11 @@ class Conversation:
         # per_turn_text(memory + git_status)注入最後一個 user message,
         # 避免 volatile 內容破壞 system → messages 的 cache prefix 連續性。
         effective_system_prompt: str | list[str]
+        # query_loop 看到的 messages(可能含 per-turn 注入版的 user msg)。
+        # **不 mutate self.state_messages** — 否則 memory/git_status 會被
+        # 當成對話歷史持久化,replay 時整段送回前端,看起來像 user 自己打的。
+        messages_for_loop: list[NormalizedMessage] = list(self.state_messages)
+        augmented_user_msg: NormalizedMessage | None = None
         if self.system_prompt:
             # caller 給了完整 prompt → 直接用,不做 per-turn 注入
             effective_system_prompt = self.system_prompt
@@ -287,17 +298,20 @@ class Conversation:
                 )
                 effective_system_prompt = build_system_prompt_list(parts)
 
-                # per-turn 注入:替換 state 末尾的 bare user_msg 為 rendered 版
-                # 過去 turn 的 user_msg 已 frozen,維持 cache hit
-                if parts.per_turn_text and self.state_messages:
+                # per-turn 注入:只在 messages_for_loop 末尾換成 rendered 版,
+                # self.state_messages 維持 bare,避免 memory 被持久化
+                if (
+                    parts.per_turn_text
+                    and messages_for_loop
+                    and messages_for_loop[-1].role == "user"
+                ):
                     from orion_agent.prompt.assembler import (
                         inject_per_turn_into_user_message,
                     )
-                    last = self.state_messages[-1]
-                    if last.role == "user":
-                        self.state_messages[-1] = inject_per_turn_into_user_message(
-                            last, parts.per_turn_text
-                        )
+                    augmented_user_msg = inject_per_turn_into_user_message(
+                        messages_for_loop[-1], parts.per_turn_text
+                    )
+                    messages_for_loop[-1] = augmented_user_msg
             except Exception:  # noqa: BLE001 — fallback 到純靜態 block
                 from orion_agent.prompt.static_sections import render_static_block
                 effective_system_prompt = render_static_block()
@@ -322,7 +336,7 @@ class Conversation:
             tools=effective_tools,
             can_use_tool=self.can_use_tool,
             hooks=self.hooks,
-            initial_messages=self.state_messages,
+            initial_messages=messages_for_loop,
             max_turns=self.max_turns,
             max_tokens_per_turn=self.max_tokens_per_turn,
             reasoning_effort=self.reasoning_effort,
@@ -352,26 +366,44 @@ class Conversation:
                         await store.record_message(ev.message)
                 elif isinstance(ev, LoopTerminated):
                     self.stats.turns += ev.total_turns
-                    self.state_messages = ev.final_messages
+                    # 把 augmented user msg 還原成 bare,避免 memory/git_status
+                    # 隨 final_messages 持久化(下次 replay 會送整段給前端)
+                    final = list(ev.final_messages)
+                    if augmented_user_msg is not None:
+                        for i, m in enumerate(final):
+                            if m is augmented_user_msg:
+                                final[i] = user_msg
+                                break
+                    self.state_messages = final
                     if store is not None:
                         await store.record_transition(
                             reason=ev.transition.reason,
                             total_turns=ev.total_turns,
                         )
 
-                    # ─── Phase 3:fork 子 agent 萃取新 memory(失敗不影響)───
+                    # ─── Phase 3:fire-and-forget 萃取新 memory(失敗不影響)───
+                    # 用 background task 而不是 await — extract_memories 是 LLM
+                    # call(數秒),若 await 會卡住 generator return,連帶 caller
+                    # (e.g. WebSocket runner)持有的 turn_lock 多撐數秒,user
+                    # 看到 TerminalEvent 後送下一句會被 reject。
                     if self.memory_enabled and self.auto_extract_memories:
-                        try:
-                            paths = user_memory_paths(self.user_id)
-                            existing = scan_memory_dir(paths).memories
-                            await extract_memories(
-                                self.state_messages,
-                                existing,
-                                provider=self.provider,
-                                paths=paths,
-                            )
-                        except Exception:  # noqa: BLE001
-                            pass  # 萃取失敗不該炸對話
+                        task = asyncio.create_task(
+                            self._extract_memories_safely(list(self.state_messages)),
+                        )
+                        self._pending_extract_tasks.add(task)
+                        task.add_done_callback(self._pending_extract_tasks.discard)
+
+    async def _extract_memories_safely(
+        self, messages: list[NormalizedMessage]
+    ) -> None:
+        try:
+            paths = user_memory_paths(self.user_id)
+            existing = scan_memory_dir(paths).memories
+            await extract_memories(
+                messages, existing, provider=self.provider, paths=paths,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _ensure_storage(self) -> SessionStorage | None:
         """Lazy 初始化 SessionStorage。"""
