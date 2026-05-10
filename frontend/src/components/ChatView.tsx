@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import type {
   ModelCatalog,
@@ -201,22 +201,45 @@ export function ChatView({
   const ws = useWebSocket(sessionId, token)
 
   const [flow, setFlow] = useState<FlowState>(EMPTY)
-  const [processedCount, setProcessedCount] = useState(0)
+  const processedCountRef = useRef(0)
 
   useEffect(() => {
     setFlow(EMPTY)
-    setProcessedCount(0)
+    processedCountRef.current = 0
   }, [sessionId])
 
+  // server 在 reconnect 會 replay history → useWebSocket reset events 為 [],
+  // 我們也得把處理過的 cursor 同步歸零,否則新 events 會被當成「已處理」跳過。
   useEffect(() => {
-    if (ws.events.length <= processedCount) return
-    let next = flow
-    for (let i = processedCount; i < ws.events.length; i++) {
-      next = reduce(next, ws.events[i]!)
+    if (ws.events.length < processedCountRef.current) {
+      processedCountRef.current = 0
+      setFlow(EMPTY)
     }
-    setFlow(next)
-    setProcessedCount(ws.events.length)
-  }, [ws.events, processedCount, flow])
+  }, [ws.events])
+
+  useEffect(() => {
+    const start = processedCountRef.current
+    if (ws.events.length <= start) return
+    setFlow((prev) => {
+      let next = prev
+      for (let i = start; i < ws.events.length; i++) {
+        next = reduce(next, ws.events[i]!)
+      }
+      return next
+    })
+    processedCountRef.current = ws.events.length
+  }, [ws.events])
+
+  // reconnect banner: reconnecting 超過 1s 才顯示,避免短暫抖動 flicker
+  const [showReconnectBanner, setShowReconnectBanner] = useState(false)
+  useEffect(() => {
+    if (ws.status !== 'reconnecting') {
+      setShowReconnectBanner(false)
+      return
+    }
+    const t = setTimeout(() => setShowReconnectBanner(true), 1_000)
+    return () => clearTimeout(t)
+  }, [ws.status])
 
   function send(text: string, attachments: UploadSummary[]) {
     if (!sessionId) return
@@ -250,9 +273,13 @@ export function ChatView({
         <div className="flex items-center gap-2.5 text-claude-textDim">
           <span
             className={`inline-block h-2 w-2 rounded-full transition-colors ${
-              ws.connected ? 'bg-emerald-500' : 'bg-claude-textFaint'
+              ws.status === 'open'
+                ? 'bg-emerald-500'
+                : ws.status === 'connecting' || ws.status === 'reconnecting'
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-claude-textFaint'
             }`}
-            title={ws.connected ? 'connected' : 'disconnected'}
+            title={ws.status}
           />
           <span className="font-mono text-claude-textDim">
             {sessionId ? `${sessionId.slice(0, 8)}…` : 'no session'}
@@ -290,6 +317,13 @@ export function ChatView({
         </div>
       </header>
 
+      {showReconnectBanner && (
+        <div className="px-5 py-2 text-[12px] text-amber-800 bg-amber-50 border-y border-amber-200 dark:text-amber-200 dark:bg-amber-950/40 dark:border-amber-900/50 flex items-center gap-2">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+          Reconnecting to server…
+        </div>
+      )}
+
       {isEmpty && sessionId ? (
         <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-claude-orange text-white text-lg font-semibold mb-4">
@@ -324,7 +358,10 @@ export function ChatView({
       )}
 
       <InputBox
-        disabled={!sessionId || !ws.connected || flow.inFlight}
+        // 連線抖動時(connecting / reconnecting)仍允許打字 — useWebSocket 會把
+        // send queue 起來,open 時 flush。只有真的 closed (token 失效 / 重試耗盡)
+        // 或已知 inFlight 才 disable。
+        disabled={!sessionId || ws.status === 'closed' || flow.inFlight}
         onSend={send}
         onAbort={ws.abort}
       />

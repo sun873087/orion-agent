@@ -4,7 +4,10 @@ import { ChatView } from './components/ChatView'
 import { Login } from './components/Login'
 import { SessionsSidebar } from './components/SessionsSidebar'
 import { SettingsModal } from './components/SettingsModal'
-import { useModelCatalog } from './hooks/useModelCatalog'
+import {
+  resetModelCatalogCache,
+  useModelCatalog,
+} from './hooks/useModelCatalog'
 import { useSessions } from './hooks/useSessions'
 import {
   getPreferredModel,
@@ -78,6 +81,7 @@ export default function App() {
 
   function logout() {
     clearAuth()
+    resetModelCatalogCache()
     setAuthed(false)
     setCurrentSid(null)
     setSettingsOpen(false)
