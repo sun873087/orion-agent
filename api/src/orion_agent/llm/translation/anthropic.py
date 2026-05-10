@@ -99,10 +99,25 @@ def apply_cache_breakpoints(
     messages: list[dict[str, Any]],
     breakpoints: list[int],
 ) -> list[dict[str, Any]]:
-    """在指定 messages index 後標 cache_control(Anthropic 限 4 個 breakpoint)。"""
+    """在指定 messages index 後標 cache_control(Anthropic 限 4 個 breakpoint)。
+
+    處理兩種 content 格式:
+    - str:升級成 [{type:text, text:..., cache_control:...}](API 不收 cache_control on str)
+    - list[block]:在最後一個 block 標 cache_control
+    """
     for idx in breakpoints:
-        if idx < len(messages):
-            content = messages[idx].get("content")
-            if isinstance(content, list) and content:
-                content[-1]["cache_control"] = {"type": "ephemeral"}
+        if idx < 0 or idx >= len(messages):
+            continue
+        msg = messages[idx]
+        content = msg.get("content")
+        if isinstance(content, str):
+            msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        elif isinstance(content, list) and content:
+            content[-1]["cache_control"] = {"type": "ephemeral"}
     return messages

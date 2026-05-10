@@ -17,6 +17,7 @@ from orion_agent.compact.reactive import (
     is_prompt_too_long_error,
     reactive_compact,
 )
+from orion_agent.core.message_cache import compute_message_breakpoints
 from orion_agent.core.state import AgentContext
 from orion_agent.core.streaming_executor import StreamingToolExecutor
 from orion_agent.core.tool import Tool
@@ -168,12 +169,14 @@ async def _run_one_turn(
             session_id=str(ctx.session_id),
             provider=params.provider.name,
         ):
+            msg_bps = compute_message_breakpoints(state_messages)
             async for ev in params.provider.stream(
                 system=params.system_prompt,
                 messages=state_messages,
                 tools=tool_defs,
                 max_tokens=params.max_tokens_per_turn,
                 reasoning_effort=params.reasoning_effort,
+                cache_breakpoints=msg_bps,
             ):
                 if isinstance(ev, TextDeltaEvent):
                     text_chunks.append(ev.text)
