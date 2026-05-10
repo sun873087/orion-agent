@@ -19,6 +19,7 @@ Sync vs async:既有用法都 async(統一 await pattern);實際 keyring / ferne
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -83,7 +84,9 @@ class KeychainBackend:
     async def get(self, key: str) -> str | None:
         kr = self._keyring()
         try:
-            result = kr.get_password(self.service, key)
+            # keyring 在 macOS 同步呼叫 Security framework,單次幾十~幾百 ms。
+            # 不 offload 會卡 event loop,讓並發 status 查詢被串成序列。
+            result = await asyncio.to_thread(kr.get_password, self.service, key)
         except Exception as e:  # noqa: BLE001 — backend init may fail
             logger.warning("keychain get failed for %s: %s", key, e)
             return None
@@ -91,13 +94,13 @@ class KeychainBackend:
 
     async def set(self, key: str, value: str) -> None:
         kr = self._keyring()
-        kr.set_password(self.service, key, value)
+        await asyncio.to_thread(kr.set_password, self.service, key, value)
         await self._add_to_index(key)
 
     async def delete(self, key: str) -> None:
         kr = self._keyring()
         try:
-            kr.delete_password(self.service, key)
+            await asyncio.to_thread(kr.delete_password, self.service, key)
         except Exception as e:  # noqa: BLE001 — keyring 各 backend 不同 exception
             # 不存在 / delete 失敗都吞;list_keys 仍會更新 index
             logger.debug("keychain delete %s: %s", key, e)
@@ -123,7 +126,9 @@ class KeychainBackend:
             return
         existing.append(key)
         kr = self._keyring()
-        kr.set_password(self.service, self._INDEX_KEY, json.dumps(existing))
+        await asyncio.to_thread(
+            kr.set_password, self.service, self._INDEX_KEY, json.dumps(existing),
+        )
 
     async def _remove_from_index(self, key: str) -> None:
         existing = await self.list_keys()
@@ -131,7 +136,9 @@ class KeychainBackend:
             return
         existing.remove(key)
         kr = self._keyring()
-        kr.set_password(self.service, self._INDEX_KEY, json.dumps(existing))
+        await asyncio.to_thread(
+            kr.set_password, self.service, self._INDEX_KEY, json.dumps(existing),
+        )
 
 
 # ─── EncryptedFile backend ──────────────────────────────────────────────────
