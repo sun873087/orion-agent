@@ -98,13 +98,21 @@ def translate_tools_to_anthropic(tools: list[ToolDefinition]) -> list[dict[str, 
 def apply_cache_breakpoints(
     messages: list[dict[str, Any]],
     breakpoints: list[int],
+    cache_control: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """在指定 messages index 後標 cache_control(Anthropic 限 4 個 breakpoint)。
+
+    Args:
+        messages: Anthropic format messages
+        breakpoints: 要標 cache_control 的 message indices
+        cache_control: cache_control dict(預設 5m ephemeral)。1h TTL 傳
+            `{"type": "ephemeral", "ttl": "1h"}`。
 
     處理兩種 content 格式:
     - str:升級成 [{type:text, text:..., cache_control:...}](API 不收 cache_control on str)
     - list[block]:在最後一個 block 標 cache_control
     """
+    cc = cache_control if cache_control is not None else {"type": "ephemeral"}
     for idx in breakpoints:
         if idx < 0 or idx >= len(messages):
             continue
@@ -112,12 +120,8 @@ def apply_cache_breakpoints(
         content = msg.get("content")
         if isinstance(content, str):
             msg["content"] = [
-                {
-                    "type": "text",
-                    "text": content,
-                    "cache_control": {"type": "ephemeral"},
-                }
+                {"type": "text", "text": content, "cache_control": dict(cc)}
             ]
         elif isinstance(content, list) and content:
-            content[-1]["cache_control"] = {"type": "ephemeral"}
+            content[-1]["cache_control"] = dict(cc)
     return messages

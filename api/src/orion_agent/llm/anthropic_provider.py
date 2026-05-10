@@ -11,6 +11,11 @@ from typing import Any, cast
 
 from anthropic import AsyncAnthropic
 
+from orion_agent.llm.cache_config import (
+    CacheTTLConfig,
+    build_cache_control,
+    load_cache_ttl_config,
+)
 from orion_agent.llm.catalog import (
     get_max_context_tokens,
     get_supports_reasoning,
@@ -46,26 +51,29 @@ _REASONING_BUDGET = {
 }
 
 
-def _build_system_param(system: str | list[str]) -> str | list[dict[str, Any]]:
+def _build_system_param(
+    system: str | list[str],
+    ttl_config: CacheTTLConfig | None = None,
+) -> str | list[dict[str, Any]]:
     """str → 直傳;list[str] → 每段都標 cache_control(Anthropic 限 4 個 bp)。
 
     慣例:caller 保證 list 內每段都是 cacheable(session-stable 或更穩定)。
     volatile per-turn 內容應由 caller 注入 user message,不放在 system list。
 
-    每段標 cache_control 讓多層 cache 各自獨立比對:
-    - block[0] = static prompt(跨 session 不變)→ 寫入 cache 1
-    - block[1] = session-stable dynamic → 寫入 cache 2
-    - 若 caller 多送幾段(例如 user-level / conversation-level)→ cache 3, 4
-
-    空字串段會跳過 cache_control(API 拒收 cache_control on empty block)。
+    TTL 對應:
+    - block[0]:static TTL(預設 1h,跨 session 不變)
+    - block[1+]:session TTL(預設 1h,session-stable)
+    空字串段跳過 cache_control(API 拒收)。
     """
     if isinstance(system, str):
         return system
+    cfg = ttl_config or load_cache_ttl_config()
     blocks: list[dict[str, Any]] = []
-    for s in system:
+    for i, s in enumerate(system):
         block: dict[str, Any] = {"type": "text", "text": s}
         if s.strip():
-            block["cache_control"] = {"type": "ephemeral"}
+            ttl = cfg.static if i == 0 else cfg.session
+            block["cache_control"] = build_cache_control(ttl)
         blocks.append(block)
     return blocks
 
@@ -108,11 +116,17 @@ class AnthropicProvider:
         anthropic_messages = translate_messages_to_anthropic(messages)
         anthropic_tools = translate_tools_to_anthropic(tools or [])
 
+        ttl_cfg = load_cache_ttl_config()
+
         # System prompt:str 或 list[str](cache_control 邏輯見 _build_system_param)
-        system_param = _build_system_param(system)
+        system_param = _build_system_param(system, ttl_cfg)
 
         if cache_breakpoints:
-            anthropic_messages = apply_cache_breakpoints(anthropic_messages, cache_breakpoints)
+            anthropic_messages = apply_cache_breakpoints(
+                anthropic_messages,
+                cache_breakpoints,
+                cache_control=build_cache_control(ttl_cfg.messages),
+            )
 
         # 額外 kwargs(temperature / thinking)
         extra: dict[str, Any] = {}
