@@ -21,12 +21,66 @@ Snapshot 檔內容格式:
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 from orion_agent.storage.paths import session_paths
+
+_DEFAULT_MAX_SNAPSHOTS = 100
+
+
+def _max_snapshots_from_env() -> int:
+    """Phase 19:從 ORION_FILE_HISTORY_MAX_SNAPSHOTS 讀上限。
+
+    無效值(非整數 / 負數)fallback 預設 100。0 視為「不 prune」(避免 user 誤踩)。
+    """
+    raw = os.environ.get("ORION_FILE_HISTORY_MAX_SNAPSHOTS")
+    if raw:
+        try:
+            v = int(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return _DEFAULT_MAX_SNAPSHOTS
+
+
+def prune_old_snapshots(session_id: UUID, max_count: int) -> int:
+    """Phase 19:按 mtime 排序刪 file-history 內超量的舊 snapshot。
+
+    Args:
+        session_id: 對應 file_history_dir
+        max_count: 保留上限;<= 0 視為「不 prune」直接 return 0
+
+    Returns:
+        被刪掉的檔案數(0 表示沒事可做)。
+    """
+    if max_count <= 0:
+        return 0
+    sp = session_paths(session_id)
+    history_dir = sp.file_history_dir
+    if not history_dir.is_dir():
+        return 0
+
+    snaps = list(history_dir.glob("*.snap"))
+    if len(snaps) <= max_count:
+        return 0
+
+    # 按 mtime 升冪 — 最舊在前
+    snaps.sort(key=lambda p: p.stat().st_mtime)
+    to_delete = snaps[: len(snaps) - max_count]
+    deleted = 0
+    for p in to_delete:
+        try:
+            p.unlink()
+            deleted += 1
+        except OSError:
+            # 檔案可能同時被別處刪了 — 跳過,不擋住其他
+            continue
+    return deleted
 
 
 @dataclass(frozen=True)
@@ -95,6 +149,11 @@ def make_snapshot(
         f"---SNAPSHOT---\n"
     )
     snap_path.write_bytes(header.encode("utf-8") + data)
+
+    # Phase 19:寫成功 → prune 超量舊 snapshot。dedupe 路徑(snap_path 早已存在)
+    # 不會走到這裡,避免重複工作。
+    prune_old_snapshots(session_id, _max_snapshots_from_env())
+
     return SnapshotResult(
         snapshot_path=snap_path,
         content_hash=content_hash,
