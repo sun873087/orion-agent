@@ -33,9 +33,9 @@ from orion_agent.memory.scan import (
 )
 from orion_agent.memory.types import Memory
 
-_FILE_BLOCK_PATTERN = re.compile(
-    r"FILE:\s*(\S+)\s*\n(.*?)\nEND",
-    re.DOTALL,
+_EXTRACT_BLOCK_PATTERN = re.compile(
+    r"^(FILE|UPDATE):\s*(\S+)\s*\n(.*?)\nEND",
+    re.DOTALL | re.MULTILINE,
 )
 
 
@@ -72,14 +72,30 @@ def _summarize_conversation(messages: list[NormalizedMessage], *, max_chars: int
     return head + "\n\n... [middle truncated] ...\n\n" + tail
 
 
+_BODY_PREVIEW_CHARS = 200
+
+
 def _summarize_existing_memories(memories: list[Memory]) -> str:
-    """把現有 memory 列成 LLM 看得懂的清單。"""
+    """把現有 memory 列成 LLM 看得懂的清單,附 body preview。
+
+    每筆格式:
+        - <filename> (<type>) <name>: <description>
+            body preview: <first 200 chars, newlines collapsed>
+
+    Filename 寫在前面讓 LLM 知道 `UPDATE: <filename>` 該填什麼。Body preview 讓 LLM
+    判斷新發現是否真的跟既有 memory 重複(只看 description 容易誤判)。
+    """
     if not memories:
         return ""
     lines = []
     for m in sorted(memories, key=lambda x: x.filename):
         type_str = m.type.value if m.type else "?"
-        lines.append(f"- ({type_str}) {m.name}: {m.description}")
+        lines.append(f"- {m.filename} ({type_str}) {m.name}: {m.description}")
+        preview = " ".join(m.body.split())  # collapse whitespace/newlines
+        if preview:
+            if len(preview) > _BODY_PREVIEW_CHARS:
+                preview = preview[:_BODY_PREVIEW_CHARS] + "..."
+            lines.append(f"    body preview: {preview}")
     return "\n".join(lines)
 
 
@@ -110,19 +126,24 @@ async def _provider_complete(
     return "".join(chunks)
 
 
-def parse_extract_output(text: str) -> list[tuple[str, str]]:
-    """模型輸出 → list of (filename, full_content)。"""
+def parse_extract_output(text: str) -> list[tuple[str, str, str]]:
+    """模型輸出 → list of (op, filename, full_content)。
+
+    op 是 "create"(FILE 區塊)或 "update"(UPDATE 區塊)。
+    """
     text = text.strip()
     if text == "NONE" or not text:
         return []
 
-    out: list[tuple[str, str]] = []
-    for m in _FILE_BLOCK_PATTERN.finditer(text):
-        filename = m.group(1).strip()
-        content = m.group(2).strip()
+    out: list[tuple[str, str, str]] = []
+    for m in _EXTRACT_BLOCK_PATTERN.finditer(text):
+        verb = m.group(1).strip()
+        filename = m.group(2).strip()
+        content = m.group(3).strip()
         if not content.endswith("\n"):
             content += "\n"
-        out.append((filename, content))
+        op = "update" if verb == "UPDATE" else "create"
+        out.append((op, filename, content))
     return out
 
 
@@ -138,13 +159,13 @@ async def extract_memories(
 
     Args:
         conversation_messages: 整段對話歷史
-        existing_memories: 用以避免重複
+        existing_memories: 給 LLM 看,以決定 UPDATE vs FILE
         provider: LLM(任一 provider)
         paths: target memory dir
-        overwrite: 同檔名是否覆蓋(預設 False — 安全)
+        overwrite: CREATE 時遇同檔名是否覆蓋(預設 False — 安全)。UPDATE 永遠 overwrite。
 
     Returns:
-        新建的 Memory list(已寫進 disk)。MEMORY.md 也會被更新。
+        異動的 Memory list(create + update,皆已寫進 disk)。MEMORY.md 也會被更新。
     """
     if not conversation_messages:
         return []
@@ -164,14 +185,24 @@ async def extract_memories(
     if not blocks:
         return []
 
-    new_memories: list[Memory] = []
-    for filename, content in blocks:
+    existing_by_filename = {m.filename: m for m in existing_memories}
+    created: list[Memory] = []
+    updated_by_filename: dict[str, Memory] = {}
+
+    for op, filename, content in blocks:
         if not _is_valid_memory_filename(filename):
             continue
 
         target = paths.memory_file(filename)
-        if target.exists() and not overwrite:
-            continue
+        is_existing = target.exists()
+
+        if op == "create":
+            if is_existing and not overwrite:
+                continue
+        else:  # op == "update"
+            # UPDATE 必須對應實際存在的檔案,否則 LLM 在編造 filename
+            if not is_existing:
+                continue
 
         fm, body = parse_frontmatter(content)
         if fm is None:
@@ -182,13 +213,27 @@ async def extract_memories(
         except OSError:
             continue
 
-        new_memories.append(Memory(frontmatter=fm, body=body, file_path=target))
+        mem = Memory(frontmatter=fm, body=body, file_path=target)
+        if op == "create":
+            # 同檔名 CREATE + overwrite 走到這 → 當成 update 處理(避免 index 重複)
+            if filename in existing_by_filename:
+                updated_by_filename[filename] = mem
+            else:
+                created.append(mem)
+        else:
+            updated_by_filename[filename] = mem
 
-    # 更新 MEMORY.md(用 existing + new 重渲染)
-    if new_memories:
-        write_index(paths, existing_memories + new_memories)
+    if not created and not updated_by_filename:
+        return []
 
-    return new_memories
+    # 更新 MEMORY.md:被 update 的 entry 用新版本取代,其他保留,最後 append 新建
+    final = [
+        updated_by_filename.get(m.filename, m) for m in existing_memories
+    ]
+    final.extend(created)
+    write_index(paths, final)
+
+    return list(updated_by_filename.values()) + created
 
 
 def _format_path(p: Path) -> str:

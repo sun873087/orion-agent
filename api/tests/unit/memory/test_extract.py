@@ -33,7 +33,8 @@ END
 """
     blocks = parse_extract_output(text)
     assert len(blocks) == 1
-    fname, content = blocks[0]
+    op, fname, content = blocks[0]
+    assert op == "create"
     assert fname == "feedback_test.md"
     assert "Body line 1" in content
     assert content.startswith("---")
@@ -61,8 +62,56 @@ END
 """
     blocks = parse_extract_output(text)
     assert len(blocks) == 2
-    assert blocks[0][0] == "a.md"
-    assert blocks[1][0] == "b.md"
+    assert blocks[0][:2] == ("create", "a.md")
+    assert blocks[1][:2] == ("create", "b.md")
+
+
+def test_parse_extract_output_update_block() -> None:
+    """UPDATE 區塊解析,op == 'update'。"""
+    text = """\
+UPDATE: feedback_existing.md
+---
+name: Updated
+description: updated desc
+type: feedback
+---
+merged body
+END
+"""
+    blocks = parse_extract_output(text)
+    assert len(blocks) == 1
+    op, fname, _ = blocks[0]
+    assert op == "update"
+    assert fname == "feedback_existing.md"
+
+
+def test_parse_extract_output_mixed_create_and_update() -> None:
+    """FILE + UPDATE 區塊可同時出現。"""
+    text = """\
+UPDATE: feedback_existing.md
+---
+name: Updated
+description: u
+type: feedback
+---
+merged
+END
+
+FILE: project_new.md
+---
+name: New
+description: n
+type: project
+---
+fresh
+END
+"""
+    blocks = parse_extract_output(text)
+    assert len(blocks) == 2
+    assert blocks[0][0] == "update"
+    assert blocks[0][1] == "feedback_existing.md"
+    assert blocks[1][0] == "create"
+    assert blocks[1][1] == "project_new.md"
 
 
 @pytest.mark.asyncio
@@ -161,3 +210,110 @@ END
         [], provider=provider, paths=paths,  # type: ignore[arg-type]
     )
     assert new == []
+
+
+# ─── UPDATE 操作(Layer 1 寫入端去重)──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_extract_update_overwrites_existing_file(tmp_path) -> None:  # noqa: ANN001
+    """UPDATE 對既有 memory 直接 overwrite,不受 overwrite=False 限制。"""
+    paths = user_memory_paths("bob", users_root=tmp_path)
+    paths.ensure_dirs()
+    existing_path = paths.memory_dir / "feedback_test.md"
+    existing_path.write_text(
+        "---\nname: Old\ndescription: old\ntype: feedback\n---\nold body\n"
+    )
+    existing = [Memory(
+        frontmatter=MemoryFrontmatter(
+            name="Old", description="old", type=MemoryType.FEEDBACK,
+        ),
+        body="old body", file_path=existing_path,
+    )]
+
+    mock_response = """\
+UPDATE: feedback_test.md
+---
+name: New
+description: merged
+type: feedback
+---
+new merged body
+END
+"""
+    provider = MockProvider(turns=[MockTurn(text=mock_response)])
+    new = await extract_memories(
+        [NormalizedMessage(role="user", content="x")],
+        existing, provider=provider, paths=paths,  # type: ignore[arg-type]
+    )
+    assert len(new) == 1
+    assert new[0].name == "New"
+    content = existing_path.read_text()
+    assert "new merged body" in content
+    assert "old body" not in content
+
+    # MEMORY.md 應只有一筆(被取代,不是新增)
+    index_text = paths.index.read_text()
+    assert index_text.count("feedback_test.md") == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_update_skips_nonexistent_file(tmp_path) -> None:  # noqa: ANN001
+    """UPDATE 指向不存在的檔案 → LLM 在編造,skip。"""
+    paths = user_memory_paths("bob", users_root=tmp_path)
+    paths.ensure_dirs()
+
+    mock_response = """\
+UPDATE: feedback_hallucinated.md
+---
+name: Fake
+description: f
+type: feedback
+---
+body
+END
+"""
+    provider = MockProvider(turns=[MockTurn(text=mock_response)])
+    new = await extract_memories(
+        [NormalizedMessage(role="user", content="x")],
+        [], provider=provider, paths=paths,  # type: ignore[arg-type]
+    )
+    assert new == []
+    assert not (paths.memory_dir / "feedback_hallucinated.md").exists()
+
+
+def test_summarize_existing_memories_includes_body_preview() -> None:
+    """既有 memory 摘要應含 filename 與 body preview,讓 LLM 能判斷是否該 UPDATE。"""
+    from orion_agent.memory.extract import _summarize_existing_memories
+
+    mem = Memory(
+        frontmatter=MemoryFrontmatter(
+            name="Likes ramen", description="lunch preference",
+            type=MemoryType.USER,
+        ),
+        body="User mentioned preference for tonkotsu ramen on rainy days.",
+        file_path=user_memory_paths("bob").memory_file("user_food.md"),
+    )
+    summary = _summarize_existing_memories([mem])
+    assert "user_food.md" in summary
+    assert "Likes ramen" in summary
+    assert "tonkotsu" in summary  # body preview 含進去
+
+
+def test_summarize_existing_memories_truncates_long_body() -> None:
+    """過長 body 應截掉並加 '...'。"""
+    from orion_agent.memory.extract import _BODY_PREVIEW_CHARS, _summarize_existing_memories
+
+    long_body = "x" * (_BODY_PREVIEW_CHARS + 100)
+    mem = Memory(
+        frontmatter=MemoryFrontmatter(
+            name="Long", description="d", type=MemoryType.USER,
+        ),
+        body=long_body,
+        file_path=user_memory_paths("bob").memory_file("user_long.md"),
+    )
+    summary = _summarize_existing_memories([mem])
+    assert "..." in summary
+    # 前 200 字應出現,但不該整個 300 都出現
+    assert "x" * _BODY_PREVIEW_CHARS in summary
+    assert "x" * (_BODY_PREVIEW_CHARS + 50) not in summary

@@ -21,11 +21,19 @@ type: feedback
 markdown body...
 END
 
-FILE: ...
-...
+UPDATE: feedback_existing.md
+---
+name: short title
+description: one-line summary
+type: feedback
+---
+merged markdown body...
 END
 ```
 若無新 memory:輸出 `NONE`。
+
+`UPDATE` 用於擴充/修正既有 memory(避免重複建立),內容必須是合併後的完整檔案,
+不是 patch。系統會 overwrite 對應檔案。
 """
 
 from __future__ import annotations
@@ -44,12 +52,17 @@ Save sparingly. Most conversation turns are not worth memorizing. Only save:
 Do NOT save:
 - code patterns, file paths, or anything derivable from the codebase
 - temporary state, in-progress work, debugging steps
-- anything already covered by existing memories
 - ephemeral context
+
+**Before emitting a new FILE block**, scan the existing-memories list. If your
+finding overlaps an existing memory (same topic / same rule restated / same
+project / same reference), emit `UPDATE: <filename>` instead — with the merged
+content. Prefer updating to creating; duplicate memories make future retrieval
+worse and inflate the memory directory.
 
 Output format (parsed mechanically):
 
-For each new memory, emit one block:
+For a brand-new memory:
 
     FILE: <type>_<short_slug>.md
     ---
@@ -58,6 +71,17 @@ For each new memory, emit one block:
     type: user|feedback|project|reference
     ---
     <markdown body — Why and How to apply for feedback/project; just facts for user/reference>
+    END
+
+For updating an existing memory (use the filename shown in the existing list):
+
+    UPDATE: <existing_filename>.md
+    ---
+    name: <updated or same>
+    description: <updated or same>
+    type: <same type>
+    ---
+    <full merged body — system overwrites the file with this>
     END
 
 If nothing should be saved, output exactly:
@@ -78,7 +102,7 @@ def build_extract_user_prompt(
         else "(no existing memories)"
     )
     return (
-        f"## Existing memories (do NOT duplicate)\n\n{existing}\n\n"
+        f"## Existing memories (prefer UPDATE over duplicate FILE)\n\n{existing}\n\n"
         f"## Recent conversation\n\n{conversation_text}\n\n"
-        "Decide what to save. Output FILE blocks or NONE."
+        "Decide what to save. Output FILE / UPDATE blocks or NONE."
     )
