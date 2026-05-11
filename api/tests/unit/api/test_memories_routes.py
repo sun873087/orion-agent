@@ -174,6 +174,59 @@ def test_memory_md_protected(
     assert r.status_code == 422
 
 
+def test_put_with_expires_at_round_trips(
+    client_with_token: tuple[TestClient, str, Path],
+) -> None:
+    """設定 expires_at 後 PUT → GET 應拿回同樣日期;檔案 frontmatter 也含此欄。"""
+    client, token, users_root = client_with_token
+    r = client.put(
+        "/me/memories/project_q3.md",
+        headers=_h(token),
+        json={
+            "name": "Q3 deadline",
+            "description": "ship Q3 release",
+            "type": "project",
+            "expires_at": "2026-09-30",
+            "body": "Release cut by end of Q3.\n",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["expires_at"] == "2026-09-30"
+
+    # GET 同樣回傳
+    r_get = client.get(
+        "/me/memories/project_q3.md", headers=_h(token),
+    )
+    assert r_get.json()["expires_at"] == "2026-09-30"
+
+    # 檔案內 frontmatter 含 expires_at
+    file_path = users_root / "alice" / "memory" / "project_q3.md"
+    text = file_path.read_text(encoding="utf-8")
+    assert "expires_at: 2026-09-30" in text
+
+
+def test_put_without_expires_at_returns_null(
+    client_with_token: tuple[TestClient, str, Path],
+) -> None:
+    """未傳 expires_at → response 的欄位為 null,檔案不含該行。"""
+    client, token, users_root = client_with_token
+    r = client.put(
+        "/me/memories/user_role.md",
+        headers=_h(token),
+        json={
+            "name": "Role",
+            "description": "engineer",
+            "type": "user",
+            "body": "...",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["expires_at"] is None
+
+    file_path = users_root / "alice" / "memory" / "user_role.md"
+    assert "expires_at" not in file_path.read_text(encoding="utf-8")
+
+
 def test_per_user_isolation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:

@@ -2,11 +2,12 @@
 
 對應 spec doc § 4 模組架構 + frontmatter 設計。
 
-每個 .md 檔頭有 YAML-style frontmatter(限定 3 行 dash):
+每個 .md 檔頭有 YAML-style frontmatter:
     ---
     name: short title
     description: one-line summary
     type: user|feedback|project|reference
+    expires_at: 2026-09-30        # 可選 ISO date — 過期後不注入 prompt
     ---
 
 之後是 markdown 內容。Memory 是 dataclass 包這些。
@@ -15,6 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 
@@ -46,6 +48,13 @@ class MemoryFrontmatter(BaseModel):
         default=None,
         description="memory 類別。缺省也可,但相關性下降。",
     )
+    expires_at: date | None = Field(
+        default=None,
+        description=(
+            "可選 ISO date(2026-09-30)。設了就會在當天之後從 prompt 注入路徑被排除。"
+            "None = 永不過期。檔案本身不會被刪,UI 與 extract 仍能看到。"
+        ),
+    )
 
 
 @dataclass
@@ -73,6 +82,19 @@ class Memory:
     @property
     def type(self) -> MemoryType | None:
         return self.frontmatter.type
+
+    @property
+    def expires_at(self) -> date | None:
+        return self.frontmatter.expires_at
+
+    def is_expired(self, today: date) -> bool:
+        """expires_at 早於 today → True。None / 未來日期 → False。
+
+        邊界:expires_at == today → 視為仍有效(當天還可用,隔天起算過期)。
+        """
+        if self.frontmatter.expires_at is None:
+            return False
+        return self.frontmatter.expires_at < today
 
 
 @dataclass

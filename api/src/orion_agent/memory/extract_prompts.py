@@ -60,6 +60,14 @@ project / same reference), emit `UPDATE: <filename>` instead — with the merged
 content. Prefer updating to creating; duplicate memories make future retrieval
 worse and inflate the memory directory.
 
+**Optional `expires_at` field (ISO date, e.g. `2026-09-30`)** — sets a date
+after which the memory stops being injected into prompts (the file is kept,
+but treated as stale). Use it when the saved fact is inherently time-bound:
+- **project**: set to the project's natural end (deadline, release date). If
+  the conversation mentions a date, use that; otherwise pick ~90 days out.
+- **reference**: set ~180 days out (URLs / external systems can rot).
+- **user / feedback**: omit (these are durable; don't auto-expire).
+
 Output format (parsed mechanically):
 
 For a brand-new memory:
@@ -69,6 +77,7 @@ For a brand-new memory:
     name: short title (max 8 words)
     description: one-line summary (max 25 words)
     type: user|feedback|project|reference
+    expires_at: <YYYY-MM-DD>          # optional; omit for durable memories
     ---
     <markdown body — Why and How to apply for feedback/project; just facts for user/reference>
     END
@@ -80,6 +89,7 @@ For updating an existing memory (use the filename shown in the existing list):
     name: <updated or same>
     description: <updated or same>
     type: <same type>
+    expires_at: <YYYY-MM-DD or omit>
     ---
     <full merged body — system overwrites the file with this>
     END

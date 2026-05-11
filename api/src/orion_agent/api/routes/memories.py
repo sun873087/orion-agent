@@ -14,6 +14,7 @@ Filename 安全:只接受 `[A-Za-z0-9._-]+\\.md`(無路徑分隔、無 `..`),否
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,6 +43,7 @@ class MemorySummary(BaseModel):
     name: str
     description: str
     type: MemoryType | None = None
+    expires_at: date | None = None
 
 
 class MemoryDetail(MemorySummary):
@@ -56,6 +58,8 @@ class MemoryWriteBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(..., min_length=1, max_length=500)
     type: MemoryType | None = None
+    expires_at: date | None = None
+    """可選 ISO date(2026-09-30)。設了之後 prompt 注入會跳過,但 UI 仍顯示。"""
     body: str = Field(default="", max_length=200_000)
     """memory 內容(markdown)。允許空。"""
 
@@ -81,11 +85,17 @@ def _safe_filename(filename: str) -> str:
 def _render_memory_file(body: MemoryWriteBody) -> str:
     """將 body 重組為 .md 檔內容(frontmatter + body)。"""
     type_line = f"type: {body.type.value}\n" if body.type is not None else ""
+    expires_line = (
+        f"expires_at: {body.expires_at.isoformat()}\n"
+        if body.expires_at is not None
+        else ""
+    )
     return (
         "---\n"
         f"name: {body.name}\n"
         f"description: {body.description}\n"
         f"{type_line}"
+        f"{expires_line}"
         "---\n"
         f"{body.body}"
     )
@@ -112,6 +122,7 @@ async def list_memories(
             name=m.name,
             description=m.description,
             type=m.type,
+            expires_at=m.expires_at,
         )
         for m in index.memories
     ]
@@ -133,6 +144,7 @@ async def get_memory(
         name=mem.name,
         description=mem.description,
         type=mem.type,
+        expires_at=mem.expires_at,
         body=mem.body,
     )
 
@@ -168,6 +180,7 @@ async def put_memory(
         name=fm.name,
         description=fm.description,
         type=fm.type,
+        expires_at=fm.expires_at,
         body=body.body,
     )
 

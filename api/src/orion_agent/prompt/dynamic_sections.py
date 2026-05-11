@@ -84,7 +84,8 @@ async def memory_section(
     """
     try:
         paths = user_memory_paths(user_id)
-        index = scan_memory_dir(paths)
+        # prompt 注入路徑明確排除已過期 memory(Layer 2 TTL)— UI / extract 仍看全部
+        index = scan_memory_dir(paths, exclude_expired=True)
         if not index.memories:
             return ""
         relevant = await rank_memories(

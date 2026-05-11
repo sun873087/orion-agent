@@ -18,7 +18,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+from datetime import date
 from pathlib import Path
 
 from orion_agent.memory.paths import MemoryPaths
@@ -28,6 +30,8 @@ from orion_agent.memory.types import (
     MemoryIndex,
     MemoryType,
 )
+
+_log = logging.getLogger(__name__)
 
 _FRONTMATTER_PATTERN = re.compile(
     r"\A---\s*\n(.*?)\n---\s*\n(.*)\Z",
@@ -63,6 +67,7 @@ def parse_frontmatter(text: str) -> tuple[MemoryFrontmatter | None, str]:
     name = fields.get("name", "")
     description = fields.get("description", "")
     type_raw = fields.get("type", "")
+    expires_raw = fields.get("expires_at", "")
 
     if not name or not description:
         # 缺必要欄位 → 視為無效 frontmatter
@@ -75,7 +80,27 @@ def parse_frontmatter(text: str) -> tuple[MemoryFrontmatter | None, str]:
         except ValueError:
             mtype = None  # 未知 type 視為 None,不 raise
 
-    return MemoryFrontmatter(name=name, description=description, type=mtype), body
+    expires_at: date | None = None
+    if expires_raw:
+        try:
+            expires_at = date.fromisoformat(expires_raw)
+        except ValueError:
+            # 解析不掉 → 視為無此欄位(別 raise,避免一筆壞 frontmatter 卡死整個 scan)
+            _log.warning(
+                "invalid expires_at %r in memory %r; treating as no expiry",
+                expires_raw, name,
+            )
+            expires_at = None
+
+    return (
+        MemoryFrontmatter(
+            name=name,
+            description=description,
+            type=mtype,
+            expires_at=expires_at,
+        ),
+        body,
+    )
 
 
 def load_memory_file(path: Path) -> Memory | None:
@@ -93,7 +118,12 @@ def load_memory_file(path: Path) -> Memory | None:
     return Memory(frontmatter=fm, body=body, file_path=path)
 
 
-def scan_memory_dir(paths: MemoryPaths) -> MemoryIndex:
+def scan_memory_dir(
+    paths: MemoryPaths,
+    *,
+    exclude_expired: bool = False,
+    today: date | None = None,
+) -> MemoryIndex:
     """掃 memory dir 載入所有 valid .md。
 
     跳過:
@@ -101,12 +131,22 @@ def scan_memory_dir(paths: MemoryPaths) -> MemoryIndex:
     - 沒 frontmatter / 損壞
     - 隱藏檔(.開頭)
 
+    Args:
+        paths: memory dir 設定
+        exclude_expired: True 時跳過 `expires_at` 早於 today 的 memory。
+            預設 False(向後相容)— 只有 prompt 注入路徑該設 True,UI / extract
+            仍應看到全部 memory(才能 UPDATE 過期的、UI 才能管理)。
+        today: 比對 expired 時的「今天」基準。預設 `date.today()`(UTC)。
+            測試用顯式傳值。
+
     Returns:
-        MemoryIndex 含所有 valid Memory 物件。
+        MemoryIndex 含通過 filter 的 Memory 物件。
     """
     index = MemoryIndex()
     if not paths.memory_dir.exists() or not paths.memory_dir.is_dir():
         return index
+
+    cutoff = today if today is not None else date.today()
 
     for p in sorted(paths.memory_dir.glob("*.md")):
         if p.name == "MEMORY.md":
@@ -114,8 +154,11 @@ def scan_memory_dir(paths: MemoryPaths) -> MemoryIndex:
         if p.name.startswith("."):
             continue
         m = load_memory_file(p)
-        if m is not None:
-            index.memories.append(m)
+        if m is None:
+            continue
+        if exclude_expired and m.is_expired(cutoff):
+            continue
+        index.memories.append(m)
     return index
 
 
