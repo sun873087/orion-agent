@@ -21,6 +21,7 @@
 
 - [MANUAL_TESTING.md](MANUAL_TESTING.md) — 手動測試 API + UI 的 step-by-step 指南
 - [PROJECT_LAYOUT.md](PROJECT_LAYOUT.md) — bundled / system / project / user / extra_dirs 五層資料夾結構詳解
+- [memory-bloat-prevention.md](memory-bloat-prevention.md) — Memory 系統四層 anti-entropy 防護設計(Layer 1+2 已完成,3+4 未做的設計草案 + 觸發條件)
 
 ## 已完成
 
