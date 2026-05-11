@@ -1,20 +1,32 @@
-# Phase 27 — DB-backed message persistence(SQLite/Postgres 真正存訊息)完工記錄
+# Phase 27 — DB-backed message persistence(`messages` 表終於不是 dead schema)完工記錄
 
 **完成日期**:2026-05-12
 **Plan doc**:無(對話內定案,未開正式 plan 檔)
 **狀態**:✅ **895 unit tests passed, 2 skipped**(本 phase 新增 **8 tests**),mypy --strict 修改檔 0 issues。
 
-## 動機
+## 動機(訂正版)
 
-User 觀察:`ORION_DB_URL=sqlite+aiosqlite:///./orion.db` 啟動 server 後,session 目錄裡看不到 `transcript.jsonl` 但前端仍能顯示歷史訊息 → 「訊息存哪了?」實際 diagnose:
+User 觀察:`ORION_DB_URL=sqlite+aiosqlite:///./orion.db` 啟動 server 後,session `59b3106b-…` 目錄裡看不到 `transcript.jsonl` 但前端仍能顯示歷史訊息 → 「訊息存哪了?」
+
+**第一輪錯誤診斷**(寫進原始 commit `5638094` message,事後實機驗證證實**不正確**):
+
+> 「`messages` 表沒寫入路徑,訊息只在 JSONL;那個 session 沒 JSONL 表示只在 in-memory cache,server 重啟就 lose。」
+
+實機驗證後發現:
+- 訊息**一直**透過 `Conversation.send` → `SessionStorage.record_message` 寫進 `transcript.jsonl`(Phase 2 起就有)
+- `DbSessionManager.get()` cache miss 時走 `load_session()` 從 JSONL 重建 Conversation — **server 重啟看到歷史訊息一直 work**,不需要 in-memory cache
+- 我看到的 `59b3106b-…` 空目錄純粹是「那 session 從沒實際發過訊息」(只 metadata 建好,custom_instructions="2222"),不是訊息消失
+
+**Phase 27 真正的價值**(不是修救 data loss,是補上長期未完工的 schema):
 
 - `storage/db/models.py:175-203` 早就定義 `messages` 表(Phase 7 spec 寫的)
-- 但**整個 src/ grep 沒有任何程式碼 INSERT 進去** — write path 從未實作
-- `DbSessionManager` resume 走 `load_session()` 讀 JSONL,**完全沒用 DB messages 表**
-- 結論:SQLite 啟用其實只 persist session **metadata**,不 persist 對話內容;訊息只在 `transcript.jsonl`
-- 用戶實際看到「歷史訊息」是 `DbSessionManager._cache: dict[(user,sid)→Conversation]` 記憶體快取,server 重啟即失
+- 但**整個 src/ grep 沒有任何程式碼 INSERT 進去** — write path 從未實作 → schema 一直是 dead
+- DB messages 表的存在意義:
+  1. SQL 可查詢(WHERE role / COUNT / ORDER BY / 全文搜尋 `raw_text`)— 將來訊息搜尋功能需要
+  2. Postgres 多 pod 部署(Phase 7c K8s)— JSONL 是 local fs 不能跨 pod,DB 才可靠
+  3. ACID + transaction 給 audit 用,比 JSONL append best-effort 強
 
-Phase 27 補上 messages 表的 write/read path,讓 SQLite 啟用後**訊息真的在 DB**,server 重啟也能 resume。
+Phase 27 補上 messages 表的 write/read path。**對 user 而言行為等價**(訊息在 JSONL 一直能 resume);**對未來 scale-out / 查詢 / 多 pod 是必要鋪路**。
 
 ## 交付清單
 
@@ -117,7 +129,7 @@ for row in con.execute('SELECT role, substr(raw_text, 1, 40) FROM messages ORDER
 "
 # 預期:看到真實 user / assistant 訊息(Phase 27 之前這裡是空的)
 
-# 重啟 server 後再開該 session,訊息仍在 — 不再依賴 in-memory cache
+# 重啟 server 後再開該 session,resume 會優先讀 DB messages(Phase 27 之前走 JSONL,效果等價)
 ```
 
 ## Tests 摘要
@@ -151,3 +163,14 @@ for row in con.execute('SELECT role, substr(raw_text, 1, 40) FROM messages ORDER
 
 ### 4. Auto-repair 加 synthetic tool_result 影響訊息計數
 test_message_with_tool_use_block_roundtrips_via_db 寫一則 assistant message 含 dangling ToolUseBlock,`validate_and_repair_messages` 自動補一則 synthetic error tool_result → snapshot.messages 從 1 變 2。測試斷言改 check 第一則,不假設總數。
+
+### 5. ⚠ 初版動機完全 misframe(訂正記錄)
+原 commit `5638094` message + 本 doc 第一版「動機」段宣稱「Phase 27 之前 server 重啟會 lose 訊息、依賴 in-memory cache」。**這是錯的**。User 用「重啟 API 還看到 message」的觀察戳破:
+
+- `Conversation.send` 從 Phase 2 起就把每筆訊息寫進 `transcript.jsonl`
+- `DbSessionManager.get()` cache miss 走 `load_session()` 讀 JSONL 重建 — **重啟 resume 一直 work**,跟 DB 啟用無關
+- 我把「`messages` 表是空的」誤推成「訊息會遺失」,沒去 trace JSONL 寫入路徑就下結論
+
+教訓:看到「DB 空」不等於「資料消失」 — orion 是 dual persistence(fs JSONL canonical + DB metadata),要兩條路都查清才能下診斷。**之後動到任何 storage 議題都先把兩條路徑都驗一遍**。
+
+Phase 27 真正解決的是「`messages` 表是 dead schema」這個技術債,**不是**修救資料遺失。對 user 行為等價,對未來 SQL 查詢 / 多 pod / audit 是必要鋪路(見「動機」訂正段)。
