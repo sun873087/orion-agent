@@ -42,8 +42,13 @@ wheel / zip 安裝也能拿。
 │   └── <name>/SKILL.md
 ├── plugins/                          # admin 安裝的 plugins
 │   └── <plugin-id>/plugin.json
-├── sessions/                         # 所有 session 的 transcript
-│   └── <session-uuid>/transcript.jsonl
+├── sessions/                         # 每 conversation 一個子目錄(詳見 § 2a)
+│   └── <session-uuid>/
+│       ├── transcript.jsonl          # append-only JSONL,所有 events
+│       ├── meta.json                 # 可選元資料
+│       ├── tool-results/             # 大 tool 輸出持久化(>= 100KB)
+│       ├── file-history/             # Edit/Write 寫前快照(Phase 19 LRU 100)
+│       └── workspace/                # session-isolated cwd
 ├── plans/                            # plan mode 寫的計畫檔
 ├── uploads/                          # ⚠️ legacy(Phase 11 起初位置,Phase 19 之後)
 │   └── <user_id>/<upload_id>.<ext>   #     僅 read fallback,新寫已搬到 users/<uid>/uploads/
@@ -58,11 +63,78 @@ wheel / zip 安裝也能拿。
 | `~/.orion/instructions.md` | `prompt/context.py` | — |
 | `~/.orion/mcp.json` | `mcp/config.py` | — |
 | `~/.orion/plugins/` | `plugins/loader.py:_user_plugins_dir`(誤名,實際 system 級)| `ORION_PLUGINS_DIR` |
-| `~/.orion/sessions/` | `storage/session.py` | — |
+| `~/.orion/sessions/` | `storage/session.py`(詳細見 § 2a)| `ORION_SESSIONS_DIR`(整個 sessions root)|
 | `~/.orion/plans/` | `tools/special/enter_plan_mode.py` | `ORION_HOME/plans/` |
 | `~/.orion/uploads/` (legacy) | `input/upload.py:_legacy_user_uploads_dir` | `ORION_HOME` |
 
 > **誰能寫?** Admin / 部署者(server 跑 process 的 user)。**Web chat tenant 寫不到**(沒對應 REST endpoint)。
+
+---
+
+## 2a. Session 子結構(`~/.orion/sessions/<session-uuid>/`)
+
+每個 conversation 一個獨立 UUID v4 子目錄,所有跟該 conversation 綁定的 state 都收在裡面。session 刪除 = `rm -rf <sid>/` 一次清光。
+
+```
+~/.orion/sessions/<session-uuid>/
+├── transcript.jsonl              # ★ 所有 events(append-only JSONL,每行一筆)
+├── meta.json                     # session 元資料(可選,某些路徑下不寫)
+├── tool-results/                 # 大 tool 輸出持久化(第 2 層 budget)
+│   └── <tool_use_id>.txt
+├── file-history/                 # Edit/Write 寫前快照(undo / 審計)
+│   └── <hash16>.snap
+└── workspace/                    # session-isolated cwd,模型工具產出落這
+    └── ...                       # Bash / Write / Edit 的檔案
+```
+
+| 路徑 | 內容 | 模組 |
+|---|---|---|
+| `transcript.jsonl` | conversation 全部 events,`kind` 欄位分四種(見下表) | `storage/session.py` |
+| `meta.json` | session 起始時間、provider、model | `storage/paths.py:SessionPaths.meta` |
+| `tool-results/<tool_use_id>.txt` | 大 tool 輸出(>= 100KB)→ 寫檔 + transcript 換成 preview | `storage/tool_result.py` |
+| `file-history/<hash>.snap` | Edit/Write 寫檔前舊內容快照;同 hash dedupe;**Phase 19 LRU 預設上限 100** | `storage/file_history.py` |
+| `workspace/` | per-session 隔離 cwd;web chat 多 user 同時跑各自的 Bash/Write 不撞;CLI 也吃這個 | `storage/paths.py:SessionPaths.workspace_dir`、`api/routes/sessions.py` |
+
+### transcript.jsonl 的 record kinds
+
+每行一筆 JSON,`kind` 欄位 discriminate(`storage/session.py:87-122`):
+
+| `kind` | 何時寫 | 主要欄位 |
+|---|---|---|
+| `session-meta` | session 開始 | `session_id` / `started_at` / `provider` / `model` / `system_prompt` |
+| `message` | 每則 NormalizedMessage(user / assistant / tool_result) | `role` / `content` |
+| `tool-result-replacement` | 第 3 層 budget 把舊 tool result aggregate 後寫的決策 | `tool_use_id` / `replacement` |
+| `transition` | query_loop 終結 | `reason` 為 `natural_stop` / `aborted` / `max_turns_reached` / `empty_response` |
+
+### DB messages 表(Phase 27 之後)
+
+當 `ORION_DB_URL` 啟用時(SQLite / Postgres),**訊息 dual-write**:
+- 每筆 `record_message` 同時寫進 JSONL **和** `messages` 表(`storage/db/models.py:175`)
+- Resume 時 `DbSessionManager` 優先 `fetch_db_messages()` 讀 DB,DB 空才 fallback JSONL
+- transitions / replacements **仍只在 JSONL**(尚未做對應 DB 表,Phase 27 範圍限 messages)
+- JSONL 即使啟用 DB 仍寫,作為 audit log + transitions/replacements 載體
+
+CLI / in-memory SessionManager 模式無 engine,純走 JSONL — 行為不變。
+
+**resume**(`storage/resume.py`)就是讀整份 JSONL(+ DB messages 若有),把 `state_messages` + `ContentReplacementState` 完全重建,繼續對話。
+
+### GC 與生命週期
+
+| 子目錄 | GC 狀態 |
+|---|---|
+| `transcript.jsonl` | 無 GC;Phase 20(規劃中)可選 gzip 壓縮 |
+| `tool-results/` | **無 GC** — session 完工不自動清,長 session 會堆 |
+| `file-history/` | ✅ Phase 19 mtime LRU,`ORION_FILE_HISTORY_MAX_SNAPSHOTS=100` |
+| `workspace/` | **無 GC** — 永久留著(模型產出的檔案 user 可能要看);需要手動清 |
+
+session 本身的 GC(整個 `<sid>/` 何時刪)目前**沒做** — 由 user 透過 web chat 「Delete session」按鈕觸發,或 admin 手動 `rm -rf`。
+
+### 環境變數
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `ORION_SESSIONS_DIR` | `~/.orion/sessions/` | 整個 sessions root 換位置;測試 conftest.py 用 `tmp_path` 隔離 |
+| `ORION_FILE_HISTORY_MAX_SNAPSHOTS` | `100` | 每 session 的 `file-history/` 上限(Phase 19);非正整數 fallback 預設 |
 
 ---
 

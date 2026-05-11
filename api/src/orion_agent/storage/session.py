@@ -1,4 +1,4 @@
-"""Session storage — JSONL transcript per session。
+"""Session storage — JSONL transcript per session(+ optional DB message dual-write)。
 
 對應 TS Claude Code `src/utils/sessionStorage.ts`。
 
@@ -11,22 +11,45 @@
 並發保護:用 anyio.Lock 包 file append,確保多 task yield 訊息時不交錯寫亂。
 
 對應 spec 踩雷 #1。
+
+Phase 27:`SessionStorage.open(..., db_engine=...)` 時 `record_message` 額外 INSERT 進
+`messages` table。JSONL 仍是事件 audit log(transitions / replacements 沒有 DB 表);
+DB 是 message 的可查詢 mirror,resume 優先讀 DB。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import anyio
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_agent.llm.types import NormalizedMessage
+from orion_agent.storage.db.engine import db_session
+from orion_agent.storage.db.models import Message as MessageRow
 from orion_agent.storage.paths import SessionPaths, session_paths
 from orion_agent.storage.replacement_state import ReplacementDecision
+
+logger = logging.getLogger(__name__)
+
+
+def _message_raw_text(message: NormalizedMessage) -> str:
+    """擷取 plain text 給 messages.raw_text 用(SQL search-friendly)。"""
+    content = message.content
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def _serialize_value(v: Any) -> Any:
@@ -56,16 +79,28 @@ class SessionStorage:
             ...
     """
 
-    def __init__(self, paths: SessionPaths) -> None:
+    def __init__(
+        self,
+        paths: SessionPaths,
+        *,
+        db_engine: AsyncEngine | None = None,
+    ) -> None:
         self.paths = paths
+        self.db_engine = db_engine
+        """Phase 27:non-None → `record_message` 同步 INSERT 進 messages 表。"""
         self._lock = anyio.Lock()
 
     @classmethod
-    def open(cls, session_id: UUID) -> SessionStorage:
+    def open(
+        cls,
+        session_id: UUID,
+        *,
+        db_engine: AsyncEngine | None = None,
+    ) -> SessionStorage:
         """工廠方法。確保 session 目錄存在。"""
         sp = session_paths(session_id)
         sp.ensure_dirs()
-        return cls(sp)
+        return cls(sp, db_engine=db_engine)
 
     async def append_raw(self, record: dict[str, Any]) -> None:
         """寫一筆任意 record(底層)。caller 通常用更高階的 record_* 方法。"""
@@ -98,6 +133,40 @@ class SessionStorage:
             "ts": datetime.now(UTC).isoformat(),
             "message": message,
         })
+        if self.db_engine is not None:
+            await self._db_insert_message(message)
+
+    async def _db_insert_message(self, message: NormalizedMessage) -> None:
+        """Phase 27:INSERT 進 messages 表。失敗 log warning,不擋 JSONL 路徑。"""
+        engine = self.db_engine
+        if engine is None:
+            return  # type narrow,實際上 caller 已 check 過
+        content = message.content
+        if isinstance(content, str):
+            content_json: Any = content
+        else:
+            content_json = [
+                b.model_dump(mode="json") if isinstance(b, BaseModel) else b
+                for b in content
+            ]
+        row = MessageRow(
+            id=str(uuid4()),
+            session_id=str(self.paths.session_id),
+            role=message.role,
+            content_json=content_json,
+            metadata_json=None,
+            raw_text=_message_raw_text(message),
+        )
+        try:
+            async with db_session(engine) as db:
+                db.add(row)
+                await db.commit()
+        except Exception as e:  # noqa: BLE001
+            # FK violation(session row 不存在)/ DB down → 不擋 JSONL canonical 寫入
+            logger.warning(
+                "db_message_insert_failed session=%s role=%s err=%s",
+                self.paths.session_id, message.role, e,
+            )
 
     async def record_replacement(
         self,

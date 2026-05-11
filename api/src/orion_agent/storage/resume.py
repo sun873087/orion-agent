@@ -6,6 +6,10 @@
 - system_prompt(從 session-meta record)
 - messages(從 message records)
 - ContentReplacementState(從 tool-result-replacement records + 已 seen 的 tool_use_id)
+
+Phase 27:`load_session(sid, engine=...)` 時優先讀 DB messages 表;
+DB 無資料(舊 session / DB engine = None)走 JSONL fallback。
+transitions / replacements 永遠走 JSONL(沒對應 DB 表)。
 """
 
 from __future__ import annotations
@@ -14,6 +18,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_agent.llm.types import (
     ContentBlock,
@@ -163,13 +169,61 @@ def validate_and_repair_messages(
     return repaired, warnings
 
 
-def load_session(session_id: UUID) -> SessionSnapshot:
-    """讀整個 transcript 重建 SessionSnapshot。"""
+async def fetch_db_messages(
+    session_id: UUID,
+    engine: AsyncEngine,
+) -> list[NormalizedMessage] | None:
+    """Phase 27:async 讀 DB messages 表。
+
+    給 caller(DbSessionManager)在 async context 預先 await 拿到 messages,再把結果
+    透過 `prebaked_messages` 傳進 sync load_session。這樣避免 sync 路徑跑 sync engine
+    對 `:memory:` SQLite 看不到 async engine 寫入的問題。
+
+    DB 無 row → 回 None。
+    """
+    from sqlalchemy import select
+
+    from orion_agent.storage.db.engine import db_session
+    from orion_agent.storage.db.models import Message as MessageRow
+
+    async with db_session(engine) as db:
+        stmt = (
+            select(MessageRow.role, MessageRow.content_json)
+            .where(MessageRow.session_id == str(session_id))
+            .order_by(MessageRow.created_at, MessageRow.id)
+        )
+        rows = list(await db.execute(stmt))
+
+    if not rows:
+        return None
+    messages: list[NormalizedMessage] = []
+    for role, content_json in rows:
+        msg_dict = {"role": role, "content": content_json}
+        msg = _message_from_dict(msg_dict)
+        if msg is not None:
+            messages.append(msg)
+    return messages
+
+
+def load_session(
+    session_id: UUID,
+    engine: AsyncEngine | None = None,  # noqa: ARG001 — kept for back-compat; use prebaked_messages
+    *,
+    prebaked_messages: list[NormalizedMessage] | None = None,
+) -> SessionSnapshot:
+    """讀整個 transcript 重建 SessionSnapshot。
+
+    Phase 27:若 `prebaked_messages` 提供(caller 已 async 從 DB 撈出),用該 list 作
+    canonical messages;否則 messages 走 JSONL(legacy / CLI no-DB)。transitions /
+    replacements 永遠 JSONL。`engine` 參數保留為 backwards-compat 標記,實際不使用 —
+    讓 DbSessionManager 等 caller 提前 `await fetch_db_messages(...)` 再傳進來。
+    """
     sp = session_paths(session_id)
     records = iter_records_sync(sp.transcript)
 
     snapshot = SessionSnapshot(session_id=session_id)
     replacement_records: list[dict[str, Any]] = []
+    jsonl_messages: list[NormalizedMessage] = []
 
     for r in records:
         kind = r.get("kind")
@@ -182,11 +236,16 @@ def load_session(session_id: UUID) -> SessionSnapshot:
             if isinstance(msg_dict, dict):
                 msg = _message_from_dict(msg_dict)
                 if msg is not None:
-                    snapshot.messages.append(msg)
+                    jsonl_messages.append(msg)
         elif kind == "tool-result-replacement":
             replacement_records.append(r)
         elif kind == "transition":
             snapshot.transitions.append(r)
+
+    # Phase 27:prebaked_messages(DB)優先;否則 JSONL
+    snapshot.messages = (
+        prebaked_messages if prebaked_messages is not None else jsonl_messages
+    )
 
     # Auto-repair dangling tool_use(中途 kill 的 transcript)
     snapshot.messages, validation_warnings = validate_and_repair_messages(

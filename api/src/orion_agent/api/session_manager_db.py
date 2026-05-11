@@ -26,7 +26,7 @@ from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_agent.llm.provider import get_provider
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import Session as SessionRow
-from orion_agent.storage.resume import load_session
+from orion_agent.storage.resume import fetch_db_messages, load_session
 from orion_agent.tools.builtin_set import build_default_tool_set
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,9 @@ class DbSessionManager:
             )
             db.add(row)
             await db.commit()
+        # Phase 27:注入 engine,Conversation → SessionStorage 會 dual-write messages 表
+        conversation.session_id = sid
+        conversation.db_engine = self.engine
         self._cache[(user_id, sid)] = conversation
         return sid
 
@@ -88,7 +91,14 @@ class DbSessionManager:
         # load_session 是同步 file I/O + message 解析,長 transcript 會卡很久 —
         # offload 到 thread 避免 cache-miss 那一刻把 event loop 整個鎖住
         # (其他 endpoint 如 /healthz 也會跟著等)。
-        snapshot = await asyncio.to_thread(load_session, session_id)
+        # Phase 27:先 async 從 DB 撈 messages(若有);再走 sync JSONL 路徑補
+        # transitions / replacements / meta。prebaked 為 None 時 load_session 走 JSONL。
+        db_messages = await fetch_db_messages(session_id, self.engine)
+        snapshot = await asyncio.to_thread(
+            load_session,
+            session_id,
+            prebaked_messages=db_messages,
+        )
         if snapshot.warnings:
             for w in snapshot.warnings:
                 logger.warning("resume %s: %s", session_id, w)
@@ -102,6 +112,7 @@ class DbSessionManager:
             ),
             state_messages=snapshot.messages,
             replacement_state=snapshot.replacement_state,
+            db_engine=self.engine,
         )
         self._cache[(user_id, session_id)] = conv
         return conv

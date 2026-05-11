@@ -195,6 +195,13 @@ class Conversation:
     """選用的 output style 名(從 `output-styles/<name>.md` 載)。
     `/output-style <name>` 命令會 mutate 此欄位。"""
 
+    # ─── Phase 27 ─────────────────────────────────────────────────────────
+    db_engine: object | None = None
+    """AsyncEngine instance(避免循環 import,object 型別)。
+    DbSessionManager 建立 / resume Conversation 時注入;SessionStorage 拿到後
+    每筆 record_message 會 dual-write 進 messages 表。
+    None → 純 JSONL(CLI 預設、in-memory SessionManager)。"""
+
     async def send(
         self,
         user_text: str,
@@ -410,7 +417,12 @@ class Conversation:
         if not self.persistence_enabled:
             return None
         if self._session_storage is None:
-            store = SessionStorage.open(self.session_id)
+            # Phase 27:若有 db_engine,SessionStorage 會把 record_message dual-write
+            # 進 messages 表(JSONL 仍是 events audit log)。
+            from sqlalchemy.ext.asyncio import AsyncEngine
+
+            engine = self.db_engine if isinstance(self.db_engine, AsyncEngine) else None
+            store = SessionStorage.open(self.session_id, db_engine=engine)
             await store.record_meta(
                 provider=self.provider.name,
                 model=self.provider.model,
