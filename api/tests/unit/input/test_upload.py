@@ -86,3 +86,89 @@ def test_read_invalid_upload_id_format() -> None:
 
 def test_no_uploads_dir_returns_empty() -> None:
     assert list_uploads("nonexistent-user") == []
+
+
+# ─── Phase 19 path migration:legacy fallback ─────────────────────────────────
+
+
+def test_save_writes_to_new_canonical_path(tmp_path: Path) -> None:
+    """新寫一律走 users/<uid>/uploads/,不再走舊頂層 uploads/<uid>/。"""
+    rec = save_upload(user_id="alice", filename="x.txt", data=b"x")
+    # rec.path 應在 .orion/users/alice/uploads/ 下
+    parts = rec.path.parts
+    # 找到 ".orion" index,後面該是 users / alice / uploads
+    orion_idx = parts.index(".orion")
+    assert parts[orion_idx + 1] == "users"
+    assert parts[orion_idx + 2] == "alice"
+    assert parts[orion_idx + 3] == "uploads"
+
+
+def _write_legacy(orion_home: Path, user_id: str, upload_id: str, ext: str, data: bytes) -> Path:
+    """模擬 Phase 19 之前留下的舊位置檔。"""
+    legacy_dir = orion_home / "uploads" / user_id
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    p = legacy_dir / f"{upload_id}{ext}"
+    p.write_bytes(data)
+    return p
+
+
+def test_read_falls_back_to_legacy_path(tmp_path: Path) -> None:
+    """檔案放在舊位置,read_upload 仍要讀得到。"""
+    orion_home = tmp_path / ".orion"
+    legacy_path = _write_legacy(orion_home, "alice", "deadbeef" * 2, ".txt", b"legacy-data")
+    assert legacy_path.exists()
+    data = read_upload("alice", "deadbeef" * 2)
+    assert data == b"legacy-data"
+
+
+def test_list_unions_new_and_legacy(tmp_path: Path) -> None:
+    """list_uploads 同時看新與舊路徑;同 upload_id 兩處 dedupe(新優先)。"""
+    orion_home = tmp_path / ".orion"
+    # 舊路徑放 2 個
+    _write_legacy(orion_home, "alice", "aaaaaaaa" * 2, ".txt", b"old1")
+    _write_legacy(orion_home, "alice", "bbbbbbbb" * 2, ".txt", b"old2")
+    # 新路徑(透過 save_upload)放 1 個
+    rec_new = save_upload(user_id="alice", filename="new.txt", data=b"new-data")
+
+    recs = list_uploads("alice")
+    ids = {r.upload_id for r in recs}
+    assert "aaaaaaaa" * 2 in ids
+    assert "bbbbbbbb" * 2 in ids
+    assert rec_new.upload_id in ids
+    assert len(recs) == 3
+
+
+def test_list_dedup_prefers_new(tmp_path: Path) -> None:
+    """同 upload_id 新舊路徑都有 → list 只列新路徑那筆(避免混淆)。"""
+    orion_home = tmp_path / ".orion"
+    upload_id = "12345678" * 2  # 16 hex
+    _write_legacy(orion_home, "alice", upload_id, ".txt", b"old")
+    # 直接寫一個同 id 到新路徑(模擬 hash 撞,雖然 uuid 實際不會碰但要鎖行為)
+    new_dir = orion_home / "users" / "alice" / "uploads"
+    new_dir.mkdir(parents=True, exist_ok=True)
+    (new_dir / f"{upload_id}.txt").write_bytes(b"new")
+
+    recs = list_uploads("alice")
+    assert len(recs) == 1
+    assert recs[0].path.read_bytes() == b"new"
+
+
+def test_delete_works_on_legacy_path(tmp_path: Path) -> None:
+    """legacy 檔可被 delete_upload 刪到。"""
+    orion_home = tmp_path / ".orion"
+    upload_id = "cafebabe" * 2
+    legacy_path = _write_legacy(orion_home, "alice", upload_id, ".txt", b"x")
+    assert legacy_path.exists()
+    assert delete_upload("alice", upload_id) is True
+    assert not legacy_path.exists()
+
+
+def test_new_path_takes_precedence_in_read(tmp_path: Path) -> None:
+    """同 upload_id 兩處都存在 → 讀新的(legacy 不污染)。"""
+    orion_home = tmp_path / ".orion"
+    upload_id = "feedface" * 2
+    _write_legacy(orion_home, "alice", upload_id, ".txt", b"OLD")
+    new_dir = orion_home / "users" / "alice" / "uploads"
+    new_dir.mkdir(parents=True, exist_ok=True)
+    (new_dir / f"{upload_id}.txt").write_bytes(b"NEW")
+    assert read_upload("alice", upload_id) == b"NEW"

@@ -1,10 +1,13 @@
 """File upload store — Phase 11。
 
-取代 TS `@file` ref。前端用 multipart upload 把檔案存到 `~/.orion/uploads/<id>.<ext>`,
+取代 TS `@file` ref。前端用 multipart upload 把檔案存到 per-user upload dir,
 agent 用 `read_upload(upload_id)` 取內容,或將 upload_id 當成 user message attachment 引用。
 
 設計:
-- per-user 目錄:`~/.orion/uploads/<user_id>/<upload_id>.<ext>`
+- Canonical per-user 目錄:`~/.orion/users/<user_id>/uploads/<upload_id>.<ext>`
+  與 memory(`users/<user_id>/memory/`)同層,「per-user 跨 session 資料一律歸 users/」。
+- Legacy fallback:`~/.orion/uploads/<user_id>/<upload_id>.<ext>`(Phase 11 起初寫進這裡)
+  寫入只走新路徑;讀 / 列 / 刪會 union 新+舊,保護既有本機資料,不強迫一次 migrate。
 - upload_id = uuid hex[:16](短足以識別,不會碰撞 in-session)
 - 大檔限制 10 MB(超過拒絕,避免 disk 爆)
 - read_upload 回 bytes;`read_upload_text` 回 str(UTF-8 decode 失敗 raise)
@@ -33,9 +36,27 @@ class UploadNotFoundError(FileNotFoundError):
     """指定 upload_id 不存在。"""
 
 
-def _uploads_root() -> Path:
-    base = os.environ.get("ORION_HOME") or str(Path.home() / ".orion")
-    return Path(base) / "uploads"
+def _orion_base() -> Path:
+    return Path(os.environ.get("ORION_HOME") or str(Path.home() / ".orion"))
+
+
+def _user_uploads_dir(user_id: str) -> Path:
+    """Canonical 新路徑:`<base>/users/<user_id>/uploads/`。寫入永遠走這。"""
+    return _orion_base() / "users" / user_id / "uploads"
+
+
+def _legacy_user_uploads_dir(user_id: str) -> Path:
+    """Legacy 舊路徑:`<base>/uploads/<user_id>/`。Phase 11 起初使用,僅 read fallback。
+
+    Phase 19 之後 refactor 走新路徑(users/<user_id>/uploads/)以與 memory 對齊。
+    既有本機資料留在舊位置仍可讀,新寫一律新路徑。
+    """
+    return _orion_base() / "uploads" / user_id
+
+
+def _candidate_dirs(user_id: str) -> list[Path]:
+    """讀 / 列 / 刪要掃的所有路徑(新優先)。"""
+    return [_user_uploads_dir(user_id), _legacy_user_uploads_dir(user_id)]
 
 
 @dataclass
@@ -80,7 +101,7 @@ def save_upload(
     upload_id = uuid4().hex[:16]
     safe_name = _sanitize_filename(filename)
     suffix = Path(safe_name).suffix or ""
-    target_dir = _uploads_root() / user_id
+    target_dir = _user_uploads_dir(user_id)
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / f"{upload_id}{suffix}"
     target_path.write_bytes(data)
@@ -95,19 +116,21 @@ def save_upload(
 
 
 def _resolve_path(user_id: str, upload_id: str) -> Path:
+    """新路徑找不到時 fallback 到 legacy 舊路徑。"""
     if not _UPLOAD_ID_PATTERN.match(upload_id):
         raise UploadNotFoundError(f"invalid upload_id: {upload_id!r}")
-    target_dir = _uploads_root() / user_id
-    if not target_dir.exists():
-        raise UploadNotFoundError(f"upload not found: {upload_id}")
-    matches = list(target_dir.glob(f"{upload_id}*"))
-    if not matches:
-        raise UploadNotFoundError(f"upload not found: {upload_id}")
-    # 找精確 prefix 配對(`<id>.ext` 或 `<id>` 無 ext)
-    for p in matches:
-        if p.name == upload_id or p.stem == upload_id:
-            return p
-    return matches[0]
+    for target_dir in _candidate_dirs(user_id):
+        if not target_dir.exists():
+            continue
+        matches = list(target_dir.glob(f"{upload_id}*"))
+        if not matches:
+            continue
+        # 找精確 prefix 配對(`<id>.ext` 或 `<id>` 無 ext)
+        for p in matches:
+            if p.name == upload_id or p.stem == upload_id:
+                return p
+        return matches[0]
+    raise UploadNotFoundError(f"upload not found: {upload_id}")
 
 
 def read_upload(user_id: str, upload_id: str) -> bytes:
@@ -131,29 +154,36 @@ def delete_upload(user_id: str, upload_id: str) -> bool:
 
 
 def list_uploads(user_id: str) -> list[UploadRecord]:
-    """列 user 所有 upload 檔(metadata 從 disk 重建,filename 已 sanitize)。"""
-    target_dir = _uploads_root() / user_id
-    if not target_dir.exists():
-        return []
+    """列 user 所有 upload 檔(metadata 從 disk 重建,filename 已 sanitize)。
+
+    Union 新路徑與 legacy 舊路徑;同 upload_id 兩處都有以新路徑為準。
+    """
     out: list[UploadRecord] = []
-    for p in sorted(target_dir.iterdir()):
-        if not p.is_file():
+    seen: set[str] = set()
+    for target_dir in _candidate_dirs(user_id):
+        if not target_dir.exists():
             continue
-        # 嘗試 parse upload_id(stem 至少 8 字 hex)
-        stem = p.stem
-        if not _UPLOAD_ID_PATTERN.match(stem):
-            continue
-        try:
-            size = p.stat().st_size
-        except OSError:
-            continue
-        out.append(
-            UploadRecord(
-                upload_id=stem,
-                user_id=user_id,
-                filename=p.name,
-                path=p,
-                size=size,
-            ),
-        )
+        for p in sorted(target_dir.iterdir()):
+            if not p.is_file():
+                continue
+            # 嘗試 parse upload_id(stem 至少 8 字 hex)
+            stem = p.stem
+            if not _UPLOAD_ID_PATTERN.match(stem):
+                continue
+            if stem in seen:
+                continue  # 新路徑優先(_candidate_dirs 順序保證)
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            seen.add(stem)
+            out.append(
+                UploadRecord(
+                    upload_id=stem,
+                    user_id=user_id,
+                    filename=p.name,
+                    path=p,
+                    size=size,
+                ),
+            )
     return out

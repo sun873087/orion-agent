@@ -1,10 +1,12 @@
 """/uploads — Phase 11 file upload REST。
 
-POST /uploads(multipart)→ 存到 ~/.orion/uploads/<user_id>/<id>.<ext>
-GET /uploads → list user uploads
-DELETE /uploads/{id} → 刪除
+POST /uploads(multipart)→ 存到 ~/.orion/users/<user_id>/uploads/<id>.<ext>
+GET /uploads → list user uploads(新 + legacy 路徑 union)
+DELETE /uploads/{id} → 刪除(新 + legacy 路徑都會找)
 
 對應 spec § Phase 11 file upload(取代 TS @file ref)。
+Phase 19 起 disk layout 改為 `users/<user_id>/uploads/` 與 memory 對齊;舊位置
+`<base>/uploads/<user_id>/` 仍可讀(legacy fallback)— 詳見 `input/upload.py` docstring。
 """
 
 from __future__ import annotations

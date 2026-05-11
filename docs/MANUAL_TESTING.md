@@ -307,8 +307,9 @@ rm /tmp/orion-dev.db
 # Settings rules(你按過 always_allow / always_deny 寫進這檔)
 rm ~/.orion/settings.json    # ← ⚠️ 注意:會清掉所有持久化 settings 與 migration version
 
-# Uploaded files(by user)
-rm -rf ~/.orion/uploads/
+# Uploaded files(by user) — Phase 19 後 canonical 位置在 users/<uid>/uploads/;
+# 舊位置 ~/.orion/uploads/<uid>/ 是 legacy fallback,可能仍有舊資料
+rm -rf ~/.orion/users/*/uploads/ ~/.orion/uploads/
 
 # Sessions transcripts(per-session JSONL)
 rm -rf ~/.orion/sessions/

@@ -126,6 +126,10 @@ process_user_input 兩種都吃。Image / upload attachment 自動轉 ContentBlo
 filename **sanitize**(只留字母 / 數字 / `.`-`_`,擋 path traversal),size limit 10 MB。
 per-user 隔離(`/uploads/<user_id>/` 子目錄)。`ORION_HOME` 可換目錄。
 
+> **Phase 19 update**:canonical 路徑搬到 `~/.orion/users/<user_id>/uploads/`,跟 memory
+> 對齊「per-user 資料歸 users/<uid>/」。舊位置仍 read fallback(transparent migration,
+> 不動既有本機資料)。詳見 `phase-19-completion.md` follow-on 段。
+
 對應 spec § Phase 11 § 1.7。
 
 ### 6. CJK-aware rough token count

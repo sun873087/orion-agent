@@ -45,8 +45,8 @@ wheel / zip 安裝也能拿。
 ├── sessions/                         # 所有 session 的 transcript
 │   └── <session-uuid>/transcript.jsonl
 ├── plans/                            # plan mode 寫的計畫檔
-├── uploads/                          # web chat 上傳檔(per-user 子資料夾)
-│   └── <user_id>/<upload_id>.<ext>
+├── uploads/                          # ⚠️ legacy(Phase 11 起初位置,Phase 19 之後)
+│   └── <user_id>/<upload_id>.<ext>   #     僅 read fallback,新寫已搬到 users/<uid>/uploads/
 └── users/                            # per-tenant 子目錄根(下個區段)
     └── <user_id>/...
 ```
@@ -60,7 +60,7 @@ wheel / zip 安裝也能拿。
 | `~/.orion/plugins/` | `plugins/loader.py:_user_plugins_dir`(誤名,實際 system 級)| `ORION_PLUGINS_DIR` |
 | `~/.orion/sessions/` | `storage/session.py` | — |
 | `~/.orion/plans/` | `tools/special/enter_plan_mode.py` | `ORION_HOME/plans/` |
-| `~/.orion/uploads/` | `input/upload.py` | `ORION_HOME` |
+| `~/.orion/uploads/` (legacy) | `input/upload.py:_legacy_user_uploads_dir` | `ORION_HOME` |
 
 > **誰能寫?** Admin / 部署者(server 跑 process 的 user)。**Web chat tenant 寫不到**(沒對應 REST endpoint)。
 
@@ -105,6 +105,8 @@ wheel / zip 安裝也能拿。
 ~/.orion/users/<user_id>/
 ├── memory/                           # auto-memory(MEMORY.md + 散件)
 │   └── MEMORY.md
+├── uploads/                          # web chat 上傳檔(Phase 19 後 canonical 位置)
+│   └── <upload_id>.<ext>
 └── skills/                           # 自訂 skills(覆蓋 system / bundled 同名)
     └── <name>/SKILL.md
 ```
@@ -112,6 +114,7 @@ wheel / zip 安裝也能拿。
 | 路徑 | 模組 | env override |
 |---|---|---|
 | `~/.orion/users/<uid>/memory/` | `memory/paths.py:user_memory_dir` | — |
+| `~/.orion/users/<uid>/uploads/` | `input/upload.py:_user_uploads_dir` | `ORION_HOME` |
 | `~/.orion/users/<uid>/skills/` | `skills/loader.py:_user_skills_dir` | `ORION_USER_SKILLS_DIR`(整批根目錄) |
 
 > `user_id` 來自 JWT(web chat)或 `--user-id` CLI flag(預設 `default`)。
