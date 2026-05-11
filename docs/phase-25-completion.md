@@ -1,7 +1,7 @@
 # Phase 25 完工記錄 — Memory + MCP OAuth REST endpoints
 
 **完成日期**:2026-05-10
-**Plan doc**:`docs/phases/plan/25-memory-mcp-rest-endpoints.md`
+**Plan doc**:`docs/phases/25-memory-mcp-rest-endpoints.md`(原 `docs/phases/plan/25-...`,完工後搬出)
 **狀態**:✅ Memory + MCP OAuth web flow 完整接通,Settings → Memory / Connections
 分頁不再是 placeholder。
 **測試**:`tests/unit/api/test_memories_routes.py`(9 tests)+
