@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Orion Agent — Cache 過期後會發生什麼?</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #11161d;
+    --bg-deep: #080b10;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-mute: #6e7681;
+    --border: #30363d;
+
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.07);
+    --purple-border: rgba(167, 139, 250, 0.4);
+
+    --green: #4ade80;
+    --green-bg: rgba(74, 222, 128, 0.06);
+    --green-border: rgba(74, 222, 128, 0.35);
+
+    --orange: #fb923c;
+    --orange-bg: rgba(251, 146, 60, 0.06);
+    --orange-border: rgba(251, 146, 60, 0.35);
+
+    --cyan: #38bdf8;
+    --cyan-bg: rgba(56, 189, 248, 0.06);
+    --cyan-border: rgba(56, 189, 248, 0.35);
+
+    --red: #f87171;
+    --red-bg: rgba(248, 113, 113, 0.06);
+    --red-border: rgba(248, 113, 113, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 56px 32px 80px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    margin: 0 0 12px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  header .meta {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* ─── Section heading ───────────────────────────── */
+  .section-title {
+    font-size: 13px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 40px 0 16px;
+    padding-left: 4px;
+    border-left: 3px solid var(--text-mute);
+    padding-left: 12px;
+  }
+
+  /* ─── Timeline ───────────────────────────── */
+  .timeline {
+    position: relative;
+    padding: 8px 0;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 32px;
+    top: 24px;
+    bottom: 24px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--green) 0%, var(--green) 25%, var(--red) 35%, var(--red) 65%, var(--orange) 75%, var(--orange) 100%);
+    opacity: 0.4;
+  }
+
+  .turn {
+    position: relative;
+    padding-left: 76px;
+    margin-bottom: 24px;
+  }
+  .turn:last-child { margin-bottom: 0; }
+
+  .turn-marker {
+    position: absolute;
+    left: 20px;
+    top: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+  }
+  .turn.warm .turn-marker { border-color: var(--green); color: var(--green); }
+  .turn.cold .turn-marker { border-color: var(--red); color: var(--red); }
+  .turn.idle .turn-marker {
+    border-color: var(--text-mute);
+    border-style: dashed;
+    color: var(--text-mute);
+  }
+
+  .turn-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .turn.warm .turn-card { border-color: var(--green-border); background: var(--green-bg); }
+  .turn.cold .turn-card { border-color: var(--red-border); background: var(--red-bg); }
+  .turn.idle .turn-card {
+    border-color: var(--text-mute);
+    border-style: dashed;
+    background: transparent;
+  }
+
+  .turn-title {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .turn.warm .turn-title { color: var(--green); }
+  .turn.cold .turn-title { color: var(--red); }
+  .turn.idle .turn-title { color: var(--text-mute); font-style: italic; }
+
+  .turn-desc {
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .turn.idle .turn-desc { color: var(--text-dim); }
+
+  .turn-bps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .bp {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+  }
+  .bp.hit { border-color: var(--green-border); color: var(--green); }
+  .bp.miss { border-color: var(--red-border); color: var(--red); }
+  .bp.write { border-color: var(--cyan-border); color: var(--cyan); }
+
+  /* ─── Cost breakdown table ───────────────────────────── */
+  .cost-table {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .cost-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .cost-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--bg-deep);
+    color: var(--text-mute);
+    font-weight: 500;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cost-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .cost-table tr:last-child td { border-bottom: none; }
+  .cost-table td:first-child {
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+  }
+  .cost-table .cost-cold { color: var(--red); font-family: ui-monospace, monospace; font-weight: 600; }
+  .cost-table .cost-warm { color: var(--green); font-family: ui-monospace, monospace; }
+  .cost-table .arrow { color: var(--text-mute); padding: 0 8px; }
+
+  /* ─── Comparison cards ───────────────────────────── */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .compare-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .compare-card.good { border-color: var(--green-border); background: var(--green-bg); }
+  .compare-card.bad { border-color: var(--red-border); background: var(--red-bg); }
+
+  .compare-head {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .compare-card.good .compare-head { color: var(--green); }
+  .compare-card.bad .compare-head { color: var(--red); }
+
+  .compare-card ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .compare-card li { margin-bottom: 5px; }
+  .compare-card li:last-child { margin-bottom: 0; }
+
+  /* ─── Decision matrix ───────────────────────────── */
+  .matrix {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 0;
+    overflow: hidden;
+  }
+  .matrix-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.2fr;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    gap: 16px;
+  }
+  .matrix-row:last-child { border-bottom: none; }
+  .matrix-row.head {
+    background: var(--bg-deep);
+    color: var(--text-mute);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 12px 20px;
+  }
+  .matrix-row .scenario { font-size: 13px; color: var(--text); }
+  .matrix-row .ttl {
+    font-family: ui-monospace, monospace;
+    font-size: 12.5px;
+    color: var(--cyan);
+  }
+  .matrix-row .reason {
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  /* ─── Inline emphasis ───────────────────────────── */
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .num-red { color: var(--red); font-family: ui-monospace, monospace; font-weight: 600; }
+  .num-green { color: var(--green); font-family: ui-monospace, monospace; font-weight: 600; }
+  .num-orange { color: var(--orange); font-family: ui-monospace, monospace; font-weight: 600; }
+
+  .key-insight {
+    background: var(--cyan-bg);
+    border-left: 3px solid var(--cyan);
+    padding: 14px 18px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .key-insight strong { color: var(--cyan); }
+
+  .footnote {
+    text-align: center;
+    color: var(--text-mute);
+    font-size: 12px;
+    margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Cache 過期後會發生什麼?</h1>
+    <div class="meta">
+      使用者離開 2 小時後回來 — 4 個 breakpoint 全部失效的成本與恢復路徑
+    </div>
+  </header>
+
+  <!-- ═══ 時間軸 ═══ -->
+  <div class="section-title">時間軸:從正常 → 閒置 → 重建</div>
+
+  <div class="timeline">
+
+    <div class="turn warm">
+      <div class="turn-marker">N</div>
+      <div class="turn-card">
+        <div class="turn-title">turn N — 正常對話中</div>
+        <div class="turn-desc">
+          使用者送出訊息,模型回應。cache 寫到當前 user message。
+        </div>
+        <div class="turn-bps">
+          <span class="bp hit">static · hit 0.1×</span>
+          <span class="bp hit">session · hit 0.1×</span>
+          <span class="bp hit">msg bp #2 · hit 0.1×</span>
+          <span class="bp write">msg bp #1 · write 1.25×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="turn idle">
+      <div class="turn-marker">⌛</div>
+      <div class="turn-card">
+        <div class="turn-title">使用者離開 2 小時 …</div>
+        <div class="turn-desc">
+          <code>messages</code> 5m TTL → 5 分鐘後過期。<br>
+          <code>static</code> / <code>session</code> 1h TTL → 1 小時後過期。<br>
+          2 小時後,<strong>4 個 breakpoint 全部失效</strong>。
+        </div>
+      </div>
+    </div>
+
+    <div class="turn cold">
+      <div class="turn-marker">N+1</div>
+      <div class="turn-card">
+        <div class="turn-title">turn N+1 — 冷啟動</div>
+        <div class="turn-desc">
+          使用者回來繼續對話。所有 cache miss,要重寫一遍 prefix。
+          <strong style="color: var(--red);">這一 turn 比較貴</strong>。
+        </div>
+        <div class="turn-bps">
+          <span class="bp miss">static · miss → write 2×</span>
+          <span class="bp miss">session · miss → write 2×</span>
+          <span class="bp miss">messages · miss → full 1×</span>
+          <span class="bp write">new bp #1 · write 1.25×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="turn warm">
+      <div class="turn-marker">N+2</div>
+      <div class="turn-card">
+        <div class="turn-title">turn N+2 — 已恢復</div>
+        <div class="turn-desc">
+          cache 已重建。只要使用者在 TTL 內繼續對話,就回到正常 0.1× 讀取流程。
+        </div>
+        <div class="turn-bps">
+          <span class="bp hit">static · hit 0.1×</span>
+          <span class="bp hit">session · hit 0.1×</span>
+          <span class="bp hit">msg bp #2 · hit 0.1×</span>
+          <span class="bp write">msg bp #1 · write 1.25×</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ 成本對照表 ═══ -->
+  <div class="section-title">turn N+1 各 breakpoint 的成本</div>
+
+  <div class="cost-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Breakpoint</th>
+          <th>內容</th>
+          <th>正常 (cached)</th>
+          <th>冷啟動 (miss)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>system list[0]</td>
+          <td>static 7 段 prompt</td>
+          <td><span class="cost-warm">0.1× 讀</span></td>
+          <td><span class="cost-cold">2× 寫</span><span class="arrow">↑</span>1h TTL 寫入溢價</td>
+        </tr>
+        <tr>
+          <td>system list[1]</td>
+          <td>session-stable 動態段</td>
+          <td><span class="cost-warm">0.1× 讀</span></td>
+          <td><span class="cost-cold">2× 寫</span><span class="arrow">↑</span>1h TTL 寫入溢價</td>
+        </tr>
+        <tr>
+          <td>messages bp #2</td>
+          <td>整段對話歷史(讀取點)</td>
+          <td><span class="cost-warm">0.1× 讀</span></td>
+          <td><span class="cost-cold">1× 全價</span><span class="arrow">↑</span>整段歷史按基礎價計</td>
+        </tr>
+        <tr>
+          <td>messages bp #1</td>
+          <td>當前 user message(寫入點)</td>
+          <td><span class="cost-warm">1.25× 寫</span></td>
+          <td><span class="cost-cold">1.25× 寫</span><span class="arrow">·</span>本來就要寫,沒變化</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="key-insight">
+    <strong>最痛的是 messages</strong> — 長對話累積幾萬 token,正常時 0.1× 讀,冷啟動要付 1× 基礎價。
+    例如 50k token 的歷史,冷啟動多付 <span class="num-red">~45k token</span> 的差價(1× - 0.1×)。
+  </div>
+
+  <!-- ═══ 為什麼不 keep-alive ═══ -->
+  <div class="section-title">為什麼不主動保溫(keep-alive)?</div>
+
+  <div class="compare">
+    <div class="compare-card bad">
+      <div class="compare-head">✗ 背景定時 ping</div>
+      <ul>
+        <li>每次續約至少付 <span class="num-orange">0.1× 整份 prefix</span> 的讀取費</li>
+        <li>使用者可能根本不回來 → 白花</li>
+        <li>需要排程基礎設施,複雜度增加</li>
+        <li>大多數使用者會在合理時間內回來,N 次保溫 &gt; 1 次重建</li>
+      </ul>
+    </div>
+    <div class="compare-card good">
+      <div class="compare-head">✓ 接受偶發重建</div>
+      <ul>
+        <li>只有真的回來那一 turn 才付成本</li>
+        <li>使用者放棄會話 = 完全不花錢</li>
+        <li>不需任何額外邏輯,Anthropic 端透明處理</li>
+        <li>重建後立刻恢復長期 cache hit 流程</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══ 何時調整 TTL ═══ -->
+  <div class="section-title">何時該調整 TTL?</div>
+
+  <div class="matrix">
+    <div class="matrix-row head">
+      <div>使用模式</div>
+      <div>建議 TTL</div>
+      <div>理由</div>
+    </div>
+    <div class="matrix-row">
+      <div class="scenario">連續對話(每幾秒一句)</div>
+      <div class="ttl">messages = 5m(預設)</div>
+      <div class="reason">下 turn 一定在 5m 內,寫入成本最低(1.25×)</div>
+    </div>
+    <div class="matrix-row">
+      <div class="scenario">間歇對話(10~50 分鐘一句)</div>
+      <div class="ttl">messages = 1h</div>
+      <div class="reason">多付 0.75× 寫入,換取下 turn 仍 hit。否則每次都要重付全價歷史</div>
+    </div>
+    <div class="matrix-row">
+      <div class="scenario">久違回來(數小時/隔天)</div>
+      <div class="ttl">維持預設,不調</div>
+      <div class="reason">1h 也救不了,反而每 turn 都付寫入溢價。接受偶發重建就好</div>
+    </div>
+    <div class="matrix-row">
+      <div class="scenario">同一 session 跨午休</div>
+      <div class="ttl">static/session = 1h(預設)</div>
+      <div class="reason">系統段 1h TTL 足夠覆蓋一般工作間隔,messages 可能會過期但成本相對小</div>
+    </div>
+  </div>
+
+  <div class="key-insight" style="margin-top: 24px;">
+    <strong>關鍵觀念</strong> — Anthropic 只支援 <code>5m</code> 與 <code>1h</code> 兩種 TTL,沒有中間值。
+    調整的決策邊界很清楚:預期下次互動會在 5m 內?用 5m。會在 5m~1h 之間?用 1h。超過 1h?兩者都救不了。
+  </div>
+
+  <div class="footnote">
+    來源:<code>api/src/orion_agent/llm/cache_config.py</code>
+    · <code>api/src/orion_agent/core/message_cache.py</code>
+    · Anthropic Prompt Caching docs(5m: 1.25× 寫,1h: 2× 寫,讀永遠 0.1×)
+  </div>
+
+</div>
+</body>
+</html>
