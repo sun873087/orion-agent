@@ -74,7 +74,11 @@ class OpenAIProvider:
         cache_breakpoints: list[int] | None = None,  # noqa: ARG002 — 忽略,OpenAI 自動 cache
         reasoning_effort: ReasoningEffort | None = None,
     ) -> AsyncIterator[NormalizedEvent]:
-        """yield NormalizedEvent。"""
+        """yield NormalizedEvent。
+
+        Phase 16:OpenAI SDK 的 stream object 沒提供 `async with`,中途被 cancel 時
+        必須手動 aclose 才能關連線。用 try/finally + getattr aclose 兼容不同版本 SDK。
+        """
         # OpenAI 不支 cache_control,system list 拼成單字串
         system_str = system if isinstance(system, str) else "\n\n".join(system)
 
@@ -102,90 +106,107 @@ class OpenAIProvider:
         current_tool_name: str | None = None
         current_partial_args = ""
 
-        async for raw_event in stream_obj:
-            # SDK streaming events 是 union type;mypy strict 無法 narrow
-            # string discriminator,所以邊界視為 Any。emit 出去的
-            # NormalizedEvent 仍會被 strict 檢查。
-            event: Any = raw_event
-            etype: str = event.type
+        try:
+            async for raw_event in stream_obj:
+                # SDK streaming events 是 union type;mypy strict 無法 narrow
+                # string discriminator,所以邊界視為 Any。emit 出去的
+                # NormalizedEvent 仍會被 strict 檢查。
+                event: Any = raw_event
+                etype: str = event.type
 
-            if etype == "response.created":
-                yield MessageStartEvent(
-                    message_id=event.response.id,
-                    model=self.model,
-                )
-
-            elif etype == "response.output_text.delta":
-                yield TextDeltaEvent(text=event.delta)
-
-            elif etype == "response.reasoning.delta":
-                yield ThinkingDeltaEvent(text=event.delta)
-
-            elif etype == "response.output_item.added":
-                item = event.item
-                if getattr(item, "type", None) == "function_call":
-                    current_block_idx = event.output_index
-                    current_tool_id = item.call_id
-                    current_tool_name = item.name
-                    current_partial_args = ""
-                    yield ToolUseStartEvent(
-                        block_index=current_block_idx,
-                        tool_use_id=current_tool_id,
-                        tool_name=current_tool_name,
+                if etype == "response.created":
+                    yield MessageStartEvent(
+                        message_id=event.response.id,
+                        model=self.model,
                     )
 
-            elif etype == "response.function_call_arguments.delta":
-                current_partial_args += event.delta
-                yield ToolUseInputDeltaEvent(
-                    block_index=current_block_idx or 0,
-                    partial_json=event.delta,
-                )
+                elif etype == "response.output_text.delta":
+                    yield TextDeltaEvent(text=event.delta)
 
-            elif etype == "response.output_item.done":
-                item = event.item
-                if (
-                    getattr(item, "type", None) == "function_call"
-                    and current_tool_id is not None
-                    and current_tool_name is not None
-                ):
-                    try:
-                        full_input = (
-                            json.loads(current_partial_args) if current_partial_args else {}
+                elif etype == "response.reasoning.delta":
+                    yield ThinkingDeltaEvent(text=event.delta)
+
+                elif etype == "response.output_item.added":
+                    item = event.item
+                    if getattr(item, "type", None) == "function_call":
+                        current_block_idx = event.output_index
+                        current_tool_id = item.call_id
+                        current_tool_name = item.name
+                        current_partial_args = ""
+                        yield ToolUseStartEvent(
+                            block_index=current_block_idx,
+                            tool_use_id=current_tool_id,
+                            tool_name=current_tool_name,
                         )
-                    except json.JSONDecodeError:
-                        full_input = {"_parse_error": current_partial_args}
-                    yield ToolUseStopEvent(
-                        block_index=current_block_idx or 0,
-                        tool_use_id=current_tool_id,
-                        tool_name=current_tool_name,
-                        full_input=full_input,
-                    )
-                    current_tool_id = None
-                    current_tool_name = None
 
-            elif etype == "response.completed":
-                response = event.response
-                stop_reason = self._map_stop_reason(
-                    getattr(response, "status", None),
-                    getattr(response, "incomplete_details", None),
-                )
-                usage = response.usage
-                input_details = getattr(usage, "input_tokens_details", None)
-                output_details = getattr(usage, "output_tokens_details", None)
-                cached = (getattr(input_details, "cached_tokens", 0) or 0) if input_details else 0
-                reasoning = (
-                    (getattr(output_details, "reasoning_tokens", 0) or 0) if output_details else 0
-                )
-                yield MessageStopEvent(
-                    stop_reason=cast(Any, stop_reason),
-                    usage=NormalizedUsage(
-                        input_tokens=usage.input_tokens,
-                        output_tokens=usage.output_tokens,
-                        cache_read_tokens=cached,
-                        cache_creation_tokens=0,
-                        reasoning_tokens=reasoning,
-                    ),
-                )
+                elif etype == "response.function_call_arguments.delta":
+                    current_partial_args += event.delta
+                    yield ToolUseInputDeltaEvent(
+                        block_index=current_block_idx or 0,
+                        partial_json=event.delta,
+                    )
+
+                elif etype == "response.output_item.done":
+                    item = event.item
+                    if (
+                        getattr(item, "type", None) == "function_call"
+                        and current_tool_id is not None
+                        and current_tool_name is not None
+                    ):
+                        try:
+                            full_input = (
+                                json.loads(current_partial_args) if current_partial_args else {}
+                            )
+                        except json.JSONDecodeError:
+                            full_input = {"_parse_error": current_partial_args}
+                        yield ToolUseStopEvent(
+                            block_index=current_block_idx or 0,
+                            tool_use_id=current_tool_id,
+                            tool_name=current_tool_name,
+                            full_input=full_input,
+                        )
+                        current_tool_id = None
+                        current_tool_name = None
+
+                elif etype == "response.completed":
+                    response = event.response
+                    stop_reason = self._map_stop_reason(
+                        getattr(response, "status", None),
+                        getattr(response, "incomplete_details", None),
+                    )
+                    usage = response.usage
+                    input_details = getattr(usage, "input_tokens_details", None)
+                    output_details = getattr(usage, "output_tokens_details", None)
+                    cached = (
+                        (getattr(input_details, "cached_tokens", 0) or 0)
+                        if input_details
+                        else 0
+                    )
+                    reasoning = (
+                        (getattr(output_details, "reasoning_tokens", 0) or 0)
+                        if output_details
+                        else 0
+                    )
+                    yield MessageStopEvent(
+                        stop_reason=cast(Any, stop_reason),
+                        usage=NormalizedUsage(
+                            input_tokens=usage.input_tokens,
+                            output_tokens=usage.output_tokens,
+                            cache_read_tokens=cached,
+                            cache_creation_tokens=0,
+                            reasoning_tokens=reasoning,
+                        ),
+                    )
+        finally:
+            # Phase 16:中途 cancel 時手動關 stream 釋放 httpx connection
+            aclose = getattr(stream_obj, "aclose", None) or getattr(stream_obj, "close", None)
+            if aclose is not None:
+                try:
+                    result = aclose()
+                    if hasattr(result, "__await__"):
+                        await result
+                except Exception:  # noqa: BLE001
+                    pass
 
     @staticmethod
     def _map_stop_reason(status: str | None, incomplete: Any) -> str:

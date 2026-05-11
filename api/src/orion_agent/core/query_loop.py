@@ -12,11 +12,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio
+
 from orion_agent.compact.auto import auto_compact_if_needed
 from orion_agent.compact.reactive import (
     is_prompt_too_long_error,
     reactive_compact,
 )
+from orion_agent.core.abort import abort_aware_scope
 from orion_agent.core.message_cache import compute_message_breakpoints
 from orion_agent.core.state import AgentContext
 from orion_agent.core.streaming_executor import StreamingToolExecutor
@@ -148,6 +151,10 @@ async def _run_one_turn(
         2. stream 結束 — 組 assistant NormalizedMessage(text + tool_use blocks)
         3. yield AssistantTurnComplete(message 已 append 到 state_messages)
         4. drain executor — 按 add 順序 yield ToolProgressUpdate / ToolResultUpdate
+
+    Phase 16:整段包進 abort_aware_scope。ctx.abort_event 中途 set 會立即 cancel
+    provider.stream 的 httpx connection,本函式提前 return,讓 query_loop 下一輪
+    觀察到 abort_event 並 emit Terminal(reason="aborted")。
     """
     text_chunks: list[str] = []
     pending_tool_uses: dict[int, ToolUseBlock] = {}
@@ -157,84 +164,90 @@ async def _run_one_turn(
 
     from orion_agent.telemetry.instrumentation import record_usage, trace_api_call
 
-    async with StreamingToolExecutor(
-        params.tools,
-        can_use_tool=params.can_use_tool,
-        hooks=params.hooks,
-        ctx=ctx,
-    ) as executor:
-        # ─── 1. stream model ────────────────────────────────────────────────
-        async with trace_api_call(
-            model=params.provider.model,
-            session_id=str(ctx.session_id),
-            provider=params.provider.name,
-        ):
-            msg_bps = compute_message_breakpoints(state_messages)
-            async for ev in params.provider.stream(
-                system=params.system_prompt,
-                messages=state_messages,
-                tools=tool_defs,
-                max_tokens=params.max_tokens_per_turn,
-                reasoning_effort=params.reasoning_effort,
-                cache_breakpoints=msg_bps,
+    async with abort_aware_scope(ctx.abort_event) as abort_scope:
+        async with StreamingToolExecutor(
+            params.tools,
+            can_use_tool=params.can_use_tool,
+            hooks=params.hooks,
+            ctx=ctx,
+        ) as executor:
+            # ─── 1. stream model ────────────────────────────────────────────
+            async with trace_api_call(
+                model=params.provider.model,
+                session_id=str(ctx.session_id),
+                provider=params.provider.name,
             ):
-                if isinstance(ev, TextDeltaEvent):
-                    text_chunks.append(ev.text)
-                    yield AssistantTextDelta(text=ev.text)
-                elif isinstance(ev, ThinkingDeltaEvent):
-                    yield AssistantThinkingDelta(text=ev.text)
-                elif isinstance(ev, ToolUseStopEvent):
-                    block = ToolUseBlock(
-                        id=ev.tool_use_id,
-                        name=ev.tool_name,
-                        input=ev.full_input,
-                    )
-                    pending_tool_uses[ev.block_index] = block
-                    # streaming:模型一 yield tool_use 就立即 add → 可能立刻開跑
-                    executor.add_tool(block)
-                elif isinstance(ev, MessageStopEvent):
-                    stop_reason = ev.stop_reason
-                    input_tokens = ev.usage.input_tokens
-                    output_tokens = ev.usage.output_tokens
+                msg_bps = compute_message_breakpoints(state_messages)
+                async for ev in params.provider.stream(
+                    system=params.system_prompt,
+                    messages=state_messages,
+                    tools=tool_defs,
+                    max_tokens=params.max_tokens_per_turn,
+                    reasoning_effort=params.reasoning_effort,
+                    cache_breakpoints=msg_bps,
+                ):
+                    if isinstance(ev, TextDeltaEvent):
+                        text_chunks.append(ev.text)
+                        yield AssistantTextDelta(text=ev.text)
+                    elif isinstance(ev, ThinkingDeltaEvent):
+                        yield AssistantThinkingDelta(text=ev.text)
+                    elif isinstance(ev, ToolUseStopEvent):
+                        block = ToolUseBlock(
+                            id=ev.tool_use_id,
+                            name=ev.tool_name,
+                            input=ev.full_input,
+                        )
+                        pending_tool_uses[ev.block_index] = block
+                        # streaming:模型一 yield tool_use 就立即 add → 可能立刻開跑
+                        executor.add_tool(block)
+                    elif isinstance(ev, MessageStopEvent):
+                        stop_reason = ev.stop_reason
+                        input_tokens = ev.usage.input_tokens
+                        output_tokens = ev.usage.output_tokens
 
-        # Phase 9:把 token usage 寫進 cost tracker + OTel counter
-        record_usage(
-            session_id=str(ctx.session_id),
-            user_id=ctx.user_id,
-            model=params.provider.model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+            # Phase 9:把 token usage 寫進 cost tracker + OTel counter
+            record_usage(
+                session_id=str(ctx.session_id),
+                user_id=ctx.user_id,
+                model=params.provider.model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
 
-        # ─── 2. 組 assistant NormalizedMessage ──────────────────────────────
-        tool_uses_in_order: list[ToolUseBlock] = [
-            pending_tool_uses[idx] for idx in sorted(pending_tool_uses)
-        ]
-        assistant_blocks: list[Any] = []
-        if text_chunks:
-            joined = "".join(text_chunks)
-            if joined.strip():
-                assistant_blocks.append(TextBlock(text=joined))
-        assistant_blocks.extend(tool_uses_in_order)
+            # ─── 2. 組 assistant NormalizedMessage ──────────────────────────
+            tool_uses_in_order: list[ToolUseBlock] = [
+                pending_tool_uses[idx] for idx in sorted(pending_tool_uses)
+            ]
+            assistant_blocks: list[Any] = []
+            if text_chunks:
+                joined = "".join(text_chunks)
+                if joined.strip():
+                    assistant_blocks.append(TextBlock(text=joined))
+            assistant_blocks.extend(tool_uses_in_order)
 
-        # 即使沒任何 block(理論上不該發生),也 append 一個空 text 以維持對齊
-        if not assistant_blocks:
-            assistant_blocks.append(TextBlock(text=""))
+            # 即使沒任何 block(理論上不該發生),也 append 一個空 text 以維持對齊
+            if not assistant_blocks:
+                assistant_blocks.append(TextBlock(text=""))
 
-        assistant_msg = NormalizedMessage(role="assistant", content=assistant_blocks)
-        state_messages.append(assistant_msg)
+            assistant_msg = NormalizedMessage(role="assistant", content=assistant_blocks)
+            state_messages.append(assistant_msg)
 
-        # ─── 3. assistant turn complete ─────────────────────────────────────
-        yield AssistantTurnComplete(
-            message=assistant_msg,
-            stop_reason=stop_reason,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+            # ─── 3. assistant turn complete ─────────────────────────────────
+            yield AssistantTurnComplete(
+                message=assistant_msg,
+                stop_reason=stop_reason,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
 
-        # ─── 4. drain — 工具結果按 add 順序 yield ──────────────────────────
-        async for upd in executor.drain():
-            yield upd
+            # ─── 4. drain — 工具結果按 add 順序 yield ──────────────────────
+            async for upd in executor.drain():
+                yield upd
+
+    # 出 abort_aware_scope:若中途被 cancel,直接 return
+    # (query_loop 下一輪 abort_event 檢查會 emit Terminal aborted)
+    if abort_scope.cancel_called:
+        return
 
 
 async def query_loop(
@@ -315,6 +328,12 @@ async def query_loop(
                 result_blocks = []
                 retried = True
                 continue
+
+        # Phase 16:abort 中途 cancel 會讓 _run_one_turn 提前 return,
+        # 此時 last_assistant_msg 仍是 None。先檢查 abort_event 避免誤判 empty_response。
+        if ctx.abort_event.is_set():
+            transition = Terminal(reason="aborted")
+            break
 
         if last_assistant_msg is None:
             transition = Terminal(reason="empty_response")

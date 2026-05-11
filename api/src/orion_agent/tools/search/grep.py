@@ -16,6 +16,7 @@ from pathlib import Path
 import anyio
 from pydantic import Field
 
+from orion_agent.core.abort import abort_aware_scope
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 
@@ -64,10 +65,10 @@ class GrepTool:
 
         rg = shutil.which("rg")
         if rg:
-            async for ev in self._run_ripgrep(rg, input, search_path):
+            async for ev in self._run_ripgrep(rg, input, search_path, ctx):
                 yield ev
         else:
-            async for ev in self._run_python_fallback(input, search_path):
+            async for ev in self._run_python_fallback(input, search_path, ctx):
                 yield ev
 
     async def _run_ripgrep(
@@ -75,6 +76,7 @@ class GrepTool:
         rg_path: str,
         input: GrepInput,
         search_path: Path,
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         argv = [
             rg_path,
@@ -89,15 +91,22 @@ class GrepTool:
             argv.extend(["--glob", input.file_pattern])
         argv.extend(["--", input.pattern, str(search_path)])
 
+        # Phase 16:abort_aware_scope 讓 abort_event 中途 set 即 cancel subprocess
+        result = None
         try:
-            result = await anyio.run_process(
-                argv,
-                check=False,
-                stdout=-1,
-                stderr=-1,
-            )
+            async with abort_aware_scope(ctx.abort_event) as abort_scope:
+                result = await anyio.run_process(
+                    argv,
+                    check=False,
+                    stdout=-1,
+                    stderr=-1,
+                )
         except Exception as e:  # noqa: BLE001
             yield ErrorEvent(message=f"ripgrep failed to run: {type(e).__name__}: {e}")
+            return
+
+        if abort_scope.cancel_called or result is None:
+            yield ErrorEvent(message="ripgrep aborted")
             return
 
         out = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
@@ -122,6 +131,7 @@ class GrepTool:
         self,
         input: GrepInput,
         search_path: Path,
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         try:
             flags = 0 if input.case_sensitive else re.IGNORECASE
@@ -139,7 +149,14 @@ class GrepTool:
         results: list[str] = []
         match_count = 0
         bytes_count = 0
-        for path in files:
+        # Phase 16:Python fallback 沒有 await 點;每處理 N 個檔案讓出一次,
+        # 並檢查 abort_event 即時退出。
+        for file_idx, path in enumerate(files):
+            if file_idx % 32 == 0:
+                await anyio.sleep(0)
+                if ctx.abort_event.is_set():
+                    yield ErrorEvent(message="grep aborted")
+                    return
             try:
                 text = path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):

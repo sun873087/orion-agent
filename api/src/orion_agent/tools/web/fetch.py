@@ -21,6 +21,7 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 from pydantic import Field
 
+from orion_agent.core.abort import abort_aware_scope
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 
@@ -48,25 +49,32 @@ class WebFetchTool:
     async def call(
         self,
         input: WebFetchInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         url = input.url.strip()
         if not (url.startswith("http://") or url.startswith("https://")):
             yield ErrorEvent(message=f"URL must start with http:// or https://: {url!r}")
             return
 
+        # Phase 16:abort_aware_scope 讓 ctx.abort_event 中途 set 時即刻關 httpx 連線
+        resp: httpx.Response | None = None
         try:
-            async with httpx.AsyncClient(
-                timeout=_TIMEOUT_S,
-                follow_redirects=True,
-                headers={"User-Agent": "orion-agent/0.1 (+https://github.com)"},
-            ) as client:
-                resp = await client.get(url)
+            async with abort_aware_scope(ctx.abort_event) as abort_scope:
+                async with httpx.AsyncClient(
+                    timeout=_TIMEOUT_S,
+                    follow_redirects=True,
+                    headers={"User-Agent": "orion-agent/0.1 (+https://github.com)"},
+                ) as client:
+                    resp = await client.get(url)
         except httpx.TimeoutException:
             yield ErrorEvent(message=f"timeout fetching {url}")
             return
         except httpx.RequestError as e:
             yield ErrorEvent(message=f"fetch failed: {type(e).__name__}: {e}")
+            return
+
+        if abort_scope.cancel_called or resp is None:
+            yield ErrorEvent(message=f"aborted fetching {url}")
             return
 
         if resp.status_code >= 400:

@@ -193,6 +193,42 @@ def run(
     )
 
 
+def _install_sigint_handler(ctx: AgentContext) -> None:
+    """Phase 16:第一次 Ctrl-C → graceful abort;5 秒內第二次 → force exit。
+
+    Linux/macOS only(用 asyncio add_signal_handler)。Windows fallback 用預設
+    KeyboardInterrupt(asyncio 不支援 add_signal_handler)。
+    """
+    import os
+    import signal
+    import time
+
+    last_press: dict[str, float] = {"t": 0.0}
+    _DOUBLE_PRESS_WINDOW = 5.0
+
+    def _handler() -> None:
+        now = time.monotonic()
+        if ctx.abort_event.is_set() and (now - last_press["t"]) < _DOUBLE_PRESS_WINDOW:
+            # 第二次:強制終止
+            print("\n[abort] force quit", flush=True)
+            os._exit(130)  # 130 = 128 + SIGINT
+        # 第一次:graceful
+        last_press["t"] = now
+        ctx.abort_event.set()
+        print(
+            "\n[abort] cancelling — press Ctrl-C again within "
+            f"{int(_DOUBLE_PRESS_WINDOW)}s to force quit",
+            flush=True,
+        )
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, _handler)
+    except (NotImplementedError, RuntimeError):
+        # Windows / 不支援的 platform:不裝 → 走預設 KeyboardInterrupt
+        pass
+
+
 async def _run_async(
     *,
     prompt: str,
@@ -217,6 +253,7 @@ async def _run_async(
     from orion_agent.sandbox.proxy_tools import build_sandboxed_tools
 
     ctx = AgentContext(feature_flags=load_feature_flags(), user_id=user_id)
+    _install_sigint_handler(ctx)
     llm = get_provider(provider, model)
 
     # ─── Phase 7:選 sandbox backend ───────────────────────────────────

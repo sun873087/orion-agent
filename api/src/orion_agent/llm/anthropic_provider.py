@@ -112,7 +112,12 @@ class AnthropicProvider:
         cache_breakpoints: list[int] | None = None,
         reasoning_effort: ReasoningEffort | None = None,
     ) -> AsyncIterator[NormalizedEvent]:
-        """yield NormalizedEvent。"""
+        """yield NormalizedEvent。
+
+        Phase 16:`async with client.messages.stream(...)` 是 SDK 提供的 context manager,
+        當外圍 cancel scope 觸發 CancelledError,__aexit__ 會關閉 httpx connection。
+        因此中途 abort 不需要這層自己處理,直接讓 cancellation propagate 上去即可。
+        """
         anthropic_messages = translate_messages_to_anthropic(messages)
         anthropic_tools = translate_tools_to_anthropic(tools or [])
 
