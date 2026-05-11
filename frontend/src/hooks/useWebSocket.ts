@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  AskUserQuestionAskEvent,
   ClientEvent,
   PermissionAskEvent,
   ServerEvent,
@@ -12,17 +13,26 @@ export type WsStatus =
   | 'reconnecting'
   | 'closed'
 
+export interface AnsweredQuestion {
+  event: AskUserQuestionAskEvent
+  answers: Record<string, string>
+}
+
 interface UseWebSocketResult {
   status: WsStatus
   /** Convenience: status === 'open'. */
   connected: boolean
   events: ServerEvent[]
   pendingPermissions: PermissionAskEvent[]
+  pendingQuestions: AskUserQuestionAskEvent[]
+  /** 已答的題目 — UI 留下「✓ 已回答」卡片做歷史紀錄。 */
+  answeredQuestions: AnsweredQuestion[]
   send: (msg: ClientEvent) => void
   answerPermission: (
     requestId: string,
     decision: 'allow' | 'always_allow' | 'deny' | 'always_deny',
   ) => void
+  answerQuestion: (requestId: string, answers: Record<string, string>) => void
   abort: () => void
   clear: () => void
 }
@@ -64,10 +74,18 @@ export function useWebSocket(
   const [pendingPermissions, setPendingPermissions] = useState<
     PermissionAskEvent[]
   >([])
+  const [pendingQuestions, setPendingQuestions] = useState<
+    AskUserQuestionAskEvent[]
+  >([])
+  const [answeredQuestions, setAnsweredQuestions] = useState<
+    AnsweredQuestion[]
+  >([])
 
   const clear = useCallback(() => {
     setEvents([])
     setPendingPermissions([])
+    setPendingQuestions([])
+    setAnsweredQuestions([])
     pendingEventsRef.current = []
   }, [])
 
@@ -82,6 +100,12 @@ export function useWebSocket(
     )
     if (newPerms.length > 0) {
       setPendingPermissions((prev) => prev.concat(newPerms))
+    }
+    const newQs = batch.filter(
+      (e): e is AskUserQuestionAskEvent => e.type === 'ask_user_question',
+    )
+    if (newQs.length > 0) {
+      setPendingQuestions((prev) => prev.concat(newQs))
     }
   }, [])
 
@@ -142,6 +166,8 @@ export function useWebSocket(
           pendingEventsRef.current = []
           setEvents([])
           setPendingPermissions([])
+          setPendingQuestions([])
+          setAnsweredQuestions([])
         }
         // flush queued sends
         const q = sendQueueRef.current
@@ -231,6 +257,8 @@ export function useWebSocket(
   useEffect(() => {
     setEvents([])
     setPendingPermissions([])
+    setPendingQuestions([])
+    setAnsweredQuestions([])
     pendingEventsRef.current = []
   }, [sessionId])
 
@@ -257,6 +285,21 @@ export function useWebSocket(
     [send],
   )
 
+  const answerQuestion = useCallback(
+    (requestId: string, answers: Record<string, string>) => {
+      send({ type: 'ask_user_answer', request_id: requestId, answers })
+      setPendingQuestions((prev) => {
+        const matched = prev.find((q) => q.request_id === requestId)
+        if (matched && Object.keys(answers).length > 0) {
+          // 答完留個歷史卡片(空 answers = 取消,不留紀錄)
+          setAnsweredQuestions((p) => [...p, { event: matched, answers }])
+        }
+        return prev.filter((q) => q.request_id !== requestId)
+      })
+    },
+    [send],
+  )
+
   const abort = useCallback(() => {
     send({ type: 'abort' })
   }, [send])
@@ -266,8 +309,11 @@ export function useWebSocket(
     connected: status === 'open',
     events,
     pendingPermissions,
+    pendingQuestions,
+    answeredQuestions,
     send,
     answerPermission,
+    answerQuestion,
     abort,
     clear,
   }

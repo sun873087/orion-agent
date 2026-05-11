@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PermissionAskEvent } from '../types/events'
+import type {
+  AskUserQuestionAskEvent,
+  PermissionAskEvent,
+} from '../types/events'
+import type { AnsweredQuestion } from '../hooks/useWebSocket'
+import { AskUserQuestionDialog } from './AskUserQuestionDialog'
 import { MessageBubble } from './MessageBubble'
 import { PermissionDialog } from './PermissionDialog'
 import { ToolGroupCard } from './ToolGroupCard'
@@ -23,20 +28,26 @@ export type FlowEntry =
 interface Props {
   entries: FlowEntry[]
   pendingPermissions: PermissionAskEvent[]
+  pendingQuestions: AskUserQuestionAskEvent[]
+  answeredQuestions: AnsweredQuestion[]
   liveAssistant?: string
   liveThinking?: string
   onPermissionDecide: (
     requestId: string,
     decision: 'allow' | 'always_allow' | 'deny' | 'always_deny',
   ) => void
+  onQuestionAnswer: (requestId: string, answers: Record<string, string>) => void
 }
 
 export function MessageList({
   entries,
   pendingPermissions,
+  pendingQuestions,
+  answeredQuestions,
   liveAssistant,
   liveThinking,
   onPermissionDecide,
+  onQuestionAnswer,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   // sticky:user 已在底部 → 新訊息時自動 scroll;user 滾上去 → 不打擾
@@ -60,6 +71,8 @@ export function MessageList({
     liveAssistant,
     liveThinking,
     pendingPermissions.length,
+    pendingQuestions.length,
+    answeredQuestions.length,
     sticky,
   ])
 
@@ -139,6 +152,22 @@ export function MessageList({
               key={p.request_id}
               event={p}
               onDecide={(d) => onPermissionDecide(p.request_id, d)}
+            />
+          ))}
+
+          {answeredQuestions.map((a) => (
+            <AskUserQuestionDialog
+              key={'answered-' + a.event.request_id}
+              event={a.event}
+              answers={a.answers}
+            />
+          ))}
+
+          {pendingQuestions.map((q) => (
+            <AskUserQuestionDialog
+              key={q.request_id}
+              event={q}
+              onAnswer={(answers) => onQuestionAnswer(q.request_id, answers)}
             />
           ))}
         </div>

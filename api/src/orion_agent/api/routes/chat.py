@@ -34,6 +34,8 @@ from orion_agent.api.auth import verify_token
 from orion_agent.api.deps import get_llm_provider, get_session_manager
 from orion_agent.api.event_schema import (
     AbortEvent,
+    AskUserAnswerEvent,
+    AskUserQuestionAskEvent,
     AssistantTextEvent,
     AssistantThinkingEvent,
     ErrorEvent,
@@ -75,6 +77,11 @@ from orion_agent.llm.types import (
     ToolUseBlock,
 )
 from orion_agent.storage.paths import session_paths
+from orion_agent.tools.interactive.ask_user import (
+    AskUserQuestionTool,
+    PendingQuestions,
+    make_ws_asker,
+)
 
 router = APIRouter()
 
@@ -281,6 +288,7 @@ async def chat_stream(
         max_buffer_size=128,
     )
     pending_perms = PendingPermissions()
+    pending_questions = PendingQuestions()
     abort_event = anyio.Event()
     turn_lock = anyio.Lock()
 
@@ -289,6 +297,22 @@ async def chat_stream(
         outbound_queue=outbound_send,  # type: ignore[arg-type]
         pending=pending_perms,
     )
+
+    # 把 ws asker 掛到 AskUserQuestionTool(per-connection late-bind)。
+    # tool 本身在 build_default_tool_set 已註冊;這裡只設 callback,讓模型呼叫
+    # 時能 round-trip 回前端。離線時用 try/finally 清掉,避免 closure 殘留。
+    ask_tool: AskUserQuestionTool | None = next(
+        (t for t in conv.tools if isinstance(t, AskUserQuestionTool)),
+        None,
+    )
+    if ask_tool is not None:
+        ask_tool.asker = make_ws_asker(
+            outbound_queue=outbound_send,
+            pending=pending_questions,
+            event_factory=lambda rid, qs, t: AskUserQuestionAskEvent(
+                request_id=rid, questions=qs, timeout_seconds=int(t),
+            ),
+        )
 
     async def writer() -> None:
         async with outbound_recv:
@@ -391,6 +415,22 @@ async def chat_stream(
                     tg.start_soon(runner, cev.content)
                 elif isinstance(cev, PermissionDecisionEvent):
                     pending_perms.resolve(cev.request_id, cev.decision)
+                elif isinstance(cev, AskUserAnswerEvent):
+                    # 解 future → tool 拿到答案 → tool_result 回 model
+                    pending_questions.resolve(cev.request_id, cev.answers)
+                    # echo 一條 UserText 給 UI(display-only,不寫 conv state),
+                    # 讓使用者親眼看到「自己回答了什麼」,也方便對照 model 是否真的
+                    # 收到答案還是同題再問。空 answers 表示使用者放棄/取消。
+                    if cev.answers:
+                        echo = "\n".join(
+                            f"Q: {q}\nA: {a}" for q, a in cev.answers.items()
+                        )
+                        await outbound_send.send(UserTextEvent(text=echo))
+                    print(  # 後端 console 一行,debug 用
+                        f"[ask_user_answer] rid={cev.request_id} "
+                        f"answers={cev.answers}",
+                        flush=True,
+                    )
                 elif isinstance(cev, AbortEvent):
                     abort_event.set()
         finally:
@@ -411,5 +451,8 @@ async def chat_stream(
                 ),
             )
     finally:
+        # 清掉 ws-bound asker(closure 抓住本連線的 outbound_send,留著會 leak)
+        if ask_tool is not None:
+            ask_tool.asker = None
         with contextlib.suppress(Exception):
             await websocket.close()

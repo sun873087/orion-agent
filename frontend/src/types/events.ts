@@ -18,10 +18,18 @@ export interface AbortEvent {
   type: 'abort'
 }
 
+export interface AskUserAnswerEvent {
+  type: 'ask_user_answer'
+  request_id: string
+  /** key = question text, value = 選的 label(open-ended 時為使用者輸入文字) */
+  answers: Record<string, string>
+}
+
 export type ClientEvent =
   | UserMessageEvent
   | PermissionDecisionEvent
   | AbortEvent
+  | AskUserAnswerEvent
 
 // ─── Server → Client ────────────────────────────────────────────────────────
 
@@ -67,6 +75,25 @@ export interface PermissionAskEvent {
   timeout_seconds?: number
 }
 
+export interface AskUserOption {
+  label: string
+  description?: string
+}
+
+export interface AskUserQuestion {
+  question: string
+  header?: string
+  options: AskUserOption[]
+  multi_select?: boolean
+}
+
+export interface AskUserQuestionAskEvent {
+  type: 'ask_user_question'
+  request_id: string
+  questions: AskUserQuestion[]
+  timeout_seconds?: number
+}
+
 export interface TurnCompleteEvent {
   type: 'turn_complete'
   stop_reason: string
@@ -93,6 +120,7 @@ export type ServerEvent =
   | ToolUseEvent
   | ToolResultEvent
   | PermissionAskEvent
+  | AskUserQuestionAskEvent
   | TurnCompleteEvent
   | TerminalEvent
   | ServerErrorEvent

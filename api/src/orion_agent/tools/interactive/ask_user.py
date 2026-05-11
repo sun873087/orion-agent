@@ -98,22 +98,30 @@ def make_ws_asker(
     outbound_queue: Any,
     pending: PendingQuestions,
     timeout_s: float = _ASK_TIMEOUT_S,
+    event_factory: Callable[[str, list[dict[str, Any]], float], Any] | None = None,
 ) -> AskUserCallback:
     """WebSocket 版 — 丟事件 → 等 ws reader resolve。
 
     `outbound_queue` 期望 anyio MemoryObjectSendStream(`.send(...)` async)
     或 asyncio.Queue(`.put(...)`)。dynamic dispatch 兩種都吃。
+
+    `event_factory(request_id, questions, timeout_s)` 可選,讓 caller 注入自訂
+    payload 形狀(例如 chat.py 的 Pydantic AskUserQuestionAskEvent)。預設送
+    純 dict,給 CLI/測試用。
     """
     async def asker(questions: list[dict[str, Any]]) -> dict[str, str]:
         request_id = uuid4().hex[:16]
         future: asyncio.Future[dict[str, str]] = asyncio.get_running_loop().create_future()
         pending.pending[request_id] = future
 
-        event = {
-            "type": "ask_user_question",
-            "request_id": request_id,
-            "questions": questions,
-        }
+        if event_factory is None:
+            event: Any = {
+                "type": "ask_user_question",
+                "request_id": request_id,
+                "questions": questions,
+            }
+        else:
+            event = event_factory(request_id, questions, timeout_s)
         # anyio MemoryObjectSendStream 用 .send(),asyncio.Queue 用 .put()
         if hasattr(outbound_queue, "send"):
             await outbound_queue.send(event)

@@ -388,9 +388,12 @@ export function ChatView({
           key={sessionId ?? 'none'}
           entries={flow.entries}
           pendingPermissions={ws.pendingPermissions}
+          pendingQuestions={ws.pendingQuestions}
+          answeredQuestions={ws.answeredQuestions}
           liveAssistant={flow.liveAssistant}
           liveThinking={flow.liveThinking}
           onPermissionDecide={ws.answerPermission}
+          onQuestionAnswer={ws.answerQuestion}
         />
       )}
 

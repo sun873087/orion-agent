@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -109,3 +110,76 @@ def test_ws_bad_client_event_emits_error(app_with_mock_provider: TestClient) -> 
         ws.send_json({"type": "garbage"})
         ev = ws.receive_json()
         assert ev["type"] == "error"
+
+
+def test_ws_ask_user_question_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AskUserQuestion 在 ws 場景的完整 round-trip:
+    模型 turn 1 呼 AskUserQuestion → server 推 ask_user_question →
+    client 回 ask_user_answer → tool_result 帶回 user 答案 → turn 2 收尾。
+    """
+    from tests.conftest import MockProvider, MockTurn
+
+    app = create_app()
+    app.state.llm_provider = MockProvider(turns=[
+        MockTurn(
+            text="let me check",
+            tool_uses=[("ask1", "AskUserQuestion", {
+                "questions": [{
+                    "question": "continue?",
+                    "header": "go",
+                    "options": [
+                        {"label": "yes", "description": ""},
+                        {"label": "no", "description": ""},
+                    ],
+                    "multi_select": False,
+                }],
+            })],
+        ),
+        MockTurn(text="thanks"),
+    ])
+    client = TestClient(app)
+    token = _login(client)
+    with _session(client, token) as (sid, _), client.websocket_connect(
+        f"/chat/stream/{sid}?token={token}",
+    ) as ws:
+        # history replay
+        assert ws.receive_json()["type"] == "history_replay_done"
+        ws.send_json({"type": "user_message", "content": "go"})
+
+        # 收到 ask_user_question 為止
+        ask_ev = None
+        seen: list[dict[str, Any]] = []
+        while True:
+            ev = ws.receive_json()
+            seen.append(ev)
+            if ev["type"] == "ask_user_question":
+                ask_ev = ev
+                break
+            if ev["type"] == "terminal":  # safety
+                break
+
+        assert ask_ev is not None, f"never got ask_user_question; saw {[e['type'] for e in seen]}"
+        assert ask_ev["questions"][0]["question"] == "continue?"
+        rid = ask_ev["request_id"]
+
+        # client 回答
+        ws.send_json({
+            "type": "ask_user_answer",
+            "request_id": rid,
+            "answers": {"continue?": "yes"},
+        })
+
+        # 收到 terminal 為止;沿途應有 tool_result 帶 user answers
+        tool_result = None
+        while True:
+            ev = ws.receive_json()
+            seen.append(ev)
+            if ev["type"] == "tool_result" and ev["tool_use_id"] == "ask1":
+                tool_result = ev
+            if ev["type"] == "terminal":
+                break
+
+        assert tool_result is not None
+        assert "yes" in tool_result["content"]
+
+

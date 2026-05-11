@@ -1,7 +1,8 @@
 """共用內建工具集 — 給 CLI(`main.py`)和 web chat route(`api/routes/sessions.py`)用。
 
-CLI 模式接 stdin asker;web chat 不接 asker(AskUser 在 web 場景需要 ws asker,
-Phase 10 完成 stdin / fake asker;ws asker 整合留 Phase 10c)。
+`AskUserQuestionTool` 永遠註冊。CLI 在這裡傳 stdin asker;web chat 在 ws 連上時
+透過 `chat.py` 把 ws asker 設到 tool.asker 上(per-connection late-bind)。
+asker 是 None 時呼叫 tool 會回 ErrorEvent(模型可看到 schema、知道工具存在)。
 """
 
 from __future__ import annotations
@@ -47,8 +48,9 @@ def build_default_tool_set(
     """組所有內建工具。
 
     Args:
-        asker: 給 AskUserQuestionTool 用的 callback。None → 不加 AskUser
-            (web chat 場景:沒有 stdin,ws asker 整合留之後)。
+        asker: 給 AskUserQuestionTool 用的 callback。None 也會註冊 tool
+            (asker 之後可由 caller 設到 tool.asker — 例如 chat.py 的 ws 連線
+            掛上 ws asker)。模型若在 asker=None 時呼叫 tool 會收到 ErrorEvent。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
@@ -87,8 +89,7 @@ def build_default_tool_set(
         CronListTool(),
         CronDeleteTool(),
     ]
-    if asker is not None:
-        base.append(AskUserQuestionTool(asker=asker))
+    base.append(AskUserQuestionTool(asker=asker))
     base.append(ToolSearchTool(all_tools=base))
     return base
 

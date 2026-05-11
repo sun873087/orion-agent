@@ -35,8 +35,20 @@ class AbortEvent(BaseModel):
     type: Literal["abort"] = "abort"
 
 
+class AskUserAnswerEvent(BaseModel):
+    """client 回覆 server 的 AskUserQuestionAskEvent。
+
+    `answers` 是 question text → 使用者選的 label(或開放式回答的純文字)。
+    若使用者放棄/超時,client 可送 `answers={}` 提早通知。
+    """
+
+    type: Literal["ask_user_answer"] = "ask_user_answer"
+    request_id: str
+    answers: dict[str, str]
+
+
 ClientEvent = Annotated[
-    UserMessageEvent | PermissionDecisionEvent | AbortEvent,
+    UserMessageEvent | PermissionDecisionEvent | AbortEvent | AskUserAnswerEvent,
     Field(discriminator="type"),
 ]
 
@@ -100,6 +112,20 @@ class PermissionAskEvent(BaseModel):
     timeout_seconds: int = 60
 
 
+class AskUserQuestionAskEvent(BaseModel):
+    """server 反問 user 一/多題(來自 AskUserQuestion tool)。
+
+    `questions` 是 AskQuestion.model_dump() 的 list:每題含 question / header /
+    options(label+description)/ multi_select。client 必須 reply
+    AskUserAnswerEvent(同 request_id)。
+    """
+
+    type: Literal["ask_user_question"] = "ask_user_question"
+    request_id: str
+    questions: list[dict[str, Any]]
+    timeout_seconds: int = 300
+
+
 class TurnCompleteEvent(BaseModel):
     """assistant 一輪結束(streaming text + tool_use blocks 收齊)。"""
 
@@ -132,6 +158,7 @@ ServerEvent = Annotated[
     | ToolUseEvent
     | ToolResultEvent
     | PermissionAskEvent
+    | AskUserQuestionAskEvent
     | TurnCompleteEvent
     | TerminalEvent
     | ErrorEvent,
@@ -159,6 +186,8 @@ def parse_client_event(raw: dict[str, Any]) -> ClientEvent:
         return PermissionDecisionEvent.model_validate(raw)
     if type_str == "abort":
         return AbortEvent.model_validate(raw)
+    if type_str == "ask_user_answer":
+        return AskUserAnswerEvent.model_validate(raw)
     raise ValueError(f"Unknown client event type: {type_str!r}")
 
 
