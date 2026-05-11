@@ -95,6 +95,7 @@ def serve(
         host=host,
         port=port,
         reload=reload,
+        reload_dirs=["src"] if reload else None,
         log_level="info",
     )
 
