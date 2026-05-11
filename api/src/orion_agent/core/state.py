@@ -82,6 +82,11 @@ class AgentContext:
     """AppState instance(同上)。Conversation 層級的廣義應用狀態(權限歷史、IDE
     context、MCP server 狀態等)。Phase 12 抽象,後續 phase 才大量使用。"""
 
+    # ─── Phase 18 加入 ────────────────────────────────────────────────────
+    url_cache: object | None = None
+    """UrlCache instance(storage/url_cache.py,object 避免循環 import)。
+    WebFetchTool 首次 fetch 時 lazy init。同 session 內反覆 fetch 同 URL 走 cache。"""
+
     def feature(self, name: str) -> bool:
         """對應 TS 的 feature() 函式。
 

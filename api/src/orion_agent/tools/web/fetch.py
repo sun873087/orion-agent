@@ -24,6 +24,7 @@ from pydantic import Field
 from orion_agent.core.abort import abort_aware_scope
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
+from orion_agent.storage.url_cache import get_or_create_url_cache
 
 _TIMEOUT_S = 30
 _MAX_BYTES = 200 * 1024
@@ -56,6 +57,15 @@ class WebFetchTool:
             yield ErrorEvent(message=f"URL must start with http:// or https://: {url!r}")
             return
 
+        # Phase 18:per-session URL cache(TTL 預設 5 min)。同 URL 在同 session
+        # 內重複 fetch 走 cache,標 `[cached]` 給模型看。
+        cache = get_or_create_url_cache(ctx)
+        hit = cache.get(url)
+        if hit is not None:
+            for ev in self._render(url, hit.body, hit.content_type, cached=True):
+                yield ev
+            return
+
         # Phase 16:abort_aware_scope 讓 ctx.abort_event 中途 set 時即刻關 httpx 連線
         resp: httpx.Response | None = None
         try:
@@ -83,9 +93,23 @@ class WebFetchTool:
             )
             return
 
-        # 限制 body 大小
         content_type = resp.headers.get("content-type", "").lower()
         body = resp.content[:_MAX_BYTES]
+        cache.put(url, body, content_type)
+
+        for ev in self._render(url, body, content_type, cached=False):
+            yield ev
+
+    def _render(
+        self,
+        url: str,
+        body: bytes,
+        content_type: str,
+        *,
+        cached: bool,
+    ) -> list[ToolEvent]:
+        """把 raw body 處理成給模型看的 TextEvent / ErrorEvent。"""
+        marker = " [cached]" if cached else ""
 
         # 純文字 / JSON 直接回
         if "text/html" not in content_type and "<html" not in body[:500].decode(
@@ -94,10 +118,14 @@ class WebFetchTool:
             try:
                 text = body.decode("utf-8", errors="replace")
             except Exception as e:  # noqa: BLE001
-                yield ErrorEvent(message=f"could not decode body: {e}")
-                return
-            yield TextEvent(text=self._truncate(f"# {url}\n[type: {content_type}]\n\n{text}"))
-            return
+                return [ErrorEvent(message=f"could not decode body: {e}")]
+            return [
+                TextEvent(
+                    text=self._truncate(
+                        f"# {url}{marker}\n[type: {content_type}]\n\n{text}"
+                    )
+                )
+            ]
 
         # HTML → 清乾淨
         try:
@@ -116,11 +144,10 @@ class WebFetchTool:
             text = soup.get_text(separator="\n", strip=True)
             text = re.sub(r"\n{3,}", "\n\n", text)
         except Exception as e:  # noqa: BLE001
-            yield ErrorEvent(message=f"HTML parse failed: {type(e).__name__}: {e}")
-            return
+            return [ErrorEvent(message=f"HTML parse failed: {type(e).__name__}: {e}")]
 
-        out = f"# {title}\nURL: {url}\n\n{text}"
-        yield TextEvent(text=self._truncate(out))
+        out = f"# {title}{marker}\nURL: {url}\n\n{text}"
+        return [TextEvent(text=self._truncate(out))]
 
     @staticmethod
     def _truncate(s: str) -> str:
