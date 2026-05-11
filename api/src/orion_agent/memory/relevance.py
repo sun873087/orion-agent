@@ -7,11 +7,14 @@
 - **llm**(env `ORION_MEMORY_RANKER=llm` 啟用):送 memory descriptions + 最近 user
   訊息給 LLM 評分,挑 top N。較貴但更準
 
-LLM 模式失敗(parse error / API down)→ 自動 fallback heuristic。
+LLM 模式**永遠用 Anthropic Haiku 4.5**(跟主對話 model 解耦)— ranking 是輕任務,
+用 Haiku 跟 Sonnet/Opus 比可降一個量級的成本。可用 `ORION_MEMORY_RANKER_MODEL` 覆寫
+model id。Haiku provider 建構或呼叫失敗 → 自動 fallback heuristic。
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 
@@ -19,7 +22,69 @@ from orion_agent.llm.provider import LLMProvider
 from orion_agent.llm.types import NormalizedMessage, TextBlock
 from orion_agent.memory.types import Memory, MemoryType
 
+_log = logging.getLogger(__name__)
+
 _DEFAULT_MAX_RESULTS = 10
+_DEFAULT_RANKER_MODEL = "claude-haiku-4-5"
+
+_ranker_provider_cache: LLMProvider | None = None
+
+
+def _ranker_provider() -> LLMProvider | None:
+    """Lazy 取或建構 ranker 專用 provider(module 層 cache,只建一次)。
+
+    成本考量:ranker 只需要選 indices,Haiku 4.5 ($1/$5 per 1M) 比 Sonnet 便宜 3×、
+    比 Opus 便宜 15×。把它跟主對話 provider 解耦,避免高階 model 被拉去做 ranking。
+
+    Provider 從 catalog 自動偵測(`find_provider_by_model`):
+      - `ORION_MEMORY_RANKER_MODEL=claude-haiku-4-5` → AnthropicProvider(預設)
+      - `ORION_MEMORY_RANKER_MODEL=gpt-5.5-pro`      → OpenAIProvider
+      - 未知 model id → log warning + fallback 回 Haiku 4.5
+
+    Provider 永遠從 model 反查 — 沒獨立的「ranker provider」env,避免 model 與
+    provider 不一致的矛盾組合。
+
+    建構失敗 → 回 None,caller fallback heuristic。實際 API key 缺失要到 side_query
+    階段才 raise,由既有 try/except 處理。
+    """
+    global _ranker_provider_cache
+    if _ranker_provider_cache is not None:
+        return _ranker_provider_cache
+
+    from orion_agent.llm.catalog import find_provider_by_model
+    from orion_agent.llm.provider import get_provider
+
+    model = os.environ.get("ORION_MEMORY_RANKER_MODEL", _DEFAULT_RANKER_MODEL)
+    provider_id = find_provider_by_model(model)
+
+    if provider_id is None:
+        default_provider = find_provider_by_model(_DEFAULT_RANKER_MODEL)
+        if default_provider is None:
+            # packaged catalog 一定含預設 Haiku — 走到這裡代表 catalog 壞了
+            _log.error(
+                "default ranker model %r missing from catalog; ranker disabled",
+                _DEFAULT_RANKER_MODEL,
+            )
+            return None
+        _log.warning(
+            "ORION_MEMORY_RANKER_MODEL=%r not found in catalog; "
+            "falling back to %s (%s).",
+            model, _DEFAULT_RANKER_MODEL, default_provider,
+        )
+        model = _DEFAULT_RANKER_MODEL
+        provider_id = default_provider
+
+    try:
+        _ranker_provider_cache = get_provider(provider_id, model)
+    except Exception:  # noqa: BLE001
+        return None
+    return _ranker_provider_cache
+
+
+def _reset_ranker_provider_cache_for_tests() -> None:
+    """測試用:清掉 cached provider,讓 monkeypatched env 生效。"""
+    global _ranker_provider_cache
+    _ranker_provider_cache = None
 
 
 def _extract_recent_user_query(messages: list[NormalizedMessage]) -> str:
@@ -135,12 +200,16 @@ async def _llm_rank(
     """讓 provider 看 memory descriptions + query,回 top N indices。
 
     Phase 12:改走 side_query — 不汙染主 transcript、可選 JSON Schema 強制輸出。
-    失敗(parse error / API error)→ 回 None,caller 改 fallback heuristic。
+    Ranker 永遠用 Haiku 4.5(見 `_ranker_provider`),caller 傳入的 `provider` 只作為
+    Haiku 建構失敗時的 fallback。失敗(parse error / API error)→ 回 None,caller 改
+    fallback heuristic。
     """
     from orion_agent.services.side_query import (
         SideQueryParams,
         side_query,
     )
+
+    ranker = _ranker_provider() or provider
 
     listings = []
     for i, m in enumerate(memories):
@@ -182,7 +251,7 @@ async def _llm_rank(
                 json_schema=schema,
                 query_source="memdir_relevance",
             ),
-            provider=provider,
+            provider=ranker,
         )
     except Exception:  # noqa: BLE001
         return None

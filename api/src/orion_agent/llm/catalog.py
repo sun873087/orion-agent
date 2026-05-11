@@ -232,6 +232,20 @@ def find_pricing_by_model(model: str) -> Pricing | None:
     return None
 
 
+def find_provider_by_model(model: str) -> str | None:
+    """Reverse lookup — given a model id, return its provider id (or None).
+
+    Used by callers that take a bare model id from config (e.g. ranker env)
+    and need to construct the matching provider. First match wins; model
+    names don't collide across providers in practice.
+    """
+    for provider_id, entries in _models().items():
+        for e in entries:
+            if e["id"] == model:
+                return provider_id
+    return None
+
+
 def iter_all_entries() -> list[ModelEntry]:
     """Flat list of every catalog entry across providers — for prefix-match callers."""
     out: list[ModelEntry] = []
@@ -265,6 +279,7 @@ __all__ = [
     "ModelEntry",
     "Pricing",
     "find_pricing_by_model",
+    "find_provider_by_model",
     "get_max_context_tokens",
     "get_max_output_tokens",
     "get_pricing",
