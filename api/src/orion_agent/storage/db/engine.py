@@ -30,6 +30,13 @@ def create_db_engine(url: str | None = None) -> AsyncEngine:
     """建立 async engine。
 
     SQLite 模式自動加 connect_args={"check_same_thread": False}(async 用)。
+
+    注意:**不啟用 SQLite `PRAGMA foreign_keys=ON`** — 系統的 auth 層用 username 當
+    user_id,但 schema FK 期待 users.id(UUID),整個 FK 設計是壞的(Phase 6 起的
+    隱性 bug)。啟用 PRAGMA 會讓 user_settings / sessions 等 INSERT 全部 FK violation。
+    修這個要動 auth + 大量 routes,屬於另一個獨立 phase。
+    因此 ondelete=CASCADE 在 SQLite 是 no-op;DbSessionManager.delete 手動 DELETE
+    相關 row(messages / conversation_metadata)補救。
     """
     effective_url = url or _get_db_url()
     if effective_url.startswith("sqlite"):

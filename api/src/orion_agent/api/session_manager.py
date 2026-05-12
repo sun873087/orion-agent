@@ -12,12 +12,26 @@ Phase 6 範圍。Phase 7 換 Postgres + cross-instance shared store。
 
 from __future__ import annotations
 
+import logging
+import shutil
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 import anyio
 
 from orion_agent.core.conversation import Conversation
+from orion_agent.storage.paths import session_paths
+
+logger = logging.getLogger(__name__)
+
+
+def _rmtree_session_dir(session_id: UUID) -> None:
+    """刪整個 `~/.orion/sessions/<sid>/`(transcript / file-history / tool-results /
+    workspace)。Phase 28:介面刪 session 該把所有相關資料一起清。"""
+    root = session_paths(session_id).root
+    if root.exists():
+        shutil.rmtree(root, ignore_errors=True)
+        logger.info("session_fs_removed sid=%s", session_id)
 
 
 @dataclass
@@ -58,7 +72,10 @@ class SessionManager:
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
         async with self._lock:
-            return self._sessions.pop((user_id, session_id), None) is not None
+            removed = self._sessions.pop((user_id, session_id), None) is not None
+        # Phase 28:fs cleanup(in-memory mode 也有 transcript / file-history 等)
+        await anyio.to_thread.run_sync(_rmtree_session_dir, session_id)
+        return removed
 
     async def list_for_user(self, user_id: str) -> list[SessionInfo]:
         async with self._lock:

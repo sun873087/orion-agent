@@ -25,7 +25,12 @@ from orion_agent.api.session_manager import SessionInfo
 from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_agent.llm.provider import get_provider
 from orion_agent.storage.db.engine import db_session
-from orion_agent.storage.db.models import Session as SessionRow
+from orion_agent.storage.db.models import (
+    ConversationMetadata,
+    Message as MessageRow,
+    Session as SessionRow,
+)
+from orion_agent.storage.paths import default_session_root
 from orion_agent.storage.resume import fetch_db_messages, load_session
 from orion_agent.tools.builtin_set import build_default_tool_set
 
@@ -118,7 +123,18 @@ class DbSessionManager:
         return conv
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
+        # Phase 28:**手動** cascade — SQLite FK PRAGMA 沒打開(auth 層用 username
+        # 當 user_id 的隱性 bug 擋住 PRAGMA 啟用,見 engine.py docstring)。
+        # 三張表都自己 DELETE 才能真清乾淨。Postgres 即使 FK 有效也照做不會錯。
         async with db_session(self.engine) as db:
+            await db.execute(
+                delete(MessageRow).where(MessageRow.session_id == str(session_id))
+            )
+            await db.execute(
+                delete(ConversationMetadata).where(
+                    ConversationMetadata.session_id == str(session_id)
+                )
+            )
             stmt = delete(SessionRow).where(
                 SessionRow.id == str(session_id),
                 SessionRow.user_id == user_id,
@@ -128,6 +144,12 @@ class DbSessionManager:
             db_deleted = bool(getattr(result, "rowcount", 0))
 
         cached = self._cache.pop((user_id, session_id), None)
+        # Phase 28:fs cleanup — sessions/<sid>/ 整目錄(transcript / file-history /
+        # tool-results / workspace)。
+        import anyio
+
+        from orion_agent.api.session_manager import _rmtree_session_dir
+        await anyio.to_thread.run_sync(_rmtree_session_dir, session_id)
         return db_deleted or cached is not None
 
     async def list_for_user(self, user_id: str) -> list[SessionInfo]:
@@ -196,3 +218,53 @@ class DbSessionManager:
             row.input_tokens = cached.stats.input_tokens
             row.output_tokens = cached.stats.output_tokens
             await db.commit()
+
+    async def sweep_orphan_fs_sessions(self) -> int:
+        """Phase 28:清掉 fs 上沒對應 DB row 的 session 目錄。
+
+        過往(Phase 28 之前)`delete` 沒清 fs,造成
+        `~/.orion/sessions/<sid>/` 殘留。本函式對 DB 已成新 source of truth
+        後做一次性掃。**安全閘**:DB users 表完全空(疑似 init 失敗 / 空庫)
+        則直接 return 0 不刪 — 避免誤把所有歷史檔砸了。
+
+        Returns:
+            真正刪掉的目錄數。
+        """
+        import shutil
+        from uuid import UUID
+
+        from sqlalchemy import func
+
+        from orion_agent.storage.db.models import User
+
+        # 安全閘 — DB 用戶表全空表示 DB 不可信(剛 init / migration 失敗),不刪
+        async with db_session(self.engine) as db:
+            user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
+        if user_count == 0:
+            logger.info("orphan_sweep_skipped reason=no_users_in_db")
+            return 0
+
+        sessions_root = default_session_root()
+        if not sessions_root.is_dir():
+            return 0
+
+        # DB 中現存的所有 session ids
+        async with db_session(self.engine) as db:
+            stmt = select(SessionRow.id)
+            valid_ids: set[str] = {row[0] for row in await db.execute(stmt)}
+
+        removed = 0
+        for child in sessions_root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                # 只清 UUID 形式的目錄(避免誤砸 user 手動建的東西)
+                UUID(child.name)
+            except ValueError:
+                continue
+            if child.name in valid_ids:
+                continue
+            shutil.rmtree(child, ignore_errors=True)
+            logger.info("orphan_session_dir_removed sid=%s", child.name)
+            removed += 1
+        return removed

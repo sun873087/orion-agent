@@ -98,7 +98,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if os.environ.get("ORION_DB_AUTO_CREATE", "1") != "0":
             await init_db(db_engine)
         app.state.db_engine = db_engine
-        app.state.session_manager = DbSessionManager(engine=db_engine)
+        sm_db = DbSessionManager(engine=db_engine)
+        app.state.session_manager = sm_db
+        # Phase 28:啟動時清掉 fs 上的孤兒 session 目錄(DB 已不存在但磁碟還在)
+        try:
+            removed = await sm_db.sweep_orphan_fs_sessions()
+            if removed:
+                import structlog
+                structlog.get_logger().info(
+                    "orphan_session_dirs_swept", count=removed,
+                )
+        except Exception as e:  # noqa: BLE001 — sweep 失敗不擋 startup
+            import structlog
+            structlog.get_logger().warning(
+                "orphan_session_sweep_failed", error=str(e),
+            )
     else:
         app.state.db_engine = None
         app.state.session_manager = SessionManager()
