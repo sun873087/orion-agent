@@ -38,18 +38,27 @@ export default defineConfig({
       '/chat': {
         target: 'ws://localhost:8000',
         ws: true,
-        // EPIPE / ECONNRESET 是 user 切對話 / reconnect 時的常態 — 吞掉
-        // noisy stack trace,其它 error 照常 log 出來。
+        // EPIPE / ECONNRESET / writeAfterFIN 是 user 切對話 / reconnect 時的
+        // 常態。Vite 內建會在 `proxy.on('error')` 用 config.logger 把這些
+        // 印成 `[vite] ws proxy error:` — 而 configure 跑在 Vite 註冊
+        // listener 之前,單純加 handler 蓋不掉 Vite 那條 log。
+        // 改為攔截 proxy.emit,在 error 事件還沒派發前就吞掉已知 noise,
+        // Vite 的 listener 根本不會被觸發。
         configure: (proxy) => {
-          proxy.on('error', (err: NodeJS.ErrnoException) => {
-            if (
-              err.code === 'EPIPE' ||
-              err.code === 'ECONNRESET' ||
-              err.code === 'ECONNABORTED'
-            )
-              return
-            console.error('[vite proxy /chat]', err)
-          })
+          const SILENT_CODES = new Set([
+            'EPIPE',
+            'ECONNRESET',
+            'ECONNABORTED',
+            'ERR_STREAM_WRITE_AFTER_END',
+          ])
+          const originalEmit = proxy.emit.bind(proxy)
+          proxy.emit = ((event: string, ...args: unknown[]) => {
+            if (event === 'error') {
+              const err = args[0] as NodeJS.ErrnoException | undefined
+              if (err?.code && SILENT_CODES.has(err.code)) return false
+            }
+            return originalEmit(event, ...(args as [unknown]))
+          }) as typeof proxy.emit
         },
       },
     },
