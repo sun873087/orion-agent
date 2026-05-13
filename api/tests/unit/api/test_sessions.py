@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from orion_agent.api.app import create_app
+from orion_agent.api.auth import dev_user_id
 
 
 @pytest.fixture
@@ -24,7 +25,8 @@ def test_create_session(client_with_token: tuple[TestClient, str]) -> None:
     r = client.post("/sessions", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 201
     body = r.json()
-    assert body["user_id"] == "alice"
+    # Phase 29 後 user_id 是 deterministic uuid5(無 DB 路徑),不再是 username
+    assert body["user_id"] == dev_user_id("alice")
     assert body["n_messages"] == 0
     assert body["n_turns"] == 0
     # 沒帶 body → 走 server default(env ORION_PROVIDER / ORION_MODEL)

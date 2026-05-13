@@ -13,3 +13,5 @@ Thumbs.db
 .env
 .env.local
 *.env
+
+orion.db

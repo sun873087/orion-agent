@@ -12,6 +12,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -26,21 +27,37 @@ def _get_db_url() -> str:
     return os.environ.get("ORION_DB_URL", _DEFAULT_DB_URL)
 
 
+def _install_sqlite_fk_pragma(engine: AsyncEngine) -> None:
+    """SQLite 預設 `foreign_keys=OFF` — 開 PRAGMA 才會 enforce。
+
+    Phase 29 修完 sub=user.id 後可安全開啟。**每條新 connection** 都要設一次
+    (SQLite per-connection state),故掛在 `connect` event 上。
+
+    SQLAlchemy `event.listens_for` 接的是 sync engine — 對 async engine 要綁
+    `engine.sync_engine`(底層 sync 物件)。
+    """
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
+
 def create_db_engine(url: str | None = None) -> AsyncEngine:
     """建立 async engine。
 
-    SQLite 模式自動加 connect_args={"check_same_thread": False}(async 用)。
-
-    注意:**不啟用 SQLite `PRAGMA foreign_keys=ON`** — 系統的 auth 層用 username 當
-    user_id,但 schema FK 期待 users.id(UUID),整個 FK 設計是壞的(Phase 6 起的
-    隱性 bug)。啟用 PRAGMA 會讓 user_settings / sessions 等 INSERT 全部 FK violation。
-    修這個要動 auth + 大量 routes,屬於另一個獨立 phase。
-    因此 ondelete=CASCADE 在 SQLite 是 no-op;DbSessionManager.delete 手動 DELETE
-    相關 row(messages / conversation_metadata)補救。
+    SQLite 模式自動加 connect_args={"check_same_thread": False}(async 用)+
+    `PRAGMA foreign_keys=ON` connect listener(Phase 29 — auth sub=user.id 對齊
+    schema 後可安全打開)。
     """
     effective_url = url or _get_db_url()
     if effective_url.startswith("sqlite"):
-        return create_async_engine(effective_url, future=True)
+        eng = create_async_engine(effective_url, future=True)
+        _install_sqlite_fk_pragma(eng)
+        return eng
     return create_async_engine(effective_url, future=True, pool_pre_ping=True)
 
 

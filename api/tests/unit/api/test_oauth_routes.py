@@ -273,6 +273,8 @@ async def test_token_payload_stored_as_json(
     白盒 — 直接讀 backend 內容,不從 API。
     """
     client, token = client_with_token
+    # alice 的 user_id 從 /me 拿(Phase 29 後是 DB row id,SecureStorage 用此索引)
+    alice_uid = client.get("/me", headers=_h(token)).json()["user_id"]
     state = client.post(
         "/oauth/start", headers=_h(token), json={"server": "dev-mock"},
     ).json()["state"]
@@ -282,7 +284,7 @@ async def test_token_payload_stored_as_json(
     # backend 是 fixture inject 的;從 module global 拿
     backend = oauth_mod._storage  # type: ignore[attr-defined]
     assert backend is not None
-    raw = await backend.get("mcp:dev-mock:alice")
+    raw = await backend.get(f"mcp:dev-mock:{alice_uid}")
     assert raw is not None
     payload = json.loads(raw)
-    assert payload["access_token"] == "dev-mock-token-alice"
+    assert payload["access_token"] == f"dev-mock-token-{alice_uid}"

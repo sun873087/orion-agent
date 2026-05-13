@@ -123,9 +123,9 @@ class DbSessionManager:
         return conv
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
-        # Phase 28:**手動** cascade — SQLite FK PRAGMA 沒打開(auth 層用 username
-        # 當 user_id 的隱性 bug 擋住 PRAGMA 啟用,見 engine.py docstring)。
-        # 三張表都自己 DELETE 才能真清乾淨。Postgres 即使 FK 有效也照做不會錯。
+        # Phase 29 後 SQLite FK PRAGMA 已開,理論上 cascade 會自動清。仍保留手動
+        # DELETE 作為**顯式 > 隱式**的安全網:不依賴 driver / dialect 行為,Postgres
+        # / SQLite / 未來換 DB 都同調。FK on 時第二次 DELETE 沒 row 可刪是 no-op。
         async with db_session(self.engine) as db:
             await db.execute(
                 delete(MessageRow).where(MessageRow.session_id == str(session_id))

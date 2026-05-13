@@ -13,7 +13,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.requests import HTTPConnection
 
-from orion_agent.api.auth import verify_token
+from orion_agent.api.auth import Identity, verify_token, verify_token_full
 from orion_agent.api.session_manager import SessionManager
 from orion_agent.llm.provider import LLMProvider, get_provider
 
@@ -52,9 +52,24 @@ def get_llm_provider(connection: HTTPConnection) -> LLMProvider:
 def current_user(
     creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
 ) -> str:
-    """從 Authorization: Bearer <token> 取出 user_id。失敗 → 401。"""
+    """從 Authorization: Bearer <token> 取出 user_id(UUID 字串)。失敗 → 401。
+
+    Phase 29 後此值即 users.id;routes 直接拿來當 FK target,跟 schema 對齊。
+    """
     try:
         return verify_token(creds.credentials)
+    except jwt.ExpiredSignatureError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired") from e
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"invalid token: {e}") from e
+
+
+def current_identity(
+    creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+) -> Identity:
+    """完整 Identity(user_id + username)。/me 等需顯示 username 的 endpoint 用。"""
+    try:
+        return verify_token_full(creds.credentials)
     except jwt.ExpiredSignatureError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired") from e
     except jwt.InvalidTokenError as e:

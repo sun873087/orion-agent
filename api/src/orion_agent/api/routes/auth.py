@@ -16,11 +16,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
-from orion_agent.api.auth import LoginRequest, LoginResponse, issue_token
+from orion_agent.api.auth import (
+    Identity,
+    LoginRequest,
+    LoginResponse,
+    dev_user_id,
+    issue_token,
+)
 from orion_agent.api.auth_db import authenticate, create_user
+from orion_agent.api.deps import current_identity
 from orion_agent.storage.db.engine import db_session
 
 router = APIRouter()
+
+
+class MeResponse(BaseModel):
+    """`GET /me` 回應 — frontend 顯示 username / 區分 multi-account 用。"""
+
+    user_id: str
+    username: str
 
 
 class RegisterRequest(BaseModel):
@@ -86,8 +100,11 @@ async def login(
     Dev 模式(engine None):任意 username 通過(向後兼容 Phase 6)。
     """
     if engine is None:
-        # Dev fallback — 任意 username
-        return issue_token(body.username)
+        # Dev fallback — 任意 username,user_id 用 uuid5 deterministic 算
+        return issue_token(
+            user_id=dev_user_id(body.username),
+            username=body.username,
+        )
 
     async with db_session(engine) as session:  # type: ignore[arg-type]
         user = await authenticate(
@@ -97,7 +114,15 @@ async def login(
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid username or password",
         )
-    return issue_token(user.username)
+    return issue_token(user_id=user.id, username=user.username)
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(
+    identity: Annotated[Identity, Depends(current_identity)],
+) -> MeResponse:
+    """回 current user 的 id + username(從 JWT claim 取,不打 DB)。"""
+    return MeResponse(user_id=identity.user_id, username=identity.username)
 
 
 # 向後相容:Phase 6 的 LoginRequest 仍可解(若 client 沒帶 password,fall through DB 模式 401)。
