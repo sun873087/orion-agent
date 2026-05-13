@@ -35,15 +35,16 @@ export function Login({ onLoggedIn }: Props) {
           authRequired: false,
         })
       }
-      const resp = await apiFetch<{ token: string; user_id: string }>(
-        '/auth/login',
-        {
-          method: 'POST',
-          body: { username, password },
-          authRequired: false,
-        },
-      )
-      setAuth(resp.token, username)
+      const resp = await apiFetch<{
+        token: string
+        user_id: string
+        username: string
+      }>('/auth/login', {
+        method: 'POST',
+        body: { username, password },
+        authRequired: false,
+      })
+      setAuth(resp.token, resp.username)
       onLoggedIn()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

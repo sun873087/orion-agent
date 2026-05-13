@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from orion_agent.api.auth import dev_user_id
 from orion_agent.api.session_manager import SessionManager
 from orion_agent.api.session_manager_db import DbSessionManager
 from orion_agent.core.conversation import Conversation
@@ -129,7 +130,7 @@ async def test_in_memory_delete_removes_fs_dir(
 
     sm = SessionManager()
     # 沒先 create 也應該清 fs(覆蓋使用者 cancel 後想清乾淨的情境)
-    await sm.delete("alice", sid)
+    await sm.delete(dev_user_id("alice"), sid)
     assert not session_paths(sid).root.exists()
 
 
