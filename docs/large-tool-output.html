@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Orion Agent — Tool / MCP 大結果處理</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #11161d;
+    --bg-deep: #080b10;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-mute: #6e7681;
+    --border: #30363d;
+
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.07);
+    --purple-border: rgba(167, 139, 250, 0.4);
+
+    --green: #4ade80;
+    --green-bg: rgba(74, 222, 128, 0.06);
+    --green-border: rgba(74, 222, 128, 0.35);
+
+    --orange: #fb923c;
+    --orange-bg: rgba(251, 146, 60, 0.06);
+    --orange-border: rgba(251, 146, 60, 0.35);
+
+    --cyan: #38bdf8;
+    --cyan-bg: rgba(56, 189, 248, 0.06);
+    --cyan-border: rgba(56, 189, 248, 0.35);
+
+    --pink: #f472b6;
+    --pink-bg: rgba(244, 114, 182, 0.06);
+    --pink-border: rgba(244, 114, 182, 0.35);
+
+    --red: #f87171;
+    --red-bg: rgba(248, 113, 113, 0.06);
+    --red-border: rgba(248, 113, 113, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  code, pre, .mono {
+    font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  header h1 {
+    margin: 0 0 12px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  header .meta { color: var(--text-dim); font-size: 14px; }
+  header .meta .sep { margin: 0 10px; color: var(--text-mute); }
+  header .lede {
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 14px auto 0;
+    font-size: 15px;
+  }
+
+  section {
+    margin-bottom: 48px;
+  }
+  section h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  section h2 .num {
+    color: var(--purple);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+  }
+  section h2 .sub {
+    color: var(--text-mute);
+    font-size: 13px;
+    font-weight: 400;
+  }
+  section .desc {
+    color: var(--text-dim);
+    margin: 12px 0 20px;
+  }
+
+  /* ─── flow diagram ─────────────────────────────────── */
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 24px 0 12px;
+  }
+  .flow .layer {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 20px;
+    position: relative;
+  }
+  .flow .layer .badge {
+    display: inline-block;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .flow .layer .title {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .flow .layer .where {
+    color: var(--text-mute);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .flow .layer ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .flow .layer ul li { margin-bottom: 4px; }
+
+  .flow .layer.green  { border-color: var(--green-border);  background: var(--green-bg); }
+  .flow .layer.green  .badge { background: var(--green-bg);  border: 1px solid var(--green-border);  color: var(--green); }
+  .flow .layer.orange { border-color: var(--orange-border); background: var(--orange-bg); }
+  .flow .layer.orange .badge { background: var(--orange-bg); border: 1px solid var(--orange-border); color: var(--orange); }
+  .flow .layer.cyan   { border-color: var(--cyan-border);   background: var(--cyan-bg); }
+  .flow .layer.cyan   .badge { background: var(--cyan-bg);   border: 1px solid var(--cyan-border);   color: var(--cyan); }
+
+  /* ─── tables ─────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--border);
+  }
+  td code, .pill {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    background: var(--bg-deep);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--purple);
+  }
+  td .src {
+    color: var(--text-mute);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    display: block;
+    margin-top: 4px;
+  }
+  td .limit {
+    color: var(--green);
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+  }
+
+  /* ─── MCP path diagram ────────────────────────────── */
+  .mcp-path {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 8px;
+  }
+  .mcp-step {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px dashed var(--border);
+  }
+  .mcp-step:first-child { border-top: 0; padding-top: 0; }
+  .mcp-step .n {
+    color: var(--purple);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .mcp-step .body .h {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .mcp-step .body .where {
+    color: var(--text-mute);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .mcp-step .body .text {
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .mcp-step.dim .body { opacity: 0.6; }
+  .mcp-step .tag {
+    display: inline-block;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: 2px;
+  }
+  .tag.wired   { background: var(--green-bg);   color: var(--green);   border: 1px solid var(--green-border); }
+  .tag.design  { background: var(--orange-bg);  color: var(--orange);  border: 1px solid var(--orange-border); }
+  .tag.elided  { background: var(--red-bg);     color: var(--red);     border: 1px solid var(--red-border); }
+
+  /* ─── envelope sample ────────────────────────────── */
+  pre.envelope {
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  pre.envelope .tag { color: var(--cyan); }
+  pre.envelope .attr { color: var(--purple); }
+  pre.envelope .str { color: var(--green); }
+  pre.envelope .comment { color: var(--text-mute); }
+
+  /* ─── design notes ───────────────────────────────── */
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .note {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .note .h {
+    font-weight: 600;
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+  .note .text {
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .note.warn { border-left-color: var(--orange); }
+  .note.miss { border-left-color: var(--red); }
+  .note.ok   { border-left-color: var(--green); }
+
+  footer {
+    margin-top: 56px;
+    color: var(--text-mute);
+    font-size: 12px;
+    text-align: center;
+  }
+  footer code { background: var(--bg-deep); padding: 2px 6px; border-radius: 4px; }
+
+  @media (max-width: 860px) {
+    .flow, .notes { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>Tool / MCP 大結果處理</h1>
+  <div class="meta">
+    <span>Orion Agent</span>
+    <span class="sep">·</span>
+    <span>大型 tool output 在進到 context window 之前如何被攔截、截斷、持久化</span>
+  </div>
+  <p class="lede">
+    Tool 回傳值越大,context window 就越早撐爆、推理品質越差、token 成本越高。
+    Orion Agent 設計了三層防線:<b>tool 出口硬截</b> → <b>統一持久化 + preview</b> → <b>context 達 80% 時自動 compaction</b>。
+  </p>
+</header>
+
+<!-- ─── 三層防線總覽 ─────────────────────────────────── -->
+<section>
+  <h2><span class="num">§1</span> 三層防線總覽</h2>
+  <p class="desc">資料從 tool 到模型之間,會依序經過下面三道閘:任何一道夠用,後面就不需要動。</p>
+
+  <div class="flow">
+    <div class="layer green">
+      <div class="badge">LAYER 1 · 早截</div>
+      <div class="title">Tool 出口硬截</div>
+      <div class="where">tools/*/</div>
+      <ul>
+        <li>Bash / Grep / WebFetch 在執行時就限 size</li>
+        <li>Read / Write / Edit 超量 <b>直接拒絕</b></li>
+        <li>截掉的原文 <b>不留快取</b></li>
+      </ul>
+    </div>
+    <div class="layer orange">
+      <div class="badge">LAYER 2 · 持久化</div>
+      <div class="title">≥100KB 寫檔 + preview</div>
+      <div class="where">storage/tool_result.py</div>
+      <ul>
+        <li>寫到 <code>sessions/&lt;sid&gt;/tool-results/</code></li>
+        <li>模型只看到 2KB preview + envelope</li>
+        <li>MCP 與內建 tool <b>共用</b>此路徑</li>
+      </ul>
+    </div>
+    <div class="layer cyan">
+      <div class="badge">LAYER 3 · 壓縮</div>
+      <div class="title">Context 80% 自動 compact</div>
+      <div class="where">compact/auto.py</div>
+      <ul>
+        <li>4 chars/token 保守估算</li>
+        <li>Sonnet 摘要前 50% messages</li>
+        <li>摘要時 tool_result 再壓到 500 字</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ─── 內建 tool 截斷表 ─────────────────────────────── -->
+<section>
+  <h2><span class="num">§2</span> 內建 Tool 的執行端截斷 <span class="sub">Layer 1</span></h2>
+  <p class="desc">每個 tool 在執行階段自己負責限大小,把控制權壓在最早的環節。</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:14%">Tool</th>
+        <th style="width:18%">上限</th>
+        <th>處理方式</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>Bash</code><span class="src">tools/shell/bash.py:30</span></td>
+        <td><span class="limit">30 KB</span></td>
+        <td>截尾,附 <code>... [output truncated at 30KB bytes]</code></td>
+      </tr>
+      <tr>
+        <td><code>Grep</code><span class="src">tools/search/grep.py:24</span></td>
+        <td><span class="limit">50 KB / 500 筆</span></td>
+        <td>截尾,附 <code>... (truncated at 50KB bytes)</code></td>
+      </tr>
+      <tr>
+        <td><code>WebFetch</code><span class="src">tools/web/fetch.py:20</span></td>
+        <td><span class="limit">原始 200 KB / 輸出 50 KB</span></td>
+        <td>截尾,附 <code>... [+N chars truncated]</code></td>
+      </tr>
+      <tr>
+        <td><code>Read</code><span class="src">tools/file/read.py</span></td>
+        <td><span class="limit">256 KB</span></td>
+        <td><b>拒讀</b>,回錯誤訊息,不進 context</td>
+      </tr>
+      <tr>
+        <td><code>Write / Edit</code><span class="src">tools/file/{write,edit}.py</span></td>
+        <td><span class="limit">1 MB</span></td>
+        <td><b>拒寫</b>,要求使用者拆檔</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ─── 統一持久化 ──────────────────────────────────── -->
+<section>
+  <h2><span class="num">§3</span> 統一持久化 <span class="sub">Layer 2 · 內建 tool 與 MCP 共用</span></h2>
+  <p class="desc">
+    任何 tool 跑完後,<code>core/tool_execution.py:309</code> 都會 call
+    <code>maybe_persist_large_tool_result()</code>,門檻 <span class="pill" style="color:var(--green)">100 KB</span>。
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>狀況</th>
+        <th>給模型的內容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>空字串</td>
+        <td><code>(tool produced no output)</code></td>
+      </tr>
+      <tr>
+        <td>&lt; 100 KB</td>
+        <td>原樣回填</td>
+      </tr>
+      <tr>
+        <td>≥ 100 KB</td>
+        <td>寫到 <code>~/.orion/sessions/&lt;sid&gt;/tool-results/&lt;tool_use_id&gt;.txt</code>,模型只看到 envelope</td>
+      </tr>
+    </tbody>
+  </table>
+
+<pre class="envelope"><span class="tag">&lt;persisted-output</span> <span class="attr">tool_use_id</span>=<span class="str">'toolu_abc123'</span> <span class="attr">path</span>=<span class="str">'~/.orion/sessions/&lt;sid&gt;/tool-results/toolu_abc123.txt'</span> <span class="attr">size</span>=<span class="str">524288</span><span class="tag">&gt;</span>
+&lt;前 2048 字 preview&gt;
+... [N more chars truncated, see persisted file]
+<span class="tag">&lt;/persisted-output&gt;</span></pre>
+
+  <p class="desc" style="margin-top:0">
+    模型若需要完整內容,可用 <code>Read</code> 或 <code>Bash + jq</code> 去開那個檔——
+    它是「淡出 context 但仍可取回」,而非「永遠消失」。
+  </p>
+</section>
+
+<!-- ─── MCP 流向 ────────────────────────────────────── -->
+<section>
+  <h2><span class="num">§4</span> MCP 的完整流向</h2>
+  <p class="desc">
+    MCP 比一般 tool 多了 wrapper、binary、專屬 envelope 等設計,
+    但目前 runtime <b>實際走的還是和內建 tool 共用的 100KB 路徑</b>。
+  </p>
+
+  <div class="mcp-path">
+    <div class="mcp-step">
+      <div class="n">1</div>
+      <div class="body">
+        <div class="h">MCP wrapper 內預壓 <span class="tag wired">已串接</span></div>
+        <div class="where">mcp/tool_wrapper.py:100-124</div>
+        <div class="text">
+          收集 <code>type=text</code> chunk 並 join。
+          <b>image / resource</b> 內容直接 elide 成 <code>[image content elided — Phase 5 不展開,Phase 10 處理]</code>。
+          完全沒 content 時 fallback 到 raw JSON 截 5000 字。
+        </div>
+      </div>
+    </div>
+
+    <div class="mcp-step">
+      <div class="n">2</div>
+      <div class="body">
+        <div class="h">進入統一持久化 <span class="tag wired">已串接</span></div>
+        <div class="where">storage/tool_result.py · 100 KB 門檻</div>
+        <div class="text">
+          和內建 tool 走同一條 <code>maybe_persist_large_tool_result()</code>。
+          MCP 沒有獨立的 hot path。
+        </div>
+      </div>
+    </div>
+
+    <div class="mcp-step dim">
+      <div class="n">3</div>
+      <div class="body">
+        <div class="h">MCP 專屬 envelope <span class="tag design">設計但未啟用</span></div>
+        <div class="where">mcp/large_output.py · 25K tokens (~100 KB) 門檻</div>
+        <div class="text">
+          設計帶 <b>jq 範例提示</b>的 envelope:
+          <code>jq '.content[0].text' &lt;path&gt;</code>。
+          目前 <code>process_mcp_result()</code> 僅在 tests 出現,runtime 未呼叫。
+        </div>
+      </div>
+    </div>
+
+    <div class="mcp-step dim">
+      <div class="n">4</div>
+      <div class="body">
+        <div class="h">MCP binary 持久化 helper <span class="tag design">helper 寫好但未串接</span></div>
+        <div class="where">storage/mcp_output.py</div>
+        <div class="text">
+          <code>persist_mcp_binary()</code> 可寫 PNG/JPG/PDF 到
+          <code>sessions/&lt;sid&gt;/mcp-binaries/</code> 並附 <code>.meta.json</code> sidecar
+          (記 media_type / size / captured_at)。
+          但 wrapper 目前還是 elide 掉 image/resource,沒有 call 它。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="desc" style="margin-top:18px">
+    換句話說:<b>MCP text 大 → 走通用 100KB 持久化</b>;
+    <b>MCP image/PDF → 目前完全 elide</b>(只剩 placeholder 字串)。
+    Phase 10 之後 §3、§4 兩條路才會真正接起來。
+  </p>
+</section>
+
+<!-- ─── Compaction ──────────────────────────────────── -->
+<section>
+  <h2><span class="num">§5</span> Context 層的最後一道:Compaction <span class="sub">Layer 3</span></h2>
+  <p class="desc">即便每個 tool 都規矩截斷,長對話中 tool result 仍會累積。Compaction 是最後保險。</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>觸發 / 機制</th>
+        <th>細節</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>auto_compact</code> 觸發<span class="src">compact/auto.py:47-69</span></td>
+        <td>
+          估算用量 = <code>len(serialized) / 4</code> tokens。
+          超過 <code>max_context × 0.8</code> 就跑摘要
+          (可用 env <code>ORION_AUTO_COMPACT_THRESHOLD</code> 覆寫)。
+        </td>
+      </tr>
+      <tr>
+        <td>摘要動作</td>
+        <td>把對話前 50% 餵給 Sonnet 壓成自然語言,失敗 fallback 純截斷。</td>
+      </tr>
+      <tr>
+        <td>tool_result 二次壓縮<span class="src">compact/strategies.py:62-69</span></td>
+        <td>摘要過程中遇到 tool_result content,<b>只取前 500 字 + "..."</b>,避免摘要本身又被大 output 撐爆。</td>
+      </tr>
+      <tr>
+        <td>切點安全邊界</td>
+        <td><code>_adjust_cutoff_to_safe_boundary</code>:絕不切在 assistant <code>tool_use</code> 跟其對應 <code>tool_result</code> 之間。</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ─── 設計取捨 ────────────────────────────────────── -->
+<section>
+  <h2><span class="num">§6</span> 設計取捨 &amp; 注意事項</h2>
+
+  <div class="notes">
+    <div class="note ok">
+      <div class="h">早截勝於晚收</div>
+      <div class="text">寧可在 tool 出口就丟掉,也不讓大塊資料先進 context、再去摘要。Bash 30KB 與 Grep 50KB 都是這種哲學。</div>
+    </div>
+    <div class="note ok">
+      <div class="h">100KB 之上仍可取回</div>
+      <div class="text">超過門檻的 tool result 寫到 session 目錄,模型可後續用 Read / Bash 重新打開——並非永久丟失,只是淡出 context。</div>
+    </div>
+    <div class="note warn">
+      <div class="h">沒有「自動 offload 機制」</div>
+      <div class="text">對 Bash / Grep / WebFetch 的截斷部分 <b>完全丟棄、無原始快取</b>。要看完整輸出只能調小範圍重跑 (加 path / 用 head / 用 wc)。</div>
+    </div>
+    <div class="note warn">
+      <div class="h">Token 估算偏保守</div>
+      <div class="text">用 4 chars/token,對中文偏高估、對英文偏低估。換言之 compaction 可能提早觸發,但不容易來不及。</div>
+    </div>
+    <div class="note miss">
+      <div class="h">MCP image/PDF 暫無內容</div>
+      <div class="text">Phase 5 wrapper 直接 elide 成 placeholder 字串,Phase 10 才會接到 <code>storage/mcp_output.py</code> 的 binary 持久化。</div>
+    </div>
+    <div class="note miss">
+      <div class="h">MCP 專屬 jq envelope 未啟用</div>
+      <div class="text"><code>mcp/large_output.py</code> 的 25K tokens 門檻 + jq hint 設計完整,但 runtime 還沒呼叫,目前 MCP text 共用通用 100KB envelope。</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Source: <code>api/src/orion_agent/{tools,mcp,storage,compact}/</code>
+  &nbsp;·&nbsp; 相關文件: <code>docs/memory-bloat-prevention.md</code>, <code>docs/phases/03-memory-compaction.md</code>
+</footer>
+
+</div>
+</body>
+</html>
