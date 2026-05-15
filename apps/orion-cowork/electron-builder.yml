@@ -1,0 +1,54 @@
+appId: dev.orion-agent.cowork
+productName: Orion Cowork
+copyright: Copyright © 2026
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+directories:
+  buildResources: build
+  output: dist/installers
+
+# Renderer build output + Electron main/preload/sidecar(TS 編譯後)+ package.json
+files:
+  - dist/electron/**/*
+  - dist/renderer/**/*
+  - package.json
+
+# PyInstaller 打包好的 sidecar binary 進 Resources/sidecar/
+extraResources:
+  - from: dist/sidecar/orion-cowork-sidecar
+    to: sidecar/orion-cowork-sidecar
+    filter:
+      - "!*.exe"
+
+# Windows 例外:走 .exe
+extraFiles: []
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  extraResources:
+    - from: dist/sidecar/orion-cowork-sidecar.exe
+      to: sidecar/orion-cowork-sidecar.exe
+
+linux:
+  category: Development
+  target:
+    - target: AppImage
+      arch:
+        - x64
+
+# Phase 31-B 才加 signing / notarize 設定;Phase 31-A 先做 unsigned 版本。

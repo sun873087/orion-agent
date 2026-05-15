@@ -32,13 +32,24 @@ export class SidecarClient {
     })
   }
 
-  /** Spawn `uv run --package orion-cowork-sidecar python -m orion_cowork_sidecar`。 */
-  start(repoRoot: string): void {
-    const proc = spawn('uv', ['run', '--package', 'orion-cowork-sidecar', 'python', '-m', 'orion_cowork_sidecar'], {
-      cwd: repoRoot,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-      // stdin / stdout / stderr 都管
-    })
+  /**
+   * Spawn sidecar:
+   *   - production (app.isPackaged):呼叫 PyInstaller 打包的 single binary
+   *     (Contents/Resources/sidecar/orion-cowork-sidecar)
+   *   - dev:`uv run --package orion-cowork-sidecar python -m orion_cowork_sidecar`
+   */
+  start(repoRoot: string, packagedSidecarPath: string | null = null): void {
+    let proc
+    if (packagedSidecarPath) {
+      proc = spawn(packagedSidecarPath, [], {
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      })
+    } else {
+      proc = spawn('uv', ['run', '--package', 'orion-cowork-sidecar', 'python', '-m', 'orion_cowork_sidecar'], {
+        cwd: repoRoot,
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      })
+    }
     proc.stdout.setEncoding('utf8')
     proc.stderr.setEncoding('utf8')
     proc.stdout.on('data', (chunk: string) => this.onStdout(chunk))

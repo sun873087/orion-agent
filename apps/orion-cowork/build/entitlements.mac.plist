@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Electron V8 JIT 需要 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- PyInstaller 打包的 sidecar 載入內嵌 lib,Apple notarization 必設 -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- LLM API call -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Read / Edit / Write 工具存取使用者選的檔案 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+</dict>
+</plist>

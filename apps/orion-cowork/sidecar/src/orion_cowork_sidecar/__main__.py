@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
-from .handlers import Handlers
-from .rpc import RpcServer
+from orion_cowork_sidecar.handlers import Handlers
+from orion_cowork_sidecar.rpc import RpcServer
 
 
 async def _serve() -> None:

@@ -7,12 +7,25 @@
  */
 
 import { BrowserWindow, app, ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { SidecarClient, findRepoRoot } from './sidecar'
 
 const isDev = process.env.NODE_ENV === 'development'
 const sidecar = new SidecarClient()
+
+/**
+ * Production:Contents/Resources/sidecar/orion-cowork-sidecar(macOS / Linux)
+ * 或 resources\sidecar\orion-cowork-sidecar.exe(Windows)
+ * Dev:回 null,SidecarClient 走 uv run fallback
+ */
+function packagedSidecarPath(): string | null {
+  if (!app.isPackaged) return null
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const p = resolve(process.resourcesPath, 'sidecar', `orion-cowork-sidecar${ext}`)
+  return existsSync(p) ? p : null
+}
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
@@ -34,8 +47,8 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  // 1. 啟 sidecar
-  sidecar.start(findRepoRoot())
+  // 1. 啟 sidecar(production 用打包 binary,dev 用 uv run)
+  sidecar.start(findRepoRoot(), packagedSidecarPath())
   await sidecar.waitReady()
   console.log('[main] sidecar ready')
 

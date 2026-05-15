@@ -24,7 +24,7 @@ from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.core.state import AgentContext
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
-from .streaming import to_rpc_frame
+from orion_cowork_sidecar.streaming import to_rpc_frame
 
 load_dotenv()
 

@@ -2,7 +2,7 @@
         gen-types \
         dev-cli dev-api dev-web dev-cowork \
         demo-anthropic demo-openai \
-        build-web build-cowork \
+        build-web build-cowork build-sidecar build-cowork-dist \
         clean
 
 help:
@@ -34,7 +34,9 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  build-web                npm run build -w @orion/chat-web"
-	@echo "  build-cowork             npm run build -w @orion/cowork"
+	@echo "  build-cowork             npm run build -w @orion/cowork (renderer + electron only)"
+	@echo "  build-sidecar            PyInstaller → single-binary sidecar"
+	@echo "  build-cowork-dist        完整 installer (sidecar + electron + electron-builder)"
 	@echo ""
 	@echo "Misc:"
 	@echo "  clean                    清 caches + node_modules"
@@ -106,6 +108,22 @@ build-web:
 
 build-cowork:
 	npm run build -w @orion/cowork
+
+# Phase 31-A:把 sidecar 打包成 single binary。
+# 輸出:apps/orion-cowork/dist/sidecar/orion-cowork-sidecar (host arch)
+build-sidecar:
+	cd apps/orion-cowork && rm -rf dist/sidecar build/pyinstaller
+	uv run --package orion-cowork-sidecar pyinstaller \
+	  --distpath apps/orion-cowork/dist/sidecar \
+	  --workpath apps/orion-cowork/build/pyinstaller \
+	  --noconfirm \
+	  apps/orion-cowork/sidecar/pyinstaller.spec
+
+# Phase 31-A:完整 Cowork installer(本機 host platform)。
+# Build chain:sidecar binary → renderer + electron compile → electron-builder
+build-cowork-dist: build-sidecar
+	npm run build -w @orion/cowork
+	npm run dist -w @orion/cowork
 
 # ───── Clean ─────
 clean:
