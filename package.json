@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "description": "orion-agent monorepo — Phase 30 restructure.",
   "workspaces": [
-    "apps/orion-chat/web"
+    "apps/orion-chat/web",
+    "apps/orion-cowork"
   ],
   "scripts": {
     "dev:web": "npm run dev -w @orion/chat-web",

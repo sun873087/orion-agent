@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "orion-chat-api",
     "orion-cli",
+    "orion-cowork-sidecar",
     "orion-model",
     "orion-sdk",
 ]
@@ -1561,6 +1562,35 @@ requires-dist = [
     { name = "orion-sdk", editable = "packages/orion-sdk" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "typer", specifier = ">=0.12" },
+]
+
+[[package]]
+name = "orion-cowork-sidecar"
+version = "0.1.0"
+source = { editable = "apps/orion-cowork/sidecar" }
+dependencies = [
+    { name = "orion-model" },
+    { name = "orion-sdk" },
+    { name = "python-dotenv" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "orion-model", editable = "packages/orion-model" },
+    { name = "orion-sdk", editable = "packages/orion-sdk" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
 ]
 
 [[package]]

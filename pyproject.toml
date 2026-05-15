@@ -4,6 +4,7 @@ members = [
     "packages/orion-sdk",
     "apps/orion-cli",
     "apps/orion-chat/api",
+    "apps/orion-cowork/sidecar",
 ]
 
-# Phase 30 monorepo restructure。Phase E 後會加 apps/orion-cowork/sidecar。
+# Phase 30 monorepo restructure 完成。

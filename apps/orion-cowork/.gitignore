@@ -1,0 +1,5 @@
+dist/
+.vite/
+*.log
+.env
+.env.local
