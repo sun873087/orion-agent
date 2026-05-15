@@ -14,7 +14,7 @@ from orion_model.types import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,7 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.multi_agent.coordinator import Coordinator
 from orion_sdk.multi_agent.types import TaskAssignment
 from orion_sdk.services.forked_agent import CacheSafeParams
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def _cs() -> CacheSafeParams:

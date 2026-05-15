@@ -8,7 +8,7 @@ import pytest
 
 from orion_chat_api.session_manager import SessionManager
 from orion_sdk.core.conversation import Conversation
-from tests.conftest import MockProvider
+from orion_sdk._testing import MockProvider
 
 
 def _make_conv() -> Conversation:

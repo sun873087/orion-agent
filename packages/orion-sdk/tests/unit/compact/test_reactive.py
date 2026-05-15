@@ -12,7 +12,7 @@ from orion_model.types import (
     NormalizedMessage,
     TombstoneBlock,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def test_detect_anthropic_prompt_too_long() -> None:

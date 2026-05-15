@@ -18,7 +18,7 @@ from orion_chat_api.app import create_app
 @pytest.fixture
 def app_with_mock_provider(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """把 LLMProvider 替成 MockProvider。"""
-    from tests.conftest import MockProvider, MockTurn
+    from orion_sdk._testing import MockProvider, MockTurn
 
     app = create_app()
     # 在 app.state 替換,蓋過 _provider_from_env
@@ -117,7 +117,7 @@ def test_ws_ask_user_question_round_trip(monkeypatch: pytest.MonkeyPatch) -> Non
     模型 turn 1 呼 AskUserQuestion → server 推 ask_user_question →
     client 回 ask_user_answer → tool_result 帶回 user 答案 → turn 2 收尾。
     """
-    from tests.conftest import MockProvider, MockTurn
+    from orion_sdk._testing import MockProvider, MockTurn
 
     app = create_app()
     app.state.llm_provider = MockProvider(turns=[

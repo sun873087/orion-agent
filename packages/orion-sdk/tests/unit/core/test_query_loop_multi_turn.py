@@ -16,7 +16,7 @@ from orion_sdk.hooks.registry import HookRegistry
 from orion_model.types import ToolResultBlock, ToolUseBlock
 from orion_sdk.permissions.decisions import always_allow
 from orion_sdk.tools.file.read import FileReadTool
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

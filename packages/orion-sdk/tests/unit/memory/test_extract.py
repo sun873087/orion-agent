@@ -11,7 +11,7 @@ from orion_sdk.memory.extract import (
 )
 from orion_sdk.memory.paths import user_memory_paths
 from orion_sdk.memory.types import Memory, MemoryFrontmatter, MemoryType
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def test_parse_extract_output_none() -> None:

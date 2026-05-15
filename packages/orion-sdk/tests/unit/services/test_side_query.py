@@ -8,7 +8,7 @@ from orion_sdk.services.side_query import (
     SideQueryParams,
     side_query,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

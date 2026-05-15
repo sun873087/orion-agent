@@ -8,7 +8,7 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent
 from orion_sdk.tools.agent.agent_tool import AgentTool, AgentToolInput
 from orion_sdk.tools.file.read import FileReadTool
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

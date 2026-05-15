@@ -8,7 +8,7 @@ from orion_sdk.core.conversation import Conversation
 from orion_sdk.core.query_loop import LoopTerminated
 from orion_sdk.storage.paths import session_paths
 from orion_sdk.storage.session import iter_records_sync
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

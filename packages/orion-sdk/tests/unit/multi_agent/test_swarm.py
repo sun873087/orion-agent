@@ -9,7 +9,7 @@ from orion_sdk.multi_agent.swarm import (
     SwarmConfig,
     SwarmRunner,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def _agents(*names_with_role: tuple[str, str, str]) -> list[SwarmAgent]:

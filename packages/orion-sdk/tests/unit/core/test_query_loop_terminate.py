@@ -12,7 +12,7 @@ from orion_sdk.core.query_loop import (
 from orion_sdk.core.state import AgentContext
 from orion_sdk.hooks.registry import HookRegistry
 from orion_sdk.permissions.decisions import always_allow
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

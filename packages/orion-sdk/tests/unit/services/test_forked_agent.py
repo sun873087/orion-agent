@@ -10,7 +10,7 @@ from orion_sdk.services.forked_agent import (
     CacheSafeParams,
     run_forked_agent,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio

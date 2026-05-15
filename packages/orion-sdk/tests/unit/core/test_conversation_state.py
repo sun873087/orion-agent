@@ -10,7 +10,7 @@ from orion_sdk.core.conversation import (
     _default_max_tokens_per_turn,
     pick_max_tokens_per_turn,
 )
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def test_default_max_tokens_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:

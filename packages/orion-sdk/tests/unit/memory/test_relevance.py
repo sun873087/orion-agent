@@ -10,7 +10,7 @@ from orion_model.types import NormalizedMessage
 from orion_sdk.memory import relevance
 from orion_sdk.memory.relevance import rank_memories
 from orion_sdk.memory.types import Memory, MemoryFrontmatter, MemoryType
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 def _mk(name: str, desc: str, body: str = "", t: MemoryType | None = MemoryType.USER) -> Memory:

@@ -10,7 +10,7 @@ from orion_model.types import (
     ToolUseBlock,
 )
 from orion_sdk.multi_agent.agent_summary import generate_agent_summary
-from tests.conftest import MockProvider, MockTurn
+from orion_sdk._testing import MockProvider, MockTurn
 
 
 @pytest.mark.asyncio
