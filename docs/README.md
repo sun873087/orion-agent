@@ -1,60 +1,54 @@
-# orion-agent / docs
+# orion-agent docs
 
-每個 phase **完工後**寫一份完成記錄到這裡。
+四個區、各管一件事。
 
-| 檔案 | 內容 |
+| 區 | 目的 | 何時讀 |
+|---|---|---|
+| **[architecture/](./architecture/)** | 專案結構、package 拆分、依賴規則 | 想知道「東西長什麼樣」 |
+| **[features/](./features/)** | 各 feature 設計與行為(agent loop、tools、memory、MCP、...) | 想知道「X 怎麼運作」 |
+| **[guides/](./guides/)** | 操作手冊(setup、跑測試、手動驗證、排錯) | 想動手做某件事 |
+| **[roadmap/](./roadmap/)** | 還沒實作的 plan 跟未來方向 | 想看「下一步是什麼」 |
+
+---
+
+## 新人路徑
+
+1. [`architecture/README.md`](./architecture/README.md) — 整體拓樸,15 分鐘掃完
+2. [`guides/setup.md`](./guides/setup.md) — 5 個 package 跑通本機
+3. [`features/README.md`](./features/README.md) — 挑感興趣的 feature 進去讀
+4. [`roadmap/README.md`](./roadmap/README.md) — 看下一步要做什麼
+
+---
+
+## Quick links
+
+| 我要... | 去哪 |
 |---|---|
-| `phase-NN-completion.md` | Phase N 的:交付清單、驗證結果、與 spec 的差異、實作中發現的坑 |
+| 第一次安裝跑起來 | [`guides/setup.md`](./guides/setup.md) |
+| 跑測試 | [`guides/run-tests.md`](./guides/run-tests.md) |
+| 看 5 個 package 各自做什麼 | [`architecture/packages.md`](./architecture/packages.md) |
+| 看 runtime 資料/設定在哪個目錄 | [`architecture/runtime-layout.md`](./architecture/runtime-layout.md) |
+| 看 agent loop 怎麼跑 | [`features/agent-loop.md`](./features/agent-loop.md) |
+| 看內建工具集 | [`features/tools.md`](./features/tools.md) |
+| 看 memory 系統 | [`features/memory.md`](./features/memory.md) |
+| 卡關 | [`guides/troubleshooting.md`](./guides/troubleshooting.md) |
 
-## 文件規則
+---
 
-- **completion 文件 = 純粹完工記錄**,內容只能是已做的事
-- **不可**含 `- [ ]` 未完成 TODO,也不可有「留給下個 phase」、「觀察到的優化機會」之類的 section
-- 任何延後 / nice-to-have 工作 → **升級為新 phase plan**(`docs/phases/<N>-<name>.md`)
+## 寫文件原則
 
-## 與 spec doc 的關係
+新增文件先判斷它屬於哪一區:
 
-- **Spec(forward-looking)**:`docs/phases/NN-*.md` — 實作**前**的計畫
-- **Completion(backward-looking)**:本資料夾 — 實作**後**的記錄
+- **architecture/** — 描述「東西怎麼長」(static structure)
+- **features/** — 描述「某個 feature 怎麼運作」(behavior)
+- **guides/** — 描述「如何做某件事」(action)
+- **roadmap/plans/** — 描述「打算做某件事」(intent)
 
-## 整合 / 操作文件(非單一 phase)
+判別不出 → 通常是混了兩件事,拆兩份。
 
-- [MANUAL_TESTING.md](MANUAL_TESTING.md) — 手動測試 API + UI 的 step-by-step 指南
-- [PROJECT_LAYOUT.md](PROJECT_LAYOUT.md) — bundled / system / project / user / extra_dirs 五層資料夾結構詳解
-- [memory-bloat-prevention.md](memory-bloat-prevention.md) — Memory 系統四層 anti-entropy 防護設計(Layer 1+2 已完成,3+4 未做的設計草案 + 觸發條件)
+### 其他規則
 
-## 已完成
-
-- [x] [Phase 0 — Foundation](phase-00-completion.md)(2026-05-07)
-- [x] [Phase 1 — Agent Loop](phase-01-completion.md)(2026-05-07)
-- [x] [Phase 2 — Storage / Resume](phase-02-completion.md)(2026-05-07)
-- [x] [Phase 1b — 補完 Phase 1 小債](phase-01b-completion.md)(2026-05-07)
-- [x] [Phase 2b — 補完 Phase 0/1/2 漏網](phase-02b-completion.md)(2026-05-07)
-- [x] [Phase 3 — Memory / Compaction](phase-03-completion.md)(2026-05-07)
-- [x] [Phase 4 — System Prompt + Cache Control](phase-04-completion.md)(2026-05-07)
-- [x] [Phase 5 — MCP Integration](phase-05-completion.md)(2026-05-07)
-- [x] [Phase 6 — FastAPI Layer](phase-06-completion.md)(2026-05-07)
-- [x] [Phase 7 — Sandbox / Production](phase-07-completion.md)(2026-05-07)
-- [x] [Phase 8 — Hooks / Skills / Plugins](phase-08-completion.md)(2026-05-07)
-- [x] [Phase 9 — Worktree / Telemetry](phase-09-completion.md)(2026-05-07)
-- [x] [Phase 10 — Tools / Performance](phase-10-completion.md)(2026-05-07)
-- [x] [Phase 11 — Input Pipeline](phase-11-completion.md)(2026-05-07)
-- [x] [Phase 12 — Internal Mechanics](phase-12-completion.md)(2026-05-08)
-- [x] [Phase 13 — Resilience](phase-13-completion.md)(2026-05-08)
-- [x] [Phase 14 — Distribution & Sync](phase-14-completion.md)(2026-05-08)
-- [x] [Phase 15 — Multi-Agent Patterns](phase-15-completion.md)(2026-05-08)
-- [x] [WEB_UI Stage 3 — 三欄佈局前端](phase-WEB-UI-completion.md)(2026-05-09)
-
-## 從本專案衍生的新 phase plan
-
-實作中觀察到的延後 / nice-to-have 工作,均升級為獨立 phase plan(在 `docs/phases/`):
-
-- `phases/plan/16-abort-stream-mid-flight.md` — stream 中途即時 abort(來源:Phase 0)
-- `phases/plan/17-agenttool-concurrency-limit.md` — AgentTool 全域並發上限(來源:Phase 1)
-- `phases/plan/18-webfetch-cache.md` — WebFetchTool URL caching(來源:Phase 1)
-- `phases/plan/19-file-history-gc.md` — file history snapshot GC / LRU(來源:Phase 2)
-- `phases/plan/20-transcript-compression.md` — transcript JSONL gzip(來源:Phase 2)
-- `phases/plan/21-git-github-workflow.md` — git/github helpers + /commit /pr /review(來源:Phase 13 § 2.8 拆出)
-- `phases/plan/22-dxt-plugin-format.md` — DXT plugin format install / export(來源:Phase 14 § 5.5 拆出)
-- `phases/plan/24-multiagent-tools.md` — 把 Coordinator / Swarm 暴露給模型的工具介面(來源:Phase 15 § 5.6 拆出)
-- `phases/plan/25-memory-mcp-rest-endpoints.md` — Memory list / CRUD + MCP OAuth REST(來源:WEB_UI Memory/MCP placeholder 接通)
+- 不寫「我們」、「剛剛改了 X」、「最近」這類時間相對詞
+- 不寫實作日誌(完工的事直接看 git log)
+- Reference 性質的事實(套件名、env var)隨 code 同步更新
+- 過期文件直接刪,不要留 "deprecated" 標籤拖
