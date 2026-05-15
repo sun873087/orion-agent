@@ -9,8 +9,10 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "orion-agent",
+    "orion-chat-api",
+    "orion-cli",
     "orion-model",
+    "orion-sdk",
 ]
 
 [[package]]
@@ -1522,88 +1524,43 @@ wheels = [
 ]
 
 [[package]]
-name = "orion-agent"
+name = "orion-chat-api"
 version = "0.1.0"
-source = { editable = "api" }
+source = { editable = "apps/orion-chat/api" }
 dependencies = [
-    { name = "aiosqlite" },
-    { name = "alembic" },
-    { name = "anyio" },
-    { name = "apscheduler" },
-    { name = "asyncpg" },
     { name = "bcrypt" },
-    { name = "beautifulsoup4" },
-    { name = "cryptography" },
-    { name = "docker" },
     { name = "fastapi" },
-    { name = "httpx" },
-    { name = "keyring" },
-    { name = "mcp" },
-    { name = "nbformat" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-sdk" },
-    { name = "orion-model" },
-    { name = "pydantic" },
-    { name = "pyinstrument" },
+    { name = "orion-sdk" },
     { name = "pyjwt" },
-    { name = "python-dotenv" },
-    { name = "python-frontmatter" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "structlog" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
 [package.metadata]
 requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.19" },
-    { name = "alembic", specifier = ">=1.13" },
-    { name = "anyio", specifier = ">=4.0" },
-    { name = "apscheduler", specifier = ">=3.10" },
-    { name = "asyncpg", specifier = ">=0.29" },
     { name = "bcrypt", specifier = ">=4.0" },
-    { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "cryptography", specifier = ">=42.0" },
-    { name = "docker", specifier = ">=7.0" },
     { name = "fastapi", specifier = ">=0.110,<1.0" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "keyring", specifier = ">=24.0" },
-    { name = "mcp", specifier = ">=1.0" },
-    { name = "nbformat", specifier = ">=5.10" },
-    { name = "opentelemetry-api", specifier = ">=1.27" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27" },
-    { name = "opentelemetry-sdk", specifier = ">=1.27" },
-    { name = "orion-model", editable = "packages/orion-model" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyinstrument", specifier = ">=4.6" },
+    { name = "orion-sdk", editable = "packages/orion-sdk" },
     { name = "pyjwt", specifier = ">=2.8" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "python-frontmatter", specifier = ">=1.1" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
-    { name = "structlog", specifier = ">=24.0" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },
 ]
 
-[package.metadata.requires-dev]
-dev = [
-    { name = "hypothesis", specifier = ">=6.0" },
-    { name = "mypy", specifier = ">=1.10" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.6" },
+[[package]]
+name = "orion-cli"
+version = "0.1.0"
+source = { editable = "apps/orion-cli" }
+dependencies = [
+    { name = "orion-sdk" },
+    { name = "python-dotenv" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "orion-sdk", editable = "packages/orion-sdk" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [[package]]
@@ -1625,6 +1582,81 @@ requires-dist = [
     { name = "openai", specifier = ">=1.50.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.0" },
+]
+
+[[package]]
+name = "orion-sdk"
+version = "0.1.0"
+source = { editable = "packages/orion-sdk" }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "alembic" },
+    { name = "anyio" },
+    { name = "apscheduler" },
+    { name = "asyncpg" },
+    { name = "beautifulsoup4" },
+    { name = "cryptography" },
+    { name = "docker" },
+    { name = "httpx" },
+    { name = "keyring" },
+    { name = "mcp" },
+    { name = "nbformat" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-sdk" },
+    { name = "orion-model" },
+    { name = "pydantic" },
+    { name = "pyinstrument" },
+    { name = "python-dotenv" },
+    { name = "python-frontmatter" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.19" },
+    { name = "alembic", specifier = ">=1.13" },
+    { name = "anyio", specifier = ">=4.0" },
+    { name = "apscheduler", specifier = ">=3.10" },
+    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "cryptography", specifier = ">=42.0" },
+    { name = "docker", specifier = ">=7.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "keyring", specifier = ">=24.0" },
+    { name = "mcp", specifier = ">=1.0" },
+    { name = "nbformat", specifier = ">=5.10" },
+    { name = "opentelemetry-api", specifier = ">=1.27" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27" },
+    { name = "orion-model", editable = "packages/orion-model" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyinstrument", specifier = ">=4.6" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-frontmatter", specifier = ">=1.1" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = ">=6.0" },
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

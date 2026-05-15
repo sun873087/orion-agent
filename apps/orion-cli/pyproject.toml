@@ -1,0 +1,24 @@
+[project]
+name = "orion-cli"
+version = "0.1.0"
+description = "Terminal CLI for orion-sdk — stdin-based agent loop."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "orion-sdk",
+    "typer>=0.12",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+orion = "orion_cli.__main__:cli"
+
+[tool.uv.sources]
+orion-sdk = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orion_cli"]
