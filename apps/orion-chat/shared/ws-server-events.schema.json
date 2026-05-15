@@ -1,0 +1,341 @@
+{
+  "$defs": {
+    "AskUserQuestionAskEvent": {
+      "description": "server 反問 user 一/多題(來自 AskUserQuestion tool)。\n\n`questions` 是 AskQuestion.model_dump() 的 list:每題含 question / header /\noptions(label+description)/ multi_select。client 必須 reply\nAskUserAnswerEvent(同 request_id)。",
+      "properties": {
+        "type": {
+          "const": "ask_user_question",
+          "default": "ask_user_question",
+          "title": "Type",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Questions",
+          "type": "array"
+        },
+        "timeout_seconds": {
+          "default": 300,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id",
+        "questions"
+      ],
+      "title": "AskUserQuestionAskEvent",
+      "type": "object"
+    },
+    "AssistantTextEvent": {
+      "description": "模型 streaming 文字增量。",
+      "properties": {
+        "type": {
+          "const": "assistant_text",
+          "default": "assistant_text",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AssistantTextEvent",
+      "type": "object"
+    },
+    "AssistantThinkingEvent": {
+      "description": "模型 reasoning(extended thinking)增量。",
+      "properties": {
+        "type": {
+          "const": "assistant_thinking",
+          "default": "assistant_thinking",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AssistantThinkingEvent",
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "description": "通用 error(server 端 exception / unauthorized / etc.)。",
+      "properties": {
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "HistoryReplayDoneEvent": {
+      "description": "歷史重播完成標記 — client 用來 flush 任何 pending streaming state。",
+      "properties": {
+        "type": {
+          "const": "history_replay_done",
+          "default": "history_replay_done",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "HistoryReplayDoneEvent",
+      "type": "object"
+    },
+    "PermissionAskEvent": {
+      "description": "server 反問 user 是否允許工具執行。client 必須 reply PermissionDecisionEvent。",
+      "properties": {
+        "type": {
+          "const": "permission_ask",
+          "default": "permission_ask",
+          "title": "Type",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "title": "Input",
+          "type": "object"
+        },
+        "timeout_seconds": {
+          "default": 60,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id",
+        "tool_name",
+        "input"
+      ],
+      "title": "PermissionAskEvent",
+      "type": "object"
+    },
+    "TerminalEvent": {
+      "description": "整個 query_loop 結束(所有 turn 都做完)。",
+      "properties": {
+        "type": {
+          "const": "terminal",
+          "default": "terminal",
+          "title": "Type",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "total_turns": {
+          "title": "Total Turns",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "reason",
+        "total_turns"
+      ],
+      "title": "TerminalEvent",
+      "type": "object"
+    },
+    "ToolResultEvent": {
+      "description": "工具 call 結束 + 結果摘要。",
+      "properties": {
+        "type": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "title": "Type",
+          "type": "string"
+        },
+        "tool_use_id": {
+          "title": "Tool Use Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "is_error": {
+          "default": false,
+          "title": "Is Error",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tool_use_id",
+        "tool_name",
+        "content"
+      ],
+      "title": "ToolResultEvent",
+      "type": "object"
+    },
+    "ToolUseEvent": {
+      "description": "工具 call 開始。",
+      "properties": {
+        "type": {
+          "const": "tool_use",
+          "default": "tool_use",
+          "title": "Type",
+          "type": "string"
+        },
+        "tool_use_id": {
+          "title": "Tool Use Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "title": "Input",
+          "type": "object"
+        }
+      },
+      "required": [
+        "tool_use_id",
+        "tool_name",
+        "input"
+      ],
+      "title": "ToolUseEvent",
+      "type": "object"
+    },
+    "TurnCompleteEvent": {
+      "description": "assistant 一輪結束(streaming text + tool_use blocks 收齊)。",
+      "properties": {
+        "type": {
+          "const": "turn_complete",
+          "default": "turn_complete",
+          "title": "Type",
+          "type": "string"
+        },
+        "stop_reason": {
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "input_tokens": {
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "title": "Output Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stop_reason",
+        "input_tokens",
+        "output_tokens"
+      ],
+      "title": "TurnCompleteEvent",
+      "type": "object"
+    },
+    "UserTextEvent": {
+      "description": "重播歷史時用 — server 送 user 過去說過的訊息給 client 顯示(client 自己送的不會收到回送)。",
+      "properties": {
+        "type": {
+          "const": "user_text",
+          "default": "user_text",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "UserTextEvent",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "ask_user_question": "#/$defs/AskUserQuestionAskEvent",
+      "assistant_text": "#/$defs/AssistantTextEvent",
+      "assistant_thinking": "#/$defs/AssistantThinkingEvent",
+      "error": "#/$defs/ErrorEvent",
+      "history_replay_done": "#/$defs/HistoryReplayDoneEvent",
+      "permission_ask": "#/$defs/PermissionAskEvent",
+      "terminal": "#/$defs/TerminalEvent",
+      "tool_result": "#/$defs/ToolResultEvent",
+      "tool_use": "#/$defs/ToolUseEvent",
+      "turn_complete": "#/$defs/TurnCompleteEvent",
+      "user_text": "#/$defs/UserTextEvent"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/UserTextEvent"
+    },
+    {
+      "$ref": "#/$defs/HistoryReplayDoneEvent"
+    },
+    {
+      "$ref": "#/$defs/AssistantTextEvent"
+    },
+    {
+      "$ref": "#/$defs/AssistantThinkingEvent"
+    },
+    {
+      "$ref": "#/$defs/ToolUseEvent"
+    },
+    {
+      "$ref": "#/$defs/ToolResultEvent"
+    },
+    {
+      "$ref": "#/$defs/PermissionAskEvent"
+    },
+    {
+      "$ref": "#/$defs/AskUserQuestionAskEvent"
+    },
+    {
+      "$ref": "#/$defs/TurnCompleteEvent"
+    },
+    {
+      "$ref": "#/$defs/TerminalEvent"
+    },
+    {
+      "$ref": "#/$defs/ErrorEvent"
+    }
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Orion Chat Server→Client Events"
+}

@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "AbortEvent": {
+      "properties": {
+        "type": {
+          "const": "abort",
+          "default": "abort",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "AbortEvent",
+      "type": "object"
+    },
+    "AskUserAnswerEvent": {
+      "description": "client 回覆 server 的 AskUserQuestionAskEvent。\n\n`answers` 是 question text → 使用者選的 label(或開放式回答的純文字)。\n若使用者放棄/超時,client 可送 `answers={}` 提早通知。",
+      "properties": {
+        "type": {
+          "const": "ask_user_answer",
+          "default": "ask_user_answer",
+          "title": "Type",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "answers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Answers",
+          "type": "object"
+        }
+      },
+      "required": [
+        "request_id",
+        "answers"
+      ],
+      "title": "AskUserAnswerEvent",
+      "type": "object"
+    },
+    "PermissionDecisionEvent": {
+      "properties": {
+        "type": {
+          "const": "permission_decision",
+          "default": "permission_decision",
+          "title": "Type",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "always_allow",
+            "deny"
+          ],
+          "title": "Decision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "decision"
+      ],
+      "title": "PermissionDecisionEvent",
+      "type": "object"
+    },
+    "UserMessageEvent": {
+      "properties": {
+        "type": {
+          "const": "user_message",
+          "default": "user_message",
+          "title": "Type",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "UserMessageEvent",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "abort": "#/$defs/AbortEvent",
+      "ask_user_answer": "#/$defs/AskUserAnswerEvent",
+      "permission_decision": "#/$defs/PermissionDecisionEvent",
+      "user_message": "#/$defs/UserMessageEvent"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/UserMessageEvent"
+    },
+    {
+      "$ref": "#/$defs/PermissionDecisionEvent"
+    },
+    {
+      "$ref": "#/$defs/AbortEvent"
+    },
+    {
+      "$ref": "#/$defs/AskUserAnswerEvent"
+    }
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Orion Chat Client→Server Events"
+}

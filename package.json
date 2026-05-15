@@ -1,0 +1,21 @@
+{
+  "name": "orion-agent-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "orion-agent monorepo — Phase 30 restructure.",
+  "workspaces": [
+    "apps/orion-chat/web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @orion/chat-web",
+    "build:web": "npm run build -w @orion/chat-web",
+    "gen:openapi": "uv run --package orion-chat-api python apps/orion-chat/scripts/dump_openapi.py",
+    "gen:ws-schema": "uv run --package orion-chat-api python apps/orion-chat/scripts/dump_ws_schema.py",
+    "gen:ts-types": "openapi-typescript apps/orion-chat/shared/openapi.json -o apps/orion-chat/web/src/types/api.gen.ts && json2ts -i apps/orion-chat/shared/ws-client-events.schema.json -o apps/orion-chat/web/src/types/ws-client-events.gen.ts && json2ts -i apps/orion-chat/shared/ws-server-events.schema.json -o apps/orion-chat/web/src/types/ws-server-events.gen.ts",
+    "gen:types": "npm run gen:openapi && npm run gen:ws-schema && npm run gen:ts-types"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0",
+    "json-schema-to-typescript": "^15.0.0"
+  }
+}

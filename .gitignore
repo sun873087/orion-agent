@@ -10,6 +10,9 @@ __pycache__/
 # Virtual env(workspace 共用 root .venv)
 .venv/
 
+# Node(npm workspaces hoist 到 root)
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
