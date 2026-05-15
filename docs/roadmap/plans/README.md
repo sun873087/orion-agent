@@ -6,6 +6,7 @@
 
 | Plan | 內容 | 狀態 |
 |---|---|---|
+| [`31-phase30-followup/`](./31-phase30-followup/) | **Phase 30 follow-up** — Cowork ship-readiness(A-D)+ e2e infra(E, F)+ SDK polish(G, H)。3 條 track 可平行。6-8 週 | 📋 spec only |
 | [`7c-helm-chart.md`](./7c-helm-chart.md) | K8s 部署 + Helm chart(取代 Phase 7 的 docker socket mount) | 📋 spec only |
 | [`8c-plugin-marketplace.md`](./8c-plugin-marketplace.md) | Curated plugin registry + 簽名驗證 | 📋 spec only |
 | [`9d-grafana-stack.md`](./9d-grafana-stack.md) | OTel → Grafana / Prometheus 觀測 stack | 📋 spec only |
