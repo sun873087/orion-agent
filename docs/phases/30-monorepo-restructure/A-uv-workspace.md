@@ -20,7 +20,7 @@
 - [ ] 在 repo root 建立 `pyproject.toml`,只含 `[tool.uv.workspace]` 設定
 - [ ] 把 `api/` 列為 workspace member
 - [ ] `uv sync` 在 root 跑得通(產生 root 的 `uv.lock`)
-- [ ] `uv run --package orion-agent pytest -q` 跑得通(等同 `cd api && pytest`)
+- [ ] `cd api && uv run pytest -q` 跑得通(從 root 跑 `uv run --package orion-agent pytest` 不會載 `api/pyproject.toml` 的 pytest config,async tests 會炸;從 api/ dir 跑才能讓 pytest 找到 `configfile`)
 - [ ] `uv run --package orion-agent orion --help` 印出 typer help
 - [ ] 把原本 `api/uv.lock` 刪掉(改用 root 的)
 - [ ] `.gitignore` 確認沒漏掉 `.venv/`(root 跟 api/ 共用 root `.venv`)
@@ -64,9 +64,9 @@ $ uv run --package orion-agent orion --help
 Usage: orion [OPTIONS] COMMAND [ARGS]...
 ...
 
-$ uv run --package orion-agent pytest -q
+$ cd api && uv run pytest -q
 ...
-=========== N passed in X.XXs ===========
+=========== 907 passed, 4 skipped in 46s ===========
 ```
 
 ## 5. 常見踩雷
@@ -76,7 +76,7 @@ $ uv run --package orion-agent pytest -q
 | `error: Workspace member declares non-workspace dependency` | `api/pyproject.toml` 寫 `orion-something>=X.Y`,但 X.Y 在 workspace 內找得到 | 之後 Phase B-C 才會碰到;Phase A 不該動到 deps |
 | `hatchling: package not found` | root pyproject 沒設 `[build-system]` 但 hatchling 想找 | root pyproject 不需要 `[build-system]`(它不 build,只是 workspace marker)|
 | `editable install fails` | hatchling 的 `[tool.hatch.build.targets.wheel].packages` 路徑相對位置變了 | 不會變 — Phase A 沒搬檔,`api/pyproject.toml` 裡的相對路徑仍對 |
-| pytest 在 root 找不到測試 | pytest 預設從 cwd 找 testpaths | `uv run --package orion-agent pytest` 等同 `cd api && pytest`,不會有問題 |
+| pytest 從 root 跑時 async tests 報 `async def functions are not natively supported` | `uv run --package orion-agent pytest` 不會把 cwd 切到 api/,pytest 找不到 `api/pyproject.toml` 的 `[tool.pytest.ini_options]`(尤其 `asyncio_mode = "auto"`)| 用 `cd api && uv run pytest -q`;或在 root pyproject 補一個指向 api/ 的 pytest config(Phase C 時統一處理)|
 
 ## 6. 完成後的狀態
 

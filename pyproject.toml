@@ -1,0 +1,6 @@
+[tool.uv.workspace]
+members = ["api"]
+
+# Phase 30-A:Workspace root,沒有自己的程式碼(virtual workspace)。
+# 後續 phase 會加 packages/orion-model、packages/orion-sdk、apps/orion-cli、
+# apps/orion-chat/api、apps/orion-cowork/sidecar 等 members。
