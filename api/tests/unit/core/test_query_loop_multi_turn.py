@@ -13,7 +13,7 @@ from orion_agent.core.query_loop import (
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool_execution import ToolResultUpdate
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.types import ToolResultBlock, ToolUseBlock
+from orion_model.types import ToolResultBlock, ToolUseBlock
 from orion_agent.permissions.decisions import always_allow
 from orion_agent.tools.file.read import FileReadTool
 from tests.conftest import MockProvider, MockTurn

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from orion_agent.compact.tombstone import replace_range_with_tombstone
-from orion_agent.llm.types import NormalizedMessage, TombstoneBlock
+from orion_model.types import NormalizedMessage, TombstoneBlock
 
 
 def _msg(role: str, content: str) -> NormalizedMessage:

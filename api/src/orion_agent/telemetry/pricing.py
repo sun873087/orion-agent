@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from orion_agent.llm.catalog import find_pricing_by_model, iter_all_entries
+from orion_model.catalog import find_pricing_by_model, iter_all_entries
 
 
 @dataclass(frozen=True)

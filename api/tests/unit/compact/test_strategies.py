@@ -8,7 +8,7 @@ from orion_agent.compact.strategies import (
     SonnetSummaryStrategy,
     TruncateStrategy,
 )
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

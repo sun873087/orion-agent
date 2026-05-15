@@ -21,7 +21,7 @@ from orion_agent.api.auth import dev_user_id
 from orion_agent.api.session_manager import SessionManager
 from orion_agent.api.session_manager_db import DbSessionManager
 from orion_agent.core.conversation import Conversation
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.storage.db.engine import create_db_engine, db_session, init_db
 from orion_agent.storage.db.models import (
     ConversationMetadata,

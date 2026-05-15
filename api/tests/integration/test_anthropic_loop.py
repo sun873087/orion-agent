@@ -11,7 +11,7 @@ import pytest
 
 from orion_agent.core.conversation import Conversation
 from orion_agent.core.query_loop import LoopTerminated
-from orion_agent.llm.provider import get_provider
+from orion_model.provider import get_provider
 from orion_agent.tools.file.read import FileReadTool
 
 pytestmark = pytest.mark.skipif(

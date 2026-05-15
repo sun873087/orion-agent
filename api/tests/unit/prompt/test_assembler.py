@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.prompt.assembler import (
     SystemPromptParts,
     build_system_prompt_list,

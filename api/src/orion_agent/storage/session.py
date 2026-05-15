@@ -30,7 +30,7 @@ import anyio
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import Message as MessageRow
 from orion_agent.storage.paths import SessionPaths, session_paths

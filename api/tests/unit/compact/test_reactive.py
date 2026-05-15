@@ -8,7 +8,7 @@ from orion_agent.compact.reactive import (
     is_prompt_too_long_error,
     reactive_compact,
 )
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TombstoneBlock,
 )

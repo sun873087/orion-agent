@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage
 from orion_agent.memory.paths import user_memory_paths
 from orion_agent.memory.relevance import rank_memories
 from orion_agent.memory.render import render_memories

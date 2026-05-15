@@ -15,7 +15,7 @@ System prompt 已用 2 個 bp(static + session_stable),Anthropic 限 4 個,
 
 from __future__ import annotations
 
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 
 
 def compute_message_breakpoints(messages: list[NormalizedMessage]) -> list[int]:

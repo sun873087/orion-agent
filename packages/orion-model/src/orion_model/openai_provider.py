@@ -13,11 +13,11 @@ from typing import Any, cast
 
 from openai import AsyncOpenAI
 
-from orion_agent.llm.catalog import (
+from orion_model.catalog import (
     get_max_context_tokens,
     get_supports_reasoning,
 )
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStartEvent,
     MessageStopEvent,
     NormalizedEvent,
@@ -28,14 +28,14 @@ from orion_agent.llm.events import (
     ToolUseStartEvent,
     ToolUseStopEvent,
 )
-from orion_agent.llm.pricing import get_pricing
-from orion_agent.llm.provider import ProviderCapabilities, ReasoningEffort
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.translation.openai import (
+from orion_model.pricing import get_pricing
+from orion_model.provider import ProviderCapabilities, ReasoningEffort
+from orion_model.tool_def import ToolDefinition
+from orion_model.translation.openai import (
     translate_messages_to_openai,
     translate_tools_to_openai,
 )
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 
 _DEFAULT_CONTEXT_TOKENS = 128_000
 

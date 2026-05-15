@@ -16,8 +16,8 @@ from orion_agent.compact.strategies import (
     TruncateStrategy,
 )
 from orion_agent.compact.tombstone import replace_range_with_tombstone
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import (
+from orion_model.provider import LLMProvider
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

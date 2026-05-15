@@ -27,7 +27,7 @@ from orion_agent.hooks.events import (
     PreToolUseEvent,
 )
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.types import NormalizedMessage, ToolResultBlock
+from orion_model.types import NormalizedMessage, ToolResultBlock
 from orion_agent.permissions.decisions import (
     CanUseToolFn,
     PermissionDecision,

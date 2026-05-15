@@ -29,8 +29,8 @@ from typing import Any
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import Tool
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage, ToolUseBlock
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage, ToolUseBlock
 from orion_agent.permissions.decisions import CanUseToolFn, always_allow
 from orion_agent.sandbox.sub_agent_isolation import (
     SandboxFactory,
@@ -221,7 +221,7 @@ def _extract_written_paths(message: NormalizedMessage) -> list[str]:
 
 def _last_assistant_text(messages: list[NormalizedMessage]) -> str:
     """倒著找最末 assistant message,串接其 TextBlock。"""
-    from orion_agent.llm.types import TextBlock
+    from orion_model.types import TextBlock
 
     for m in reversed(messages):
         if m.role != "assistant":

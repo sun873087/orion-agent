@@ -21,7 +21,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from orion_agent.llm.types import (
+from orion_model.types import (
     ContentBlock,
     ImageBlock,
     NormalizedMessage,

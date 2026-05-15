@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from orion_agent.core.state import AgentContext
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.services.forked_agent import (
     CacheSafeParams,
     run_forked_agent,

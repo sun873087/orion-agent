@@ -18,7 +18,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from orion_agent.llm.types import NormalizedMessage, TextBlock, ToolUseBlock
+from orion_model.types import NormalizedMessage, TextBlock, ToolUseBlock
 from orion_agent.storage.db.engine import create_db_engine, db_session, init_db
 from orion_agent.storage.db.models import Message as MessageRow
 from orion_agent.storage.db.models import Session as SessionRow

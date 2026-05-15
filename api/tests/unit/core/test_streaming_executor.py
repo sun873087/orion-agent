@@ -12,7 +12,7 @@ from orion_agent.core.streaming_executor import StreamingToolExecutor
 from orion_agent.core.tool import TextEvent, ToolEvent, ToolInput
 from orion_agent.core.tool_execution import ToolResultUpdate
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.types import ToolUseBlock
+from orion_model.types import ToolUseBlock
 from orion_agent.permissions.decisions import always_allow
 
 

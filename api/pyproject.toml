@@ -9,8 +9,7 @@ authors = [
     { name = "Orion Agent" },
 ]
 dependencies = [
-    "anthropic>=0.40.0",
-    "openai>=1.50.0",
+    "orion-model",
     "pydantic>=2.0",
     "anyio>=4.0",
     "structlog>=24.0",
@@ -58,6 +57,9 @@ python_version = "3.11"
 warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_untyped_defs = true
+
+[tool.uv.sources]
+orion-model = { workspace = true }
 
 [[tool.mypy.overrides]]
 module = ["anthropic.*", "openai.*"]

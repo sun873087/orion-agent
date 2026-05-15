@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.memory import relevance
 from orion_agent.memory.relevance import rank_memories
 from orion_agent.memory.types import Memory, MemoryFrontmatter, MemoryType

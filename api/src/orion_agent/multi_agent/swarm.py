@@ -23,12 +23,12 @@ from datetime import UTC, datetime
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream
 
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStopEvent,
     TextDeltaEvent,
 )
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage
 from orion_agent.multi_agent.message_bus import MessageBus
 from orion_agent.multi_agent.types import PeerMessage
 

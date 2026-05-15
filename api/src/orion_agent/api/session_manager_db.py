@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_agent.api.session_manager import SessionInfo
 from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
-from orion_agent.llm.provider import get_provider
+from orion_model.provider import get_provider
 from orion_agent.storage.db.engine import db_session
 from orion_agent.storage.db.models import (
     ConversationMetadata,

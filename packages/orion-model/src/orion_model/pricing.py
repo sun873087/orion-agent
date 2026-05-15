@@ -8,7 +8,7 @@ catalog.validate is the right place to gate "unknown model" earlier.
 
 from __future__ import annotations
 
-from orion_agent.llm.catalog import get_pricing as _catalog_get_pricing
+from orion_model.catalog import get_pricing as _catalog_get_pricing
 
 # Fallback when (provider, model) isn't in the catalog. Kept conservative —
 # we'd rather slightly under-report than crash a session.

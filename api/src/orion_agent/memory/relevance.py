@@ -18,8 +18,8 @@ import logging
 import os
 import re
 
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage, TextBlock
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage, TextBlock
 from orion_agent.memory.types import Memory, MemoryType
 
 _log = logging.getLogger(__name__)
@@ -51,8 +51,8 @@ def _ranker_provider() -> LLMProvider | None:
     if _ranker_provider_cache is not None:
         return _ranker_provider_cache
 
-    from orion_agent.llm.catalog import find_provider_by_model
-    from orion_agent.llm.provider import get_provider
+    from orion_model.catalog import find_provider_by_model
+    from orion_model.provider import get_provider
 
     model = os.environ.get("ORION_MEMORY_RANKER_MODEL", _DEFAULT_RANKER_MODEL)
     provider_id = find_provider_by_model(model)

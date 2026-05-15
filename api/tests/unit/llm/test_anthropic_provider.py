@@ -7,8 +7,8 @@ cache_control。空字串段跳過(API 拒收 cache_control on empty block)。
 
 from __future__ import annotations
 
-from orion_agent.llm.anthropic_provider import _build_system_param
-from orion_agent.llm.cache_config import CacheTTLConfig
+from orion_model.anthropic_provider import _build_system_param
+from orion_model.cache_config import CacheTTLConfig
 
 
 def test_string_system_passes_through() -> None:

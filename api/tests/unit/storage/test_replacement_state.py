@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from orion_agent.llm.types import NormalizedMessage, ToolResultBlock, ToolUseBlock
+from orion_model.types import NormalizedMessage, ToolResultBlock, ToolUseBlock
 from orion_agent.storage.replacement_state import (
     ContentReplacementState,
     ToolResultCandidate,

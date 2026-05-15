@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.translation.openai import (
+from orion_model.tool_def import ToolDefinition
+from orion_model.translation.openai import (
     translate_messages_to_openai,
     translate_tools_to_openai,
 )
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

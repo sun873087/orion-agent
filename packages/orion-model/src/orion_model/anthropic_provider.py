@@ -11,16 +11,16 @@ from typing import Any, cast
 
 from anthropic import AsyncAnthropic
 
-from orion_agent.llm.cache_config import (
+from orion_model.cache_config import (
     CacheTTLConfig,
     build_cache_control,
     load_cache_ttl_config,
 )
-from orion_agent.llm.catalog import (
+from orion_model.catalog import (
     get_max_context_tokens,
     get_supports_reasoning,
 )
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStartEvent,
     MessageStopEvent,
     NormalizedEvent,
@@ -31,15 +31,15 @@ from orion_agent.llm.events import (
     ToolUseStartEvent,
     ToolUseStopEvent,
 )
-from orion_agent.llm.pricing import get_pricing
-from orion_agent.llm.provider import ProviderCapabilities, ReasoningEffort
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.translation.anthropic import (
+from orion_model.pricing import get_pricing
+from orion_model.provider import ProviderCapabilities, ReasoningEffort
+from orion_model.tool_def import ToolDefinition
+from orion_model.translation.anthropic import (
     apply_cache_breakpoints,
     translate_messages_to_anthropic,
     translate_tools_to_anthropic,
 )
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 
 _DEFAULT_CONTEXT_TOKENS = 200_000
 

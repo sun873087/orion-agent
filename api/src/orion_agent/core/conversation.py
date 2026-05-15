@@ -34,8 +34,8 @@ from orion_agent.core.tool import Tool
 from orion_agent.core.tool_execution import ToolResultUpdate
 from orion_agent.core.transitions import Terminal
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.provider import LLMProvider, ReasoningEffort
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider, ReasoningEffort
+from orion_model.types import NormalizedMessage
 from orion_agent.memory.extract import extract_memories
 from orion_agent.memory.paths import default_user_id, user_memory_paths
 from orion_agent.memory.scan import scan_memory_dir
@@ -92,7 +92,7 @@ def pick_max_tokens_per_turn(provider: str, model: str) -> int:
     - env 有設 → 用 env 值,但 cap 在該 model 的 catalog 上限(避免 API 422)
     """
     # 延遲 import 避開循環(catalog 不依賴 conversation,沒實際循環,但保一致)
-    from orion_agent.llm.catalog import get_max_output_tokens
+    from orion_model.catalog import get_max_output_tokens
 
     model_max = get_max_output_tokens(provider, model) or _DEFAULT_MAX_TOKENS_PER_TURN
     env = _env_max_tokens_per_turn()

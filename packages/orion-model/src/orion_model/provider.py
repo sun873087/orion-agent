@@ -14,9 +14,9 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from orion_agent.llm.events import NormalizedEvent
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.events import NormalizedEvent
+from orion_model.tool_def import ToolDefinition
+from orion_model.types import NormalizedMessage
 
 
 @dataclass
@@ -95,11 +95,11 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
         對應的 LLMProvider 實例。
     """
     if provider_name == "anthropic":
-        from orion_agent.llm.anthropic_provider import AnthropicProvider
+        from orion_model.anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(model=model)
     if provider_name == "openai":
-        from orion_agent.llm.openai_provider import OpenAIProvider
+        from orion_model.openai_provider import OpenAIProvider
 
         return OpenAIProvider(model=model)
     raise ValueError(f"Unknown provider: {provider_name!r}")

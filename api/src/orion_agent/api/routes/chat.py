@@ -69,8 +69,8 @@ from orion_agent.core.tool_execution import (
     ToolProgressUpdate,
     ToolResultUpdate,
 )
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import (
+from orion_model.provider import LLMProvider
+from orion_model.types import (
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -223,7 +223,7 @@ async def _emit_tool_use_for_assistant_turn(
 
     TurnComplete 後馬上送 ToolUse 訊息給 client(讓 UI 提早顯示「呼叫 X 工具中」)。
     """
-    from orion_agent.llm.types import ToolUseBlock
+    from orion_model.types import ToolUseBlock
 
     out: list[ServerEvent] = []
     if not isinstance(turn_complete.message.content, list):

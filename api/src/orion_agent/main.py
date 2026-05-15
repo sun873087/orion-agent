@@ -33,7 +33,7 @@ from orion_agent.core.tool_execution import (  # noqa: E402
     ToolProgressUpdate,
     ToolResultUpdate,
 )
-from orion_agent.llm.provider import get_provider  # noqa: E402
+from orion_model.provider import get_provider  # noqa: E402
 from orion_agent.services.feature_flags import load_feature_flags  # noqa: E402
 from orion_agent.tools.interactive.ask_user import (  # noqa: E402
     make_stdin_asker,

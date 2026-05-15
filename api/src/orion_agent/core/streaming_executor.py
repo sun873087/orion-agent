@@ -39,7 +39,7 @@ from orion_agent.core.tool_execution import (
     run_one_tool,
 )
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.types import NormalizedMessage, ToolResultBlock, ToolUseBlock
+from orion_model.types import NormalizedMessage, ToolResultBlock, ToolUseBlock
 from orion_agent.permissions.decisions import CanUseToolFn
 
 ToolStatus = Literal["queued", "executing", "done"]

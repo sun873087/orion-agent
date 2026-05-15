@@ -8,7 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from orion_agent.core.tool_orchestration import partition_tool_calls
-from orion_agent.llm.types import ToolUseBlock
+from orion_model.types import ToolUseBlock
 
 
 class _SafeTool:

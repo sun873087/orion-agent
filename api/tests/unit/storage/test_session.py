@@ -8,7 +8,7 @@ from uuid import uuid4
 import anyio
 import pytest
 
-from orion_agent.llm.types import NormalizedMessage, TextBlock, ToolResultBlock
+from orion_model.types import NormalizedMessage, TextBlock, ToolResultBlock
 from orion_agent.storage.replacement_state import ReplacementDecision
 from orion_agent.storage.session import SessionStorage, iter_records_sync
 

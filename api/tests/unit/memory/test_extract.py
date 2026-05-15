@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.memory.extract import (
     extract_memories,
     parse_extract_output,

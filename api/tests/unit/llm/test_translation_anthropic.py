@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.translation.anthropic import (
+from orion_model.tool_def import ToolDefinition
+from orion_model.translation.anthropic import (
     apply_cache_breakpoints,
     translate_messages_to_anthropic,
     translate_tools_to_anthropic,
 )
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from orion_agent.core.message_cache import compute_message_breakpoints
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 
 
 def _u(text: str) -> NormalizedMessage:

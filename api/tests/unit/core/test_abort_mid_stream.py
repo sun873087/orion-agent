@@ -24,16 +24,16 @@ from orion_agent.core.query_loop import (
 )
 from orion_agent.core.state import AgentContext
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStartEvent,
     MessageStopEvent,
     NormalizedEvent,
     NormalizedUsage,
     TextDeltaEvent,
 )
-from orion_agent.llm.provider import ProviderCapabilities
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import ProviderCapabilities
+from orion_model.tool_def import ToolDefinition
+from orion_model.types import NormalizedMessage
 from orion_agent.permissions.decisions import always_allow
 
 

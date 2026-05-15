@@ -16,8 +16,8 @@ from __future__ import annotations
 from orion_agent.compact.auto import auto_compact_if_needed
 from orion_agent.compact.strategies import SonnetSummaryStrategy
 from orion_agent.compact.tombstone import replace_range_with_tombstone
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage
 
 _PROMPT_TOO_LONG_KEYWORDS = (
     "prompt is too long",

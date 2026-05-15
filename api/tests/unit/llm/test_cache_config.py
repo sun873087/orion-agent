@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from orion_agent.llm.cache_config import (
+from orion_model.cache_config import (
     CacheTTLConfig,
     build_cache_control,
     load_cache_ttl_config,

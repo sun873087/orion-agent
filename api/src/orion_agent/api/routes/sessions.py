@@ -24,8 +24,8 @@ from orion_agent.api.deps import (
 )
 from orion_agent.api.session_manager import SessionManager
 from orion_agent.core.conversation import Conversation, pick_max_tokens_per_turn
-from orion_agent.llm.catalog import list_catalog, validate
-from orion_agent.llm.provider import LLMProvider, get_provider
+from orion_model.catalog import list_catalog, validate
+from orion_model.provider import LLMProvider, get_provider
 from orion_agent.storage.paths import session_paths
 from orion_agent.telemetry.cost_tracker import get_session_summary
 from orion_agent.tools.builtin_set import build_default_tool_set

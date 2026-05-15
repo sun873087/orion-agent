@@ -26,14 +26,14 @@ from typing import Any, Literal
 
 import anyio
 
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStopEvent,
     TextDeltaEvent,
     ToolUseStopEvent,
 )
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider
+from orion_model.tool_def import ToolDefinition
+from orion_model.types import NormalizedMessage
 
 SideQuerySource = Literal[
     "memdir_relevance",

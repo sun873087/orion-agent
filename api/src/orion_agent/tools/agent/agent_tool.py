@@ -21,7 +21,7 @@ from pydantic import Field
 from orion_agent.core.state import AgentContext
 from orion_agent.core.tool import ErrorEvent, TextEvent, Tool, ToolEvent, ToolInput
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.provider import LLMProvider
+from orion_model.provider import LLMProvider
 from orion_agent.permissions.decisions import always_allow
 
 _SUB_AGENT_SYSTEM_PROMPT = """\

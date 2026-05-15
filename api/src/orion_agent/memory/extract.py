@@ -11,12 +11,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStopEvent,
     TextDeltaEvent,
 )
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import (
+from orion_model.provider import LLMProvider
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

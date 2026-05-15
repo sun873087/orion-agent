@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from orion_agent.llm.catalog import (
+from orion_model.catalog import (
     find_pricing_by_model,
     get_max_context_tokens,
     get_max_output_tokens,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TombstoneBlock,
 )

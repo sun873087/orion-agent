@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import (
+from orion_model.provider import LLMProvider
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,

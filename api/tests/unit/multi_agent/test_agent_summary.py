@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolUseBlock,

@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from orion_agent.llm.provider import LLMProvider
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.provider import LLMProvider
+from orion_model.types import NormalizedMessage
 from orion_agent.prompt.dynamic_sections import (
     env_info_stable_section,
     git_status_section,
@@ -181,7 +181,7 @@ def inject_per_turn_into_user_message(
             f"{per_turn_text.strip()}\n\n{user_msg.content}"
         )
     else:
-        from orion_agent.llm.types import TextBlock
+        from orion_model.types import TextBlock
         new_content = [TextBlock(text=per_turn_text.strip()), *user_msg.content]
 
     return NormalizedMessage(role=user_msg.role, content=new_content)

@@ -4,7 +4,7 @@ Phase 1+ 的 query_loop 透過 `LLMProvider.stream()` 取 normalized events,
 完全不見 anthropic / openai SDK 細節。
 
 用法:
-  from orion_agent.llm.provider import get_provider
+  from orion_model.provider import get_provider
   provider = get_provider("anthropic", "claude-sonnet-4-6")
   # 或 get_provider("openai", "gpt-5")
 

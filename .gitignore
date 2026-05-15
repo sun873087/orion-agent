@@ -1,5 +1,15 @@
 # 各子專案有自己的 .gitignore(api/.gitignore 等)— 此處只處理 repo 根。
 
+# Python(workspace-wide,Phase 30 之後 packages/ 跟 apps/ 也要 cover)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+
+# Virtual env(workspace 共用 root .venv)
+.venv/
+
 # OS
 .DS_Store
 Thumbs.db

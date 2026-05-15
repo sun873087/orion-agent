@@ -64,7 +64,7 @@ class ModelEntry(TypedDict):
     pricing: Pricing
 
 
-_PACKAGED_RESOURCE = files("orion_agent.llm").joinpath("models.json")
+_PACKAGED_RESOURCE = files("orion_model").joinpath("models.json")
 
 
 def _resolve_override_path() -> Path | None:

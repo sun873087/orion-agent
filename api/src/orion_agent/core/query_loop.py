@@ -32,15 +32,15 @@ from orion_agent.core.tool_execution import (
 from orion_agent.core.tool_orchestration import run_tools  # noqa: F401 — 留作 fallback / 測試
 from orion_agent.core.transitions import Terminal
 from orion_agent.hooks.registry import HookRegistry
-from orion_agent.llm.events import (
+from orion_model.events import (
     MessageStopEvent,
     TextDeltaEvent,
     ThinkingDeltaEvent,
     ToolUseStopEvent,
 )
-from orion_agent.llm.provider import LLMProvider, ReasoningEffort
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.types import (
+from orion_model.provider import LLMProvider, ReasoningEffort
+from orion_model.tool_def import ToolDefinition
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolUseBlock,

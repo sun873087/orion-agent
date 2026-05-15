@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from orion_agent.llm.tool_def import ToolDefinition
-from orion_agent.llm.types import (
+from orion_model.tool_def import ToolDefinition
+from orion_model.types import (
     ContentBlock,
     ImageBlock,
     NormalizedMessage,

@@ -10,7 +10,7 @@ from orion_agent.compact.auto import (
     estimate_token_count,
 )
 from orion_agent.compact.strategies import TruncateStrategy
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     TombstoneBlock,

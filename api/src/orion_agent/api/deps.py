@@ -15,7 +15,7 @@ from starlette.requests import HTTPConnection
 
 from orion_agent.api.auth import Identity, verify_token, verify_token_full
 from orion_agent.api.session_manager import SessionManager
-from orion_agent.llm.provider import LLMProvider, get_provider
+from orion_model.provider import LLMProvider, get_provider
 
 _bearer = HTTPBearer(auto_error=True)
 

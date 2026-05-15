@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from orion_agent.api.session_manager_db import DbSessionManager
-from orion_agent.llm.types import NormalizedMessage
+from orion_model.types import NormalizedMessage
 from orion_agent.storage.db.engine import create_db_engine, db_session, init_db
 from orion_agent.storage.db.models import User
 from orion_agent.storage.session import SessionStorage

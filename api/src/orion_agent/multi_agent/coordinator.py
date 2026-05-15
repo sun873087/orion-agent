@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 import anyio
 
 from orion_agent.core.state import AgentContext
-from orion_agent.llm.provider import LLMProvider
+from orion_model.provider import LLMProvider
 from orion_agent.multi_agent.types import (
     TaskAssignment,
     WorkerReport,

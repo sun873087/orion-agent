@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from orion_agent.core.state import AgentContext  # noqa: E402
-from orion_agent.llm.events import (  # noqa: E402
+from orion_model.events import (  # noqa: E402
     MessageStartEvent,
     MessageStopEvent,
     NormalizedEvent,
@@ -23,9 +23,9 @@ from orion_agent.llm.events import (  # noqa: E402
     ToolUseStartEvent,
     ToolUseStopEvent,
 )
-from orion_agent.llm.provider import ProviderCapabilities  # noqa: E402
-from orion_agent.llm.tool_def import ToolDefinition  # noqa: E402
-from orion_agent.llm.types import NormalizedMessage  # noqa: E402
+from orion_model.provider import ProviderCapabilities  # noqa: E402
+from orion_model.tool_def import ToolDefinition  # noqa: E402
+from orion_model.types import NormalizedMessage  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

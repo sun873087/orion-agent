@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from orion_agent.llm.types import (
+from orion_model.types import (
     NormalizedMessage,
     TextBlock,
     ToolResultBlock,
