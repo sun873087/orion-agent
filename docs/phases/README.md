@@ -83,6 +83,7 @@
 | [13](./13-resilience.md) | **Resilience(補)** | 1-2 週 | Settings migrations + ConversationRecovery + Permission persistence + CLAUDE.md hierarchy |
 | [14](./14-distribution-sync.md) | **Distribution & Sync(C 級補)** | 1-2 週 | settingsSync 跨機同步 + secureStorage(keychain / Vault) + DXT plugin format |
 | [15](./15-multi-agent.md) | **Multi-Agent Patterns(C 級補)** | 1-2 週 | Coordinator(leader-worker)+ Swarm(peer-to-peer)+ AgentSummary |
+| [30](./30-monorepo-restructure/README.md) | **Monorepo 重構 — SDK + 4 子產品** | 4-6 週 | 拆 `orion-model` + `orion-sdk` + `orion-cli` + `orion-chat/{api,web}` + `orion-cowork`(Electron + Python sidecar) |
 | [Optional](./OPTIONAL.md) | **附錄** | — | IDE / Tips / MagicDocs / PromptSuggestion / Notifier 等可選特性 |
 | [Web UI 規劃](./WEB_UI.md) | **測試 UI 規劃** | — | 三階段測試 UI(單檔 HTML → React 骨架 → 完整功能),含完整 Phase 0-1 的 50 行 test-ui.html 即用版 |
 

@@ -1,37 +1,58 @@
-# orion-agent API image — FastAPI + uvicorn。
-# Phase 7。Build:
-#   docker build -f deploy/Dockerfile.api -t orion-agent-api:dev orion-agent/
-FROM python:3.12-slim AS base
+# orion-chat-api image — multi-stage build for monorepo workspace。
+# Build (從 repo root):
+#   docker build -f deploy/Dockerfile.api -t orion-chat-api:dev .
+
+# ─── Stage 1: builder ─────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
-# 系統依賴(bcrypt 需 build deps;asyncpg 用 binary wheel 就不用 libpq-dev)
+# 系統依賴(bcrypt 需 build deps;asyncpg 用 binary wheel 不用 libpq-dev)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install uv
 
-# 先複製 pyproject 鎖依賴(讓 layer cache 命中)
-COPY api/pyproject.toml api/uv.lock* ./api/
-COPY api/src ./api/src
-COPY api/alembic.ini ./api/
+# 把整個 workspace 複進來。uv workspace 不支援只裝部分 member 的 lock,
+# 需 root pyproject + uv.lock + 所有相關 member 的 pyproject。
+COPY pyproject.toml uv.lock ./
+COPY packages/orion-model/pyproject.toml ./packages/orion-model/
+COPY packages/orion-sdk/pyproject.toml ./packages/orion-sdk/
+COPY apps/orion-chat/api/pyproject.toml ./apps/orion-chat/api/
 
-# 安裝 uv 並用 system Python 安裝 deps
-RUN pip install uv \
-    && cd api && uv pip install --system -e .
+# 先裝 deps (layer cache 命中率高)
+RUN uv sync --frozen --package orion-chat-api --no-install-project
+
+# 再複源碼(改 code 不會 invalidate dep layer)
+COPY packages/orion-model/src ./packages/orion-model/src
+COPY packages/orion-sdk/src ./packages/orion-sdk/src
+COPY packages/orion-sdk/alembic.ini ./packages/orion-sdk/
+COPY apps/orion-chat/api/src ./apps/orion-chat/api/src
+
+# 完整 install(把三個 workspace package editable install 進 venv)
+RUN uv sync --frozen --package orion-chat-api
+
+# ─── Stage 2: runtime ─────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    ORION_LOG_FORMAT=json \
+    ORION_DB_AUTO_CREATE=1 \
+    PATH="/app/.venv/bin:$PATH"
+
+WORKDIR /app
+
+# 從 builder 拷貝整個 /app(.venv + 三個 workspace package src)
+COPY --from=builder /app /app
 
 EXPOSE 8000
 
-# 預設值,docker-compose 會覆蓋
-ENV ORION_LOG_FORMAT=json \
-    ORION_DB_AUTO_CREATE=1
-
-WORKDIR /app/api
-
-CMD ["uvicorn", "orion_agent.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["orion-chat-api", "serve", "--host", "0.0.0.0", "--port", "8000"]

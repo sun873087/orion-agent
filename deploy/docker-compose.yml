@@ -45,6 +45,8 @@ services:
     volumes:
       # Local dev only — 讓 DockerBackend 連 host docker daemon
       - /var/run/docker.sock:/var/run/docker.sock
+    # Phase 30 後:image 改打 orion-chat-api (apps/orion-chat/api),不再用
+    # orion serve;`docker compose` CMD 已在 Dockerfile 設好 orion-chat-api serve。
 
 volumes:
   orion_pgdata:

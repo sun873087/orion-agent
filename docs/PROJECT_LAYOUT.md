@@ -1,16 +1,70 @@
 # Project Layout — orion-agent 的目錄結構
 
-orion-agent 的 runtime 設定 / 資料散在 4 個地方,**後者覆蓋前者**(last-wins):
+本文兩個主題:
+- **§ 0**:source code layout(Phase 30 後 monorepo 結構)
+- **§ 1-5**:runtime 設定 / 資料的 4 個位置 + extra_dirs
+
+> Phase 30 前文件大量引用的 `api/src/orion_agent/X`、`orion_agent.X` import path 在
+> Phase 30 重構後一律改名,對照表見 [`IMPORT_PATH_MIGRATION.md`](./IMPORT_PATH_MIGRATION.md)。
+
+---
+
+## 0. Source code layout(Phase 30 後)
+
+uv workspace + npm workspaces 雙 monorepo:
 
 ```
-1. bundled            ← 套件附,跟著 pip install
-2. system             ← ~/.orion/                  全 server 共用(admin)
-3. project            ← <cwd>/.orion/              專案內(commit 進 repo)
-4. user               ← ~/.orion/users/<uid>/      per-tenant
-+ extra_dirs          ← runtime 注入(plugin / test)
+orion-agent/
+├── pyproject.toml              uv workspace root(virtual root,只列 members)
+├── package.json                npm workspaces root
+├── uv.lock / package-lock.json
+├── Makefile                    跨 sub-project 命令派發
+│
+├── packages/                   可重用程式庫(無 entrypoint)
+│   ├── orion-model/            純 LLM provider 抽象(Anthropic / OpenAI)
+│   │   └── src/orion_model/
+│   └── orion-sdk/              Agent runtime SDK,依賴 orion-model
+│       ├── alembic.ini
+│       └── src/orion_sdk/
+│           ├── core/  tools/  mcp/  sandbox/  prompt/  memory/
+│           ├── state/  storage/  compact/  recovery/  plan_mode/
+│           ├── multi_agent/  plugins/  skills/  hooks/  output_styles/
+│           ├── telemetry/  perf/  permissions/  services/  migrations/
+│           └── ...
+│
+├── apps/                       可獨立交付的應用
+│   ├── orion-cli/              Terminal CLI (Typer + stdin)
+│   │   └── src/orion_cli/      __main__.py + commands/ + input/
+│   ├── orion-chat/             "Chat 服務型產品"
+│   │   ├── api/                FastAPI + WebSocket + JWT (Python)
+│   │   │   └── src/orion_chat_api/
+│   │   ├── web/                Vite + React + TS (= 舊 frontend/)
+│   │   ├── shared/             OpenAPI / WS schema (自動生成)
+│   │   └── scripts/            dump_openapi.py / dump_ws_schema.py
+│   └── orion-cowork/           "PC 本地桌機產品" (Phase E)
+│       ├── electron/           main process (Node TS)
+│       ├── renderer/           React UI (獨立重寫,不複用 chat/web)
+│       └── sidecar/            Python:orion-sdk + stdio JSON-RPC
+│
+├── deploy/                     Docker / docker-compose
+└── docs/                       本目錄
 ```
 
-本文逐層列出**每個位置會有什麼**,以及對應的 module / env var。
+### 0.1 依賴規則
+
+```
+            orion-model  ←  orion-sdk  ←  orion-cli, orion-chat-api, orion-cowork-sidecar
+                                             ↑               ↑
+                                            (彼此不依賴)    orion-chat/web (HTTP/WS)
+```
+
+由 import-linter 強制(`orion-sdk` 不可 import `typer / fastapi / uvicorn`)。
+
+### 0.2 OTel 命名空間
+
+`orion_agent.turn` / `orion_agent.tool` / `orion_agent.tokens.*` 是 OpenTelemetry
+span / metric 名稱,**不是** Python import path,Phase 30 故意保留以維持既有
+dashboard / alert 相容性。
 
 ---
 
@@ -19,12 +73,12 @@ orion-agent 的 runtime 設定 / 資料散在 4 個地方,**後者覆蓋前者**
 跟著 `pip install` / `uv install` 一起。**不該人手改**(`git pull` 會被覆蓋,要客製改其他層)。
 
 ```
-api/src/orion_agent/skills/bundled/
+packages/orion-sdk/src/orion_sdk/skills/bundled/
 ├── README.md                         # 這份文件 + skills 來源說明
 └── <skill-name>/SKILL.md             # 10 個內建 skill(be-concise / simplify / loop ...)
 ```
 
-模組:`orion_agent.skills.loader._bundled_skills()`。透過 `importlib.resources` 讀,
+模組:`orion_sdk.skills.loader._bundled_skills()`。透過 `importlib.resources` 讀,
 wheel / zip 安裝也能拿。
 
 ---
