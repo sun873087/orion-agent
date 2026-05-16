@@ -1,10 +1,12 @@
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { User, Sparkles, Info, RefreshCw } from 'lucide-react'
+import { User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
 
+import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
-import { useAgentStore, type Message } from '../store/agent'
+import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
 import { ToolCallPanel } from './ToolCallPanel'
 
 /**
@@ -34,23 +36,11 @@ export function MessageBubble({
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <Avatar role={message.role} />
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
-        {/* 附件圖(只 user 訊息會帶)*/}
+        {/* 附件圖(只 user 訊息會帶) — 歷史 attachment 用 ref lazy load。 */}
         {!!message.attachments?.length && (
           <div className={`mb-2 flex flex-wrap gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
             {message.attachments.map((att, i) => (
-              <a
-                key={i}
-                href={att.previewUrl}
-                target="_blank"
-                rel="noreferrer"
-                title={att.filename}
-              >
-                <img
-                  src={att.previewUrl}
-                  alt={att.filename || 'attachment'}
-                  className="h-24 max-w-[160px] rounded-lg border border-bg-hover object-cover"
-                />
-              </a>
+              <LazyAttachment key={i} att={att} />
             ))}
           </div>
         )}
@@ -103,6 +93,65 @@ function RegenerateButton() {
       <RefreshCw size={12} />
       <span>{t('message.regenerate')}</span>
     </button>
+  )
+}
+
+/**
+ * 附件 lazy loader:
+ *   - 若 att.previewUrl 已有(剛 send 過)→ 直接 render <img>
+ *   - 否則用 att.ref 透過 conversation.attachment RPC 拿 data_url,
+ *     拿到前顯灰底 placeholder。
+ */
+function LazyAttachment({ att }: { att: AttachmentPreview }) {
+  const [url, setUrl] = useState<string | undefined>(att.previewUrl)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    if (url || !att.ref) return
+    let cancelled = false
+    const { sessionId, messageIndex, attachmentIndex } = att.ref
+    loadAttachment(sessionId, messageIndex, attachmentIndex)
+      .then((d) => {
+        if (!cancelled) setUrl(d)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [att.ref, url])
+
+  if (failed) {
+    return (
+      <div
+        className="flex h-24 w-24 items-center justify-center rounded-lg border border-error/40 bg-error/5 text-error"
+        title={att.filename}
+      >
+        <ImageIcon size={20} />
+      </div>
+    )
+  }
+
+  if (!url) {
+    return (
+      <div
+        className="flex h-24 w-24 animate-pulse items-center justify-center rounded-lg border border-bg-hover bg-bg-panel"
+        title={att.filename}
+      >
+        <ImageIcon size={20} className="text-fg-subtle" />
+      </div>
+    )
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title={att.filename}>
+      <img
+        src={url}
+        alt={att.filename || 'attachment'}
+        className="h-24 max-w-[160px] rounded-lg border border-bg-hover object-cover"
+      />
+    </a>
   )
 }
 

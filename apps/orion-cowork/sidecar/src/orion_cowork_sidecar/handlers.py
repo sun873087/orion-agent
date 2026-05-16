@@ -21,6 +21,7 @@ from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
 from orion_cowork_sidecar import storage
+from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.streaming import to_rpc_frame
 
@@ -31,10 +32,19 @@ load_dotenv()
 # CLI 用的)。給個簡短 system prompt,SDK 看到 self.system_prompt 非空就會
 # 跳過 fetch_system_prompt_parts,user message 不被 per-turn 注入污染。
 COWORK_SYSTEM_PROMPT = (
-    "You are a helpful AI assistant in a desktop chat app called Orion Cowork. "
-    "Answer the user clearly. When the user attaches images, describe or analyze "
-    "them as requested. Use tools only when they directly help the user's current "
-    "question — do not call tools unprompted."
+    "You are a helpful AI assistant inside Orion Cowork — a desktop chat app "
+    "running locally on the user's own machine. You have full permission to act "
+    "on the user's behalf for things they explicitly ask, including:\n"
+    "- Opening URLs in their default browser (use the `open_url` tool)\n"
+    "- Opening local files / folders with the OS default app (use `open_path`)\n"
+    "- Running shell commands via Bash when they ask you to do something on the system\n"
+    "- Reading / writing files in their workspace\n"
+    "- Searching the web, fetching pages, analysing attached images\n"
+    "\n"
+    "When the user attaches images, describe or analyze them as requested. "
+    "Do not refuse desktop actions on grounds of 'I can't control your computer' — "
+    "you can, that's what the tools above are for. Just do what they asked, then "
+    "report what you did."
 )
 
 
@@ -62,6 +72,26 @@ class Handlers:
         async with self._engine_lock:
             if self._engine is None:
                 self._engine = await storage.init_storage()
+                # 一次性把 legacy inline base64 ImageBlock 抽進 blob store。
+                # idempotent:已是 blob ref 的 row 略過,沒事可做就秒回。
+                import sys
+                try:
+                    stats = await storage.migrate_inline_attachments_to_blobs(
+                        self._engine,
+                    )
+                    if stats["migrated_rows"]:
+                        print(
+                            f"[storage] migration done: "
+                            f"scanned={stats['scanned']} "
+                            f"migrated_rows={stats['migrated_rows']} "
+                            f"blobs_written={stats['blobs_written']}",
+                            file=sys.stderr, flush=True,
+                        )
+                except Exception as e:  # noqa: BLE001
+                    print(
+                        f"[storage] migration failed: {e}",
+                        file=sys.stderr, flush=True,
+                    )
             return self._engine
 
     async def ensure_mcp(self) -> CoworkMcpManager:
@@ -91,9 +121,11 @@ class Handlers:
             "conversation.list": self.conversation_list,
             "conversation.delete": self.conversation_delete,
             "conversation.messages": self.conversation_messages,
+            "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
+            "maintenance.migrate_attachments": self.maintenance_migrate_attachments,
         }
 
     # ─── Methods ────────────────────────────────────────────────────────
@@ -135,7 +167,13 @@ class Handlers:
         model = params.get("model", "claude-sonnet-4-6")
         llm = get_provider(provider_name, model)
         mcp = await self.ensure_mcp()
-        tools = build_default_tool_set(asker=None) + mcp.tools
+        # Cowork-only desktop tools(不污染 SDK builtin,因為 chat-api server
+        # 不該被允許 open_url 操作 user 桌面)。
+        tools = (
+            build_default_tool_set(asker=None)
+            + [OpenUrlTool(), OpenPathTool()]
+            + mcp.tools
+        )
         conv = Conversation(
             provider=llm,
             tools=tools,
@@ -276,7 +314,13 @@ class Handlers:
 
         provider = get_provider(match.provider, match.model)
         mcp = await self.ensure_mcp()
-        tools = build_default_tool_set(asker=None) + mcp.tools
+        # Cowork-only desktop tools(不污染 SDK builtin,因為 chat-api server
+        # 不該被允許 open_url 操作 user 桌面)。
+        tools = (
+            build_default_tool_set(asker=None)
+            + [OpenUrlTool(), OpenPathTool()]
+            + mcp.tools
+        )
         from uuid import UUID as _UUID
         conv = Conversation(
             provider=provider,
@@ -445,12 +489,90 @@ class Handlers:
             return
 
         engine = await self.ensure_engine()
-        raw_messages = await storage.load_messages(engine, sid)
-        ui_messages = _to_ui_messages(raw_messages)
+        # UI lightweight 路徑:讀 raw rows,不 hydrate image blob bytes。
+        # ImageBlock 在 content_json 內已只有 ref(migration 完成後),
+        # 切歷史 SELECT 只撈 KB-level rows,瞬間。
+        raw_rows = await storage.load_raw_messages(engine, sid)
+        ui_messages = _to_ui_messages_from_raw(raw_rows)
 
         yield {
             "event": "conversation_messages",
             "data": {"session_id": sid, "messages": ui_messages},
+            "final": True,
+        }
+
+    async def maintenance_migrate_attachments(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """手動觸發 inline base64 → blob 抽離。
+
+        啟動時已 auto run 一次;這 RPC 給之後想再跑或從 UI 觸發 progress 顯示用。
+        """
+        engine = await self.ensure_engine()
+        stats = await storage.migrate_inline_attachments_to_blobs(engine)
+        yield {
+            "event": "migration_done",
+            "data": stats,
+            "final": True,
+        }
+
+    async def conversation_attachment(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Lazy 拿單張 attachment 的 data_url。
+
+        Renderer 在 message 上看到 attachment ref(message_index, attachment_index)
+        才呼這個拿 base64。整段 history 不再一次背所有 base64,大幅降低
+        切換歷史對話的 latency。
+        """
+        sid = params.get("session_id")
+        msg_idx_raw = params.get("message_index")
+        att_idx_raw = params.get("attachment_index")
+        if sid is None or msg_idx_raw is None or att_idx_raw is None:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS",
+                         "message": "session_id, message_index, attachment_index required"},
+                "final": True,
+            }
+            return
+        try:
+            UUID(sid)
+            msg_idx = int(msg_idx_raw)
+            att_idx = int(att_idx_raw)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "invalid params"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        # storage helper 內部:讀 raw row → 找對應 ImageBlock dict → 優先讀 blob,
+        # fallback inline base64(legacy migration 前的舊資料)。
+        try:
+            data_url = await storage.read_attachment_data_url(
+                engine, sid, msg_idx, att_idx,
+            )
+        except (IndexError, ValueError, FileNotFoundError) as e:
+            yield {
+                "event": "error",
+                "data": {"code": "NOT_FOUND", "message": str(e)},
+                "final": True,
+            }
+            return
+        # media_type 從 data URL 開頭擷
+        media_type = data_url.split(";", 1)[0].removeprefix("data:") or "image/png"
+        yield {
+            "event": "conversation_attachment",
+            "data": {
+                "session_id": sid,
+                "message_index": msg_idx,
+                "attachment_index": att_idx,
+                "media_type": media_type,
+                "data_url": data_url,
+            },
             "final": True,
         }
 
@@ -565,36 +687,87 @@ class Handlers:
                     pass
 
 
+def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, Any]]:
+    """Raw (role, content_json) → UI dict,不 hydrate image blob bytes。
+
+    走這條 path 切歷史對話完全不打 file system,所有 image 都送 ref 給 renderer
+    讓它自己 lazy load。
+    """
+    out: list[dict[str, Any]] = []
+    for msg_idx, (role, content_json) in enumerate(rows):
+        text = ""
+        attachments: list[dict[str, Any]] = []
+        if isinstance(content_json, str):
+            text = content_json
+        elif isinstance(content_json, list):
+            att_idx = 0
+            for b in content_json:
+                if not isinstance(b, dict):
+                    continue
+                btype = b.get("type")
+                if btype == "text":
+                    text += b.get("text", "")
+                elif btype == "image":
+                    attachments.append({
+                        "media_type": b.get("media_type") or "image/png",
+                        "ref": {
+                            "message_index": msg_idx,
+                            "attachment_index": att_idx,
+                        },
+                    })
+                    att_idx += 1
+                # tool_use / tool_result / thinking / tombstone 不出現在 UI
+        if not text and not attachments:
+            continue
+        out.append({
+            "role": role,
+            "text": text,
+            "attachments": attachments,
+            "message_index": msg_idx,
+        })
+    return out
+
+
 def _to_ui_messages(messages: "list[Any]") -> list[dict[str, Any]]:
     """SDK NormalizedMessage → renderer UI Message dict。
 
-    僅 user / assistant text + image attachments;tool_use / tool_result blocks
-    略過(歷史對話的工具細節 UI 暫不重 render — Phase 31-D 簡化)。
+    Phase 31-D 慢載入修:attachment 不 inline base64,只送 ref
+    (message_index, attachment_index),renderer 用 `conversation.attachment`
+    lazy fetch。整個 history 不再背 5MB+ × N 張的 base64。
+
+    Per message: { role, text, attachments?: [{ media_type, ref: {message_index, attachment_index} }] }
     """
     from orion_model.types import ImageBlock, TextBlock
 
     out: list[dict[str, Any]] = []
-    for m in messages:
+    for msg_idx, m in enumerate(messages):
         role = m.role
         text = ""
-        attachments: list[dict[str, str]] = []
+        attachments: list[dict[str, Any]] = []
         content = m.content
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
+            att_idx = 0
             for block in content:
                 if isinstance(block, TextBlock):
                     text += block.text
                 elif isinstance(block, ImageBlock):
                     attachments.append({
                         "media_type": block.media_type,
-                        "data_url": f"data:{block.media_type};base64,{block.data}",
+                        "ref": {
+                            "message_index": msg_idx,
+                            "attachment_index": att_idx,
+                        },
                     })
+                    att_idx += 1
         if not text and not attachments:
             continue  # 跳過純 tool_use / tool_result 訊息
         out.append({
             "role": role,
             "text": text,
             "attachments": attachments,
+            # message_index 給 renderer 之後 lazy fetch 用 (跟 ref.message_index 一致)
+            "message_index": msg_idx,
         })
     return out

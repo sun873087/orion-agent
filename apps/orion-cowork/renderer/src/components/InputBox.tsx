@@ -11,7 +11,12 @@ type Props = {
 }
 
 const SUPPORTED_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-const MAX_BYTES = 20 * 1024 * 1024 // 20 MB / file(provider 多半 cap)
+const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
+// Provider 限制(最嚴的是 Anthropic 5 MB base64);壓到 base64 < 4 MB 留 safety margin
+const TARGET_BASE64_BYTES = 4 * 1024 * 1024
+const COMPRESS_TRIGGER_BYTES = 1 * 1024 * 1024  // raw 超過 1MB 才走 canvas 壓縮
+const COMPRESS_MAX_EDGE = 2048
+const COMPRESS_QUALITY = 0.85
 
 /** 多行輸入 + paperclip 上傳 + send / abort 切換。Enter 送出,Shift+Enter 換行。 */
 export function InputBox({ onSend, onAbort }: Props) {
@@ -62,11 +67,16 @@ export function InputBox({ onSend, onAbort }: Props) {
         continue
       }
       try {
-        const base64 = await fileToBase64(f)
+        // 大圖(> 1MB raw)自動 canvas resize + JPEG re-encode,避免 Anthropic 5 MB
+        // base64 上限把 LLM call 打回。人眼幾乎無差(2048px max edge / quality 0.85)。
+        const { base64, mediaType } =
+          f.size > COMPRESS_TRIGGER_BYTES
+            ? await compressImage(f)
+            : { base64: await fileToBase64(f), mediaType: f.type }
         added.push({
-          media_type: f.type,
+          media_type: mediaType,
           data: base64,
-          preview_url: `data:${f.type};base64,${base64}`,
+          preview_url: `data:${mediaType};base64,${base64}`,
           filename: f.name,
         })
       } catch {
@@ -273,5 +283,54 @@ function fileToBase64(file: File): Promise<string> {
     }
     reader.onerror = () => reject(reader.error ?? new Error('read error'))
     reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Canvas resize + JPEG re-encode 把大圖壓到 base64 < 4 MB(Anthropic 5 MB 限制
+ * 留 margin)。先試 1× edge,base64 仍超就遞減 quality / scale 多試幾輪。
+ *
+ * Trade-off:統一轉 JPEG 會把 PNG 的透明變黑,但 vision LLM 用例幾乎都是
+ * 照片 / 截圖,透明資訊不重要。GIF 動畫被 flatten,可接受。
+ */
+async function compressImage(file: File): Promise<{ base64: string; mediaType: string }> {
+  const img = await loadImageFromFile(file)
+  const longest = Math.max(img.naturalWidth, img.naturalHeight)
+  let scale = longest > COMPRESS_MAX_EDGE ? COMPRESS_MAX_EDGE / longest : 1
+  let quality = COMPRESS_QUALITY
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.naturalWidth * scale)
+    canvas.height = Math.round(img.naturalHeight * scale)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 2d context unavailable')
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const dataUrl = canvas.toDataURL('image/jpeg', quality)
+    const base64 = dataUrl.split(',')[1] ?? ''
+    if (base64.length <= TARGET_BASE64_BYTES) {
+      return { base64, mediaType: 'image/jpeg' }
+    }
+    // 還太大:先降 quality,再降 scale,最後縮到 1280
+    if (quality > 0.6) quality -= 0.1
+    else if (scale > 0.5) scale *= 0.75
+    else scale = 1280 / longest
+  }
+  throw new Error('cannot compress image under provider limit')
+}
+
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('image decode failed'))
+    }
+    img.src = url
   })
 }

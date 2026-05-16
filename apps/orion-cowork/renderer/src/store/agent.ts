@@ -19,11 +19,21 @@ export type ToolCallState = {
   progress: string[]
 }
 
+/** 歷史 hydrate 出來的 lazy attachment:沒有 previewUrl,要靠 ref lazy 拿。 */
+export type AttachmentRef = {
+  sessionId: string
+  messageIndex: number
+  attachmentIndex: number
+}
+
 export type AttachmentPreview = {
-  /** data URL — 給 <img src> 直接用,避免 base64 重轉。 */
-  previewUrl: string
+  /** data URL — user 剛 upload 的圖立即有;從歷史 hydrate 的圖一開始為 undefined,
+   * MessageBubble 內 LazyImage 拿 ref 去 sidecar lazy fetch 後填入。 */
+  previewUrl?: string
   filename: string
   media_type: string
+  /** 歷史 attachment 才有;新上傳的 attachment 無 ref(已立即有 previewUrl)。 */
+  ref?: AttachmentRef
 }
 
 export type Message = {

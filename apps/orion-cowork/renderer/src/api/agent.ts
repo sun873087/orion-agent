@@ -161,10 +161,17 @@ export async function reconnectMcp(name: string): Promise<boolean> {
   return ok
 }
 
+export type LoadedAttachmentRef = {
+  message_index: number
+  attachment_index: number
+}
+
 export type LoadedMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool'
   text: string
-  attachments: Array<{ media_type: string; data_url: string }>
+  message_index: number
+  /** Lazy:無 data_url。要 base64 走 loadAttachment(sessionId, ref)。 */
+  attachments: Array<{ media_type: string; ref: LoadedAttachmentRef }>
 }
 
 export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> {
@@ -180,6 +187,31 @@ export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> 
     },
   )
   return result
+}
+
+/** Lazy 拿單張 attachment 的 data_url。 */
+export async function loadAttachment(
+  sessionId: string,
+  messageIndex: number,
+  attachmentIndex: number,
+): Promise<string> {
+  let dataUrl = ''
+  await window.agent.call(
+    'conversation.attachment',
+    {
+      session_id: sessionId,
+      message_index: messageIndex,
+      attachment_index: attachmentIndex,
+    },
+    (frame) => {
+      if (frame.event === 'conversation_attachment' && frame.data) {
+        const d = frame.data as { data_url?: string }
+        if (typeof d.data_url === 'string') dataUrl = d.data_url
+      }
+    },
+  )
+  if (!dataUrl) throw new Error('conversation.attachment returned no data_url')
+  return dataUrl
 }
 
 export async function regenerateLast(

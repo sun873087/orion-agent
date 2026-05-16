@@ -63,7 +63,7 @@ export function useSwitchConversation() {
     store.switchToSession(sid)
     try {
       const loaded = await loadMessages(sid)
-      _hydrateMessages(loaded)
+      _hydrateMessages(sid, loaded)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(`failed to load history: ${msg}`)
@@ -71,8 +71,9 @@ export function useSwitchConversation() {
   }, [])
 }
 
-function _hydrateMessages(loaded: LoadedMessage[]) {
-  // Reset 後重 build store.messages
+function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
+  // Reset 後重 build store.messages — attachment 只帶 ref,base64 由
+  // MessageBubble.LazyImage 之後 useEffect 拿,不擋切換 latency。
   let counter = 0
   const messages = loaded.map((m) => ({
     id: `hist-${Date.now()}-${counter++}`,
@@ -80,9 +81,14 @@ function _hydrateMessages(loaded: LoadedMessage[]) {
     text: m.text,
     attachments: m.attachments.length
       ? m.attachments.map((a, i) => ({
-          previewUrl: a.data_url,
+          previewUrl: undefined,
           filename: `attachment-${i + 1}`,
           media_type: a.media_type,
+          ref: {
+            sessionId,
+            messageIndex: a.ref.message_index,
+            attachmentIndex: a.ref.attachment_index,
+          },
         }))
       : undefined,
     createdAt: Date.now(),

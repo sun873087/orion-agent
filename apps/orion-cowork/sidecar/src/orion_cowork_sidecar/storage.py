@@ -19,6 +19,7 @@ Public API:
 
 from __future__ import annotations
 
+import base64
 import os
 import time
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ from orion_sdk.storage.db.models import Message as MessageRow
 from orion_sdk.storage.db.models import Session as SessionRow
 from orion_sdk.storage.db.models import User as UserRow
 from orion_sdk.storage.resume import _message_from_dict as _msg_from_dict
+
+from orion_cowork_sidecar.blob_store import BlobStore
 
 LOCAL_USER_ID = "cowork-local"
 LOCAL_USERNAME = "local"
@@ -55,6 +58,75 @@ def _db_url() -> str:
     d = data_dir()
     d.mkdir(parents=True, exist_ok=True)
     return f"sqlite+aiosqlite:///{d / 'sessions.db'}"
+
+
+def get_blob_store() -> BlobStore:
+    """Singleton blob store(同 data_dir 下的 blobs/)。"""
+    return BlobStore(data_dir() / "blobs")
+
+
+def _persist_image_blocks(content_value: Any, blob: BlobStore) -> Any:
+    """寫前處理:list 內 image dict 的 inline base64 data 抽 blob,改成 ref。
+
+    Input:  list[dict],dict 可能含 {type: "image", media_type, data: base64-str}
+    Output: 同 list,但 image dict 換成 {type: "image", media_type, blob_id}
+    其他 block 原樣保留。已經是 ref 形式(無 data 有 blob_id)的也原樣。
+    """
+    if not isinstance(content_value, list):
+        return content_value
+    out = []
+    for b in content_value:
+        if (
+            isinstance(b, dict)
+            and b.get("type") == "image"
+            and isinstance(b.get("data"), str)
+            and b["data"]
+        ):
+            try:
+                raw = base64.b64decode(b["data"])
+                blob_id = blob.put(raw)
+                out.append({
+                    "type": "image",
+                    "media_type": b.get("media_type") or "image/png",
+                    "blob_id": blob_id,
+                })
+                continue
+            except Exception:  # noqa: BLE001
+                # base64 decode 壞了,保留原樣不要丟資料
+                pass
+        out.append(b)
+    return out
+
+
+def _hydrate_image_blocks(content_json: Any, blob: BlobStore) -> Any:
+    """讀後處理:image ref(blob_id)→ 重建 inline data(base64)供 LLM 使用。
+
+    Legacy inline base64 直接原樣回(向後相容,既有 session 不會壞)。
+    blob 檔不見的話,丟掉那個 image block,其他不動。
+    """
+    if not isinstance(content_json, list):
+        return content_json
+    out = []
+    for b in content_json:
+        if (
+            isinstance(b, dict)
+            and b.get("type") == "image"
+            and "blob_id" in b
+            and "data" not in b
+        ):
+            try:
+                raw = blob.get(b["blob_id"])
+                out.append({
+                    "type": "image",
+                    "media_type": b.get("media_type") or "image/png",
+                    "data": base64.b64encode(raw).decode("ascii"),
+                })
+                continue
+            except FileNotFoundError:
+                # 孤兒 ref,跳過(避免炸 LLM send)
+                continue
+        out.append(b)
+    return out
 
 
 async def init_storage() -> AsyncEngine:
@@ -169,9 +241,14 @@ async def append_messages(
     session_id: str,
     messages: list[NormalizedMessage],
 ) -> None:
-    """Append 新訊息(caller 負責不重複)。"""
+    """Append 新訊息(caller 負責不重複)。
+
+    寫前掃 ImageBlock 的 base64 data → 抽 file blob,row 內只留 blob_id ref,
+    讓 DB row size 從 MB 降回 bytes。
+    """
     if not messages:
         return
+    blob = get_blob_store()
     async with db_session(engine) as s:
         for msg in messages:
             content_value: Any
@@ -180,6 +257,7 @@ async def append_messages(
                 content_value = content
             else:
                 content_value = [b.model_dump(mode="json") for b in content]
+                content_value = _persist_image_blocks(content_value, blob)
             s.add(MessageRow(
                 session_id=session_id,
                 role=msg.role,
@@ -192,6 +270,11 @@ async def load_messages(
     engine: AsyncEngine,
     session_id: str,
 ) -> list[NormalizedMessage]:
+    """完整 hydrate(含 ImageBlock data)— 給 LLM resume / regenerate 用。
+
+    UI path 用 load_raw_messages 比較快(不打 file system)。
+    """
+    blob = get_blob_store()
     async with db_session(engine) as s:
         stmt = (
             select(MessageRow.role, MessageRow.content_json)
@@ -201,7 +284,120 @@ async def load_messages(
         rows = list(await s.execute(stmt))
     out: list[NormalizedMessage] = []
     for role, content_json in rows:
-        msg = _msg_from_dict({"role": role, "content": content_json})
+        hydrated = _hydrate_image_blocks(content_json, blob)
+        msg = _msg_from_dict({"role": role, "content": hydrated})
         if msg is not None:
             out.append(msg)
     return out
+
+
+async def load_raw_messages(
+    engine: AsyncEngine,
+    session_id: str,
+) -> list[tuple[str, Any]]:
+    """UI lightweight 載入:不 hydrate blob,只回 (role, content_json) 原樣。
+
+    切歷史時不會把 N × MB 的圖讀進記憶體,UI 拿到 ref dict 再 lazy 撈單張。
+    """
+    async with db_session(engine) as s:
+        stmt = (
+            select(MessageRow.role, MessageRow.content_json)
+            .where(MessageRow.session_id == session_id)
+            .order_by(MessageRow.created_at, MessageRow.id)
+        )
+        rows = list(await s.execute(stmt))
+    return [(role, content_json) for role, content_json in rows]
+
+
+async def read_attachment_data_url(
+    engine: AsyncEngine,
+    session_id: str,
+    message_index: int,
+    attachment_index: int,
+) -> str:
+    """單張 attachment lazy 載入,回 data URL。
+
+    優先讀 blob ref;legacy inline base64 也支援(向後相容)。
+    """
+    rows = await load_raw_messages(engine, session_id)
+    if message_index < 0 or message_index >= len(rows):
+        raise IndexError(f"message_index {message_index} out of range")
+    _, content_json = rows[message_index]
+    if not isinstance(content_json, list):
+        raise ValueError("message has no attachments")
+    images = [
+        b for b in content_json
+        if isinstance(b, dict) and b.get("type") == "image"
+    ]
+    if attachment_index < 0 or attachment_index >= len(images):
+        raise IndexError(f"attachment_index {attachment_index} out of range")
+    img = images[attachment_index]
+    media_type = img.get("media_type") or "image/png"
+    if "blob_id" in img and "data" not in img:
+        blob = get_blob_store()
+        raw = blob.get(img["blob_id"])
+        b64 = base64.b64encode(raw).decode("ascii")
+    elif isinstance(img.get("data"), str):
+        b64 = img["data"]
+    else:
+        raise ValueError("image block has neither blob_id nor data")
+    return f"data:{media_type};base64,{b64}"
+
+
+async def migrate_inline_attachments_to_blobs(engine: AsyncEngine) -> dict[str, int]:
+    """掃所有 messages row,把 inline base64 ImageBlock 抽進 blob store,
+    改寫 row 為 blob ref。
+
+    Idempotent:已是 blob ref 的 row 略過。回統計 dict {"scanned", "migrated", "blobs_written"}。
+    """
+    blob = get_blob_store()
+    scanned = 0
+    migrated_rows = 0
+    blobs_written = 0
+    async with db_session(engine) as s:
+        stmt = select(MessageRow)
+        result = await s.execute(stmt)
+        for row in result.scalars():
+            scanned += 1
+            cj = row.content_json
+            if not isinstance(cj, list):
+                continue
+            changed = False
+            new_list = []
+            for b in cj:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "image"
+                    and isinstance(b.get("data"), str)
+                    and b["data"]
+                    and "blob_id" not in b
+                ):
+                    try:
+                        raw = base64.b64decode(b["data"])
+                        blob_id = blob.put(raw)
+                        new_list.append({
+                            "type": "image",
+                            "media_type": b.get("media_type") or "image/png",
+                            "blob_id": blob_id,
+                        })
+                        changed = True
+                        blobs_written += 1
+                        continue
+                    except Exception:  # noqa: BLE001
+                        # 壞 base64,保留原樣
+                        pass
+                new_list.append(b)
+            if changed:
+                row.content_json = new_list
+                migrated_rows += 1
+        if migrated_rows:
+            await s.commit()
+    # SQLite TEXT row 縮小,但檔案 page 不會自動釋放。下面 VACUUM 收回磁碟。
+    if migrated_rows:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql("VACUUM")
+    return {
+        "scanned": scanned,
+        "migrated_rows": migrated_rows,
+        "blobs_written": blobs_written,
+    }
