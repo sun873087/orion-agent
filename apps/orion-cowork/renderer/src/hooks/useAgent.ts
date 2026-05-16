@@ -13,8 +13,11 @@ import {
   createConversation,
   deleteConversation as rpcDelete,
   listConversations,
+  loadMessages,
+  regenerateLast,
   sendPrompt as rpcSendPrompt,
   type Attachment,
+  type LoadedMessage,
   type SidecarEvent,
 } from '../api/agent'
 import { useAgentStore } from '../store/agent'
@@ -29,49 +32,95 @@ async function refreshSessions() {
   }
 }
 
+/**
+ * 啟動時 refresh sidebar 的 sessions 列表(從 DB)。不再 auto-create — 等
+ * user 真的送 prompt 才會建新 session(lazy create,Phase 31-D 後修)。
+ */
 export function useInitConversation() {
-  const sessionId = useAgentStore((s) => s.sessionId)
-  const setSessionId = useAgentStore((s) => s.setSessionId)
-  const setInitError = useAgentStore((s) => s.setInitError)
-  const provider = useSettingsStore((s) => s.selectedProvider)
-  const model = useSettingsStore((s) => s.selectedModel)
-
   useEffect(() => {
-    if (sessionId) return
-    let cancelled = false
-    createConversation(provider, model)
-      .then((sid) => {
-        if (cancelled) return
-        setSessionId(sid)
-        refreshSessions()
-      })
-      .catch((e) => {
-        if (!cancelled) setInitError(`failed to init conversation: ${String(e)}`)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [sessionId, setSessionId, setInitError, provider, model])
+    refreshSessions()
+  }, [])
 }
 
+/**
+ * "New chat" 按鈕。只清空 local state,不立即建 DB session。首次 send 時
+ * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
+ */
 export function useNewConversation() {
-  const provider = useSettingsStore((s) => s.selectedProvider)
-  const model = useSettingsStore((s) => s.selectedModel)
-  return useCallback(async () => {
-    try {
-      const sid = await createConversation(provider, model)
-      useAgentStore.getState().switchToSession(sid)
-      await refreshSessions()
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
-    }
-  }, [provider, model])
+  return useCallback(() => {
+    useAgentStore.setState({
+      sessionId: null,
+      messages: [],
+      error: null,
+      lastLoopStatus: null,
+    })
+  }, [])
 }
 
 export function useSwitchConversation() {
-  return useCallback((sid: string) => {
-    useAgentStore.getState().switchToSession(sid)
+  return useCallback(async (sid: string) => {
+    const store = useAgentStore.getState()
+    store.switchToSession(sid)
+    try {
+      const loaded = await loadMessages(sid)
+      _hydrateMessages(loaded)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(`failed to load history: ${msg}`)
+    }
+  }, [])
+}
+
+function _hydrateMessages(loaded: LoadedMessage[]) {
+  // Reset 後重 build store.messages
+  let counter = 0
+  const messages = loaded.map((m) => ({
+    id: `hist-${Date.now()}-${counter++}`,
+    role: m.role,
+    text: m.text,
+    attachments: m.attachments.length
+      ? m.attachments.map((a, i) => ({
+          previewUrl: a.data_url,
+          filename: `attachment-${i + 1}`,
+          media_type: a.media_type,
+        }))
+      : undefined,
+    createdAt: Date.now(),
+  }))
+  useAgentStore.setState({ messages })
+}
+
+export function useRegenerate() {
+  return useCallback(async () => {
+    const store = useAgentStore.getState()
+    const sid = store.sessionId
+    if (!sid || store.busy) return
+
+    // Drop last assistant message (UI) — sidecar 同時 truncate DB + state
+    const msgs = store.messages
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx < 0) return
+    useAgentStore.setState({ messages: msgs.slice(0, lastUserIdx + 1) })
+
+    const assistantId = store.beginAssistantMessage()
+    store.setError(null)
+    store.setBusy(true)
+    try {
+      await regenerateLast(sid, (ev: SidecarEvent) => applyEvent(assistantId, ev))
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(msg)
+    } finally {
+      useAgentStore.getState().endAssistantMessage(assistantId)
+      useAgentStore.getState().setBusy(false)
+      refreshSessions()
+    }
   }, [])
 }
 
@@ -94,10 +143,22 @@ export function useDeleteConversation() {
 }
 
 export function useSendPrompt() {
+  const provider = useSettingsStore((s) => s.selectedProvider)
+  const model = useSettingsStore((s) => s.selectedModel)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
-    const sid = store.sessionId
-    if (!sid) return
+    let sid = store.sessionId
+    if (!sid) {
+      // Lazy create — 首次 send 才建 DB session,讓空 New chat 不污染 sidebar
+      try {
+        sid = await createConversation(provider, model)
+        useAgentStore.getState().setSessionId(sid)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        useAgentStore.getState().setError(msg)
+        return
+      }
+    }
 
     store.appendUserMessage(
       text,

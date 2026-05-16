@@ -80,7 +80,9 @@ class RpcServer:
         await self._write_frame({"event": "sidecar.ready"})
 
         loop = asyncio.get_running_loop()
-        reader = asyncio.StreamReader()
+        # 預設 64 KB / line 對含 base64 image attachment 的 frame 太小。
+        # 100 MB 上限對應 ~75 MB raw image,涵蓋多數 provider 限制。
+        reader = asyncio.StreamReader(limit=100 * 1024 * 1024)
         protocol = asyncio.StreamReaderProtocol(reader)
         await loop.connect_read_pipe(lambda: protocol, sys.stdin)
 

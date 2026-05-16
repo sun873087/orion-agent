@@ -79,6 +79,8 @@ class Handlers:
             "conversation.abort": self.conversation_abort,
             "conversation.list": self.conversation_list,
             "conversation.delete": self.conversation_delete,
+            "conversation.messages": self.conversation_messages,
+            "conversation.regenerate": self.conversation_regenerate,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
         }
@@ -377,3 +379,186 @@ class Handlers:
             "data": {"name": name, "ok": ok},
             "final": True,
         }
+
+    # ─── Conversation history methods ─────────────────────────────────
+
+    async def conversation_messages(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """從 DB 載指定 session 的 messages,轉成 renderer-friendly UI format。
+
+        Output format(per message):
+            {role, text, attachments?: [{media_type, data_url}], created_at}
+        """
+        sid = params.get("session_id")
+        if sid is None:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        try:
+            UUID(sid)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": f"invalid UUID: {sid!r}"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        raw_messages = await storage.load_messages(engine, sid)
+        ui_messages = _to_ui_messages(raw_messages)
+
+        yield {
+            "event": "conversation_messages",
+            "data": {"session_id": sid, "messages": ui_messages},
+            "final": True,
+        }
+
+    async def conversation_regenerate(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """重新生成最後一個 assistant turn。
+
+        步驟:
+          1. truncate state_messages 退回到「最後一個 user message 之前」
+             (保留該 user message,把後面的 assistant + tool result 都丟)
+          2. 持久層也同步 — 用 transaction delete 對應 message rows
+          3. 重新跑 query_loop (Conversation.send 不會 append user msg 因為
+             我們手動把它 keep 在 state_messages 內;這邊改 call provider 直接)
+
+        實作簡化:用 SDK Conversation 跑一個無實質 user_text 的 send。但
+        send 預設 append user msg。所以這裡 manual 重 query — 把 state
+        cut 後直接 call Conversation 內部 query_loop。
+
+        Phase 31-D 簡化版:從最後一個 user msg 的 text 重 send。把那個 user
+        msg + 之後全砍,當作沒送過,從原 text 重新呼 send。
+        """
+        sid = params.get("session_id")
+        if sid is None:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": "session_id required"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        conv = self._conversations.get(sid)
+        if conv is None:
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        # 找最後一個 user message
+        msgs = conv.state_messages
+        last_user_idx = -1
+        for i in range(len(msgs) - 1, -1, -1):
+            if msgs[i].role == "user":
+                last_user_idx = i
+                break
+        if last_user_idx < 0:
+            yield {
+                "event": "error",
+                "data": {"code": "NO_USER_MESSAGE", "message": "no user message to regenerate from"},
+                "final": True,
+            }
+            return
+
+        # 抓回 user message 的 text + images
+        last_user_msg = msgs[last_user_idx]
+        regen_text = ""
+        regen_images: list[Any] = []
+        content = last_user_msg.content
+        if isinstance(content, str):
+            regen_text = content
+        else:
+            from orion_model.types import ImageBlock, TextBlock
+            for block in content:
+                if isinstance(block, TextBlock):
+                    regen_text += block.text
+                elif isinstance(block, ImageBlock):
+                    regen_images.append(block)
+
+        # Truncate in-memory state(回到 user msg 之前)
+        conv.state_messages = msgs[:last_user_idx]
+
+        # 持久層也 truncate(從 last_user 以後 delete)
+        from sqlalchemy import delete, select
+
+        from orion_sdk.storage.db.engine import db_session
+        from orion_sdk.storage.db.models import Message as MessageRow
+
+        async with db_session(engine) as s:
+            rows = list((await s.execute(
+                select(MessageRow.id, MessageRow.created_at)
+                .where(MessageRow.session_id == sid)
+                .order_by(MessageRow.created_at, MessageRow.id)
+            )).all())
+            # 砍從 last_user_idx 開始(包括)的所有 rows
+            to_remove = rows[last_user_idx:]
+            for row_id, _ in to_remove:
+                await s.execute(delete(MessageRow).where(MessageRow.id == row_id))
+            await s.commit()
+
+        # Re-send the user prompt(會再 append + persist 新 messages)
+        before_count = len(conv.state_messages)
+        ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
+        self._aborts[sid] = ctx
+        try:
+            async for ev in conv.send(regen_text, ctx=ctx, images=regen_images or None):
+                frame = to_rpc_frame(ev)
+                if frame is not None:
+                    yield frame
+        finally:
+            self._aborts.pop(sid, None)
+            new_msgs = conv.state_messages[before_count:]
+            if new_msgs:
+                try:
+                    await storage.append_messages(engine, sid, new_msgs)
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def _to_ui_messages(messages: "list[Any]") -> list[dict[str, Any]]:
+    """SDK NormalizedMessage → renderer UI Message dict。
+
+    僅 user / assistant text + image attachments;tool_use / tool_result blocks
+    略過(歷史對話的工具細節 UI 暫不重 render — Phase 31-D 簡化)。
+    """
+    from orion_model.types import ImageBlock, TextBlock
+
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        role = m.role
+        text = ""
+        attachments: list[dict[str, str]] = []
+        content = m.content
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, TextBlock):
+                    text += block.text
+                elif isinstance(block, ImageBlock):
+                    attachments.append({
+                        "media_type": block.media_type,
+                        "data_url": f"data:{block.media_type};base64,{block.data}",
+                    })
+        if not text and not attachments:
+            continue  # 跳過純 tool_use / tool_result 訊息
+        out.append({
+            "role": role,
+            "text": text,
+            "attachments": attachments,
+        })
+    return out

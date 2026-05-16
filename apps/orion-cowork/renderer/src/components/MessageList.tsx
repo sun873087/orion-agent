@@ -49,8 +49,15 @@ export function MessageList() {
       className="scrollbar-thin flex-1 overflow-y-auto px-6 py-4"
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+        {messages.map((m, i) => (
+          <MessageBubble
+            key={m.id}
+            message={m}
+            isLastAssistant={
+              m.role === 'assistant' &&
+              !messages.slice(i + 1).some((later) => later.role === 'assistant')
+            }
+          />
         ))}
       </div>
     </div>

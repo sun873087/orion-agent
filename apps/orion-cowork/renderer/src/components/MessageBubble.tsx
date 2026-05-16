@@ -1,15 +1,22 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { User, Sparkles, Info } from 'lucide-react'
+import { User, Sparkles, Info, RefreshCw } from 'lucide-react'
 
-import type { Message } from '../store/agent'
+import { useRegenerate } from '../hooks/useAgent'
+import { useAgentStore, type Message } from '../store/agent'
 import { ToolCallPanel } from './ToolCallPanel'
 
 /**
  * 訊息泡泡。user 右側、assistant / system 左側。
- * Assistant 帶 streaming cursor + react-markdown 渲染。
+ * 最後一個 assistant message 顯示 regenerate 按鈕。
  */
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({
+  message,
+  isLastAssistant,
+}: {
+  message: Message
+  isLastAssistant?: boolean
+}) {
   if (message.role === 'system' || message.role === 'tool') {
     return (
       <div className="my-2 flex items-center gap-2 text-xs text-fg-muted">
@@ -73,8 +80,27 @@ export function MessageBubble({ message }: { message: Message }) {
             ))}
           </div>
         )}
+        {/* Regenerate(只最後一個 assistant message 顯示)*/}
+        {!isUser && isLastAssistant && !message.streaming && <RegenerateButton />}
       </div>
     </div>
+  )
+}
+
+function RegenerateButton() {
+  const regen = useRegenerate()
+  const busy = useAgentStore((s) => s.busy)
+  return (
+    <button
+      type="button"
+      onClick={regen}
+      disabled={busy}
+      title="Regenerate response"
+      className="mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <RefreshCw size={12} />
+      <span>Regenerate</span>
+    </button>
   )
 }
 

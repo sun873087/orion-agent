@@ -160,3 +160,35 @@ export async function reconnectMcp(name: string): Promise<boolean> {
   })
   return ok
 }
+
+export type LoadedMessage = {
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  text: string
+  attachments: Array<{ media_type: string; data_url: string }>
+}
+
+export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> {
+  let result: LoadedMessage[] = []
+  await window.agent.call(
+    'conversation.messages',
+    { session_id: sessionId },
+    (frame) => {
+      if (frame.event === 'conversation_messages' && frame.data) {
+        const data = frame.data as { messages: LoadedMessage[] }
+        result = data.messages ?? []
+      }
+    },
+  )
+  return result
+}
+
+export async function regenerateLast(
+  sessionId: string,
+  onEvent: (ev: SidecarEvent) => void,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.regenerate',
+    { session_id: sessionId },
+    (frame) => onEvent(frame as unknown as SidecarEvent),
+  )
+}
