@@ -92,6 +92,21 @@ class Handlers:
                         f"[storage] migration failed: {e}",
                         file=sys.stderr, flush=True,
                     )
+                # GC 一次孤兒 blob — 可能來自之前 delete_session 漏 unlink
+                # (這次修以前的 build)或 migration 異常產生的殘留。
+                try:
+                    cleanup = await storage.cleanup_orphan_blobs(self._engine)
+                    if cleanup["deleted"]:
+                        print(
+                            f"[storage] cleaned {cleanup['deleted']} orphan blobs "
+                            f"({cleanup['bytes_freed'] / 1024:.0f} KB)",
+                            file=sys.stderr, flush=True,
+                        )
+                except Exception as e:  # noqa: BLE001
+                    print(
+                        f"[storage] cleanup failed: {e}",
+                        file=sys.stderr, flush=True,
+                    )
             return self._engine
 
     async def ensure_mcp(self) -> CoworkMcpManager:
@@ -127,6 +142,7 @@ class Handlers:
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "maintenance.migrate_attachments": self.maintenance_migrate_attachments,
+            "maintenance.cleanup_blobs": self.maintenance_cleanup_blobs,
         }
 
     # ─── Methods ────────────────────────────────────────────────────────
@@ -551,6 +567,18 @@ class Handlers:
         stats = await storage.migrate_inline_attachments_to_blobs(engine)
         yield {
             "event": "migration_done",
+            "data": stats,
+            "final": True,
+        }
+
+    async def maintenance_cleanup_blobs(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """掃孤兒 blob 並 unlink — 啟動時自動跑,這 RPC 給之後手動觸發用。"""
+        engine = await self.ensure_engine()
+        stats = await storage.cleanup_orphan_blobs(engine)
+        yield {
+            "event": "cleanup_done",
             "data": stats,
             "final": True,
         }

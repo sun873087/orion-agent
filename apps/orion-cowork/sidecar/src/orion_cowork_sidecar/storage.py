@@ -224,16 +224,81 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
 
 
 async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
+    """Cascade delete:DB rows + 該 session 的 blob 檔。
+
+    先撈 content_json 內所有 blob_id 收集,DB rows commit 後再 unlink blob 檔
+    (中途 unlink fail 不影響 DB consistency,下次 cleanup_orphan_blobs 會撿)。
+    """
     async with db_session(engine) as s:
         row = await s.get(SessionRow, session_id)
         if row is None:
             return False
+        # 先撈 messages 內所有 blob_id ref
+        msg_rows = await s.execute(
+            select(MessageRow.content_json).where(MessageRow.session_id == session_id)
+        )
+        blob_ids = _collect_blob_ids([cj for (cj,) in msg_rows])
         # Explicit cascade(避免 SQLite FK 設定差異 — CASCADE 也設了 ondelete)
         await s.execute(delete(MessageRow).where(MessageRow.session_id == session_id))
         await s.execute(delete(MetaRow).where(MetaRow.session_id == session_id))
         await s.delete(row)
         await s.commit()
-        return True
+    # DB 已 commit;unlink blob 檔。fail 不影響 DB,下次 cleanup 會撿。
+    blob = get_blob_store()
+    for bid in blob_ids:
+        try:
+            blob.delete(bid)
+        except Exception:  # noqa: BLE001
+            pass
+    return True
+
+
+def _collect_blob_ids(content_jsons: list[Any]) -> list[str]:
+    """從多個 content_json list 內抽出所有 image block 的 blob_id。"""
+    out: list[str] = []
+    for cj in content_jsons:
+        if not isinstance(cj, list):
+            continue
+        for b in cj:
+            if (
+                isinstance(b, dict)
+                and b.get("type") == "image"
+                and isinstance(b.get("blob_id"), str)
+            ):
+                out.append(b["blob_id"])
+    return out
+
+
+async def cleanup_orphan_blobs(engine: AsyncEngine) -> dict[str, int]:
+    """Scan messages 撈所有被 ref 的 blob_id;blobs/ 內沒在這集合的就 unlink。
+
+    safety net — 若 delete_session 過程 unlink 失敗,或 migration / 異常產生
+    孤兒 blob,這裡會撿。idempotent。
+    """
+    referenced: set[str] = set()
+    async with db_session(engine) as s:
+        rows = await s.execute(select(MessageRow.content_json))
+        for (cj,) in rows:
+            referenced.update(_collect_blob_ids([cj]))
+    blob = get_blob_store()
+    deleted = 0
+    bytes_freed = 0
+    for path in blob.root.glob("*.bin"):
+        bid = path.stem
+        if bid in referenced:
+            continue
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            deleted += 1
+            bytes_freed += size
+        except OSError:
+            pass
+    return {
+        "referenced": len(referenced),
+        "deleted": deleted,
+        "bytes_freed": bytes_freed,
+    }
 
 
 async def append_messages(
