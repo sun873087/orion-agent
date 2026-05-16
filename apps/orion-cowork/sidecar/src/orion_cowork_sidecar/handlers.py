@@ -20,7 +20,7 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
-from orion_cowork_sidecar import storage
+from orion_cowork_sidecar import memory_handlers, storage
 from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.streaming import to_rpc_frame
@@ -144,6 +144,10 @@ class Handlers:
             "project.create": self.project_create,
             "project.update": self.project_update,
             "project.delete": self.project_delete,
+            "memory.list": memory_handlers.memory_list,
+            "memory.get": memory_handlers.memory_get,
+            "memory.write": memory_handlers.memory_write,
+            "memory.delete": memory_handlers.memory_delete,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,

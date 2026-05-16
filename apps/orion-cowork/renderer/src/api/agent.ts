@@ -155,6 +155,69 @@ export async function deleteProject(projectId: string): Promise<void> {
   await window.agent.call('project.delete', { project_id: projectId }, () => {})
 }
 
+export type MemoryType = 'user' | 'feedback' | 'project' | 'reference'
+
+export type MemoryListItem = {
+  filename: string
+  name: string
+  description: string
+  type: MemoryType | null
+  expires_at: string | null
+}
+
+export type Memory = MemoryListItem & {
+  body: string
+}
+
+export async function listMemories(): Promise<{
+  memory_dir: string
+  memories: MemoryListItem[]
+}> {
+  let out: { memory_dir: string; memories: MemoryListItem[] } = {
+    memory_dir: '',
+    memories: [],
+  }
+  await window.agent.call('memory.list', {}, (frame) => {
+    if (frame.event === 'memory_list' && frame.data) {
+      out = frame.data as { memory_dir: string; memories: MemoryListItem[] }
+    }
+  })
+  return out
+}
+
+export async function getMemory(filename: string): Promise<Memory | null> {
+  let m: Memory | null = null
+  await window.agent.call('memory.get', { filename }, (frame) => {
+    if (frame.event === 'memory' && frame.data) {
+      const d = frame.data as { memory: Memory }
+      m = d.memory
+    }
+  })
+  return m
+}
+
+export async function writeMemory(input: {
+  filename?: string | null
+  name: string
+  description: string
+  type: MemoryType
+  body: string
+  expires_at?: string | null
+}): Promise<{ filename: string; memory: Memory | null }> {
+  let out: { filename: string; memory: Memory | null } = { filename: '', memory: null }
+  await window.agent.call('memory.write', input as Record<string, unknown>, (frame) => {
+    if (frame.event === 'memory' && frame.data) {
+      const d = frame.data as { memory: Memory | null; filename: string }
+      out = d
+    }
+  })
+  return out
+}
+
+export async function deleteMemory(filename: string): Promise<void> {
+  await window.agent.call('memory.delete', { filename }, () => {})
+}
+
 export type Attachment = {
   media_type: string  // "image/png" / "image/jpeg" / ...
   data: string        // base64-encoded(no data: prefix)
