@@ -20,6 +20,12 @@ os.environ.setdefault(
     "ORION_USERS_DIR",
     str(_cowork_storage.data_dir() / "users"),
 )
+# Cowork system-level skills 也走 ~/.orion-cowork/skills,跟 CLI / chat-api 的
+# ~/.orion/skills 隔離。
+os.environ.setdefault(
+    "ORION_SKILLS_DIR",
+    str(_cowork_storage.data_dir() / "skills"),
+)
 
 from orion_cowork_sidecar.handlers import Handlers  # noqa: E402
 from orion_cowork_sidecar.rpc import RpcServer  # noqa: E402
