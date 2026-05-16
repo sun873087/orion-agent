@@ -33,7 +33,7 @@ import {
 
 import { getPermissions, sendToolApproval, setPermissions } from '../api/agent'
 import { useTranslation } from '../i18n'
-import type { ToolCallState } from '../store/agent'
+import { useAgentStore, type ToolCallState } from '../store/agent'
 
 type Display = {
   icon: LucideIcon
@@ -264,6 +264,10 @@ function ToolApprovalBanner({
   async function decide(decision: 'allow' | 'deny') {
     if (busy) return
     setBusy(true)
+    // Optimistic UI:立刻把 banner 從 awaiting_approval 拉回 running,user
+    // 不用等 RPC + tool 跑完才看到 banner 消失。後續 tool_result 來會 finalize
+    // 成 success / error。
+    useAgentStore.getState().clearToolApprovalUI(toolUseId)
     try {
       await sendToolApproval(toolUseId, decision)
     } finally {
@@ -275,6 +279,7 @@ function ToolApprovalBanner({
   async function alwaysAllow() {
     if (busy) return
     setBusy(true)
+    useAgentStore.getState().clearToolApprovalUI(toolUseId)
     try {
       const cur = await getPermissions('global')
       // 已在 allow list 就不重複加

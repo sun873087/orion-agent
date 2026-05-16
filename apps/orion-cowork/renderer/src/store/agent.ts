@@ -117,6 +117,9 @@ type AgentState = {
   endToolCall: (toolUseId: string, payload: { isError: boolean; text: string }) => void
   /** Ask 模式 — 標記 toolCall 在等使用者 approval(顯 banner)。 */
   markToolAwaitingApproval: (toolUseId: string) => void
+  /** User 已決 — 把 awaiting_approval 拉回 running,banner 立刻消失,
+   *  之後 tool_result 來再走 endToolCall 改 success / error。 */
+  clearToolApprovalUI: (toolUseId: string) => void
 
   setPendingQuestion: (q: PendingQuestion | null) => void
 
@@ -272,6 +275,18 @@ export const useAgentStore = create<AgentState>((set) => ({
         toolCalls: (m.toolCalls ?? []).map((t) =>
           t.toolUseId === toolUseId && t.status === 'running'
             ? { ...t, status: 'awaiting_approval' }
+            : t,
+        ),
+      })),
+    })),
+
+  clearToolApprovalUI: (toolUseId) =>
+    set((s) => ({
+      messages: s.messages.map((m) => ({
+        ...m,
+        toolCalls: (m.toolCalls ?? []).map((t) =>
+          t.toolUseId === toolUseId && t.status === 'awaiting_approval'
+            ? { ...t, status: 'running' }
             : t,
         ),
       })),
