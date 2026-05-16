@@ -11,11 +11,22 @@ import { useCallback, useEffect } from 'react'
 import {
   abort as rpcAbort,
   createConversation,
+  deleteConversation as rpcDelete,
+  listConversations,
   sendPrompt as rpcSendPrompt,
   type SidecarEvent,
 } from '../api/agent'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
+
+async function refreshSessions() {
+  try {
+    const list = await listConversations()
+    useAgentStore.getState().setSessions(list)
+  } catch {
+    // 忽略 — 列表更新失敗不該擋住流程
+  }
+}
 
 export function useInitConversation() {
   const sessionId = useAgentStore((s) => s.sessionId)
@@ -29,7 +40,9 @@ export function useInitConversation() {
     let cancelled = false
     createConversation(provider, model)
       .then((sid) => {
-        if (!cancelled) setSessionId(sid)
+        if (cancelled) return
+        setSessionId(sid)
+        refreshSessions()
       })
       .catch((e) => {
         if (!cancelled) setInitError(`failed to init conversation: ${String(e)}`)
@@ -38,6 +51,45 @@ export function useInitConversation() {
       cancelled = true
     }
   }, [sessionId, setSessionId, setInitError, provider, model])
+}
+
+export function useNewConversation() {
+  const provider = useSettingsStore((s) => s.selectedProvider)
+  const model = useSettingsStore((s) => s.selectedModel)
+  return useCallback(async () => {
+    try {
+      const sid = await createConversation(provider, model)
+      useAgentStore.getState().switchToSession(sid)
+      await refreshSessions()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(msg)
+    }
+  }, [provider, model])
+}
+
+export function useSwitchConversation() {
+  return useCallback((sid: string) => {
+    useAgentStore.getState().switchToSession(sid)
+  }, [])
+}
+
+export function useDeleteConversation() {
+  return useCallback(async (sid: string) => {
+    try {
+      await rpcDelete(sid)
+      const state = useAgentStore.getState()
+      // 若刪的是當前 session,清空 sessionId(下個 init 或 new 觸發 create)
+      if (state.sessionId === sid) {
+        state.switchToSession('')
+        useAgentStore.setState({ sessionId: null })
+      }
+      await refreshSessions()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(msg)
+    }
+  }, [])
 }
 
 export function useSendPrompt() {
@@ -61,6 +113,7 @@ export function useSendPrompt() {
     } finally {
       useAgentStore.getState().endAssistantMessage(assistantId)
       useAgentStore.getState().setBusy(false)
+      refreshSessions()
     }
   }, [])
 }

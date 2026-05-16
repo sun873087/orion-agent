@@ -7,9 +7,11 @@ const PREVIEW_LIMIT = 200
 
 /** 摺疊式 tool call 區塊。Running 時看到 spinner + progress;完成顯示 result。 */
 export function ToolCallPanel({ toolCall }: { toolCall: ToolCallState }) {
-  const [open, setOpen] = useState(false)
+  // Running 時自動展開讓 user 看到即時 progress;結束後保留 user 手動的 open 狀態
   const isRunning = toolCall.status === 'running'
   const isError = toolCall.status === 'error'
+  const [userToggled, setUserToggled] = useState<boolean | null>(null)
+  const open = userToggled ?? isRunning
 
   const fullText = toolCall.text || toolCall.progress.join('\n')
   const preview =
@@ -23,7 +25,7 @@ export function ToolCallPanel({ toolCall }: { toolCall: ToolCallState }) {
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setUserToggled(!open)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

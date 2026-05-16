@@ -36,6 +36,15 @@ export type LoopStatus = {
   turns: number
 } | null
 
+export type SessionSummary = {
+  session_id: string
+  provider: string
+  model: string
+  title: string | null
+  created_at: number
+  n_messages: number
+}
+
 type AgentState = {
   sessionId: string | null
   messages: Message[]
@@ -43,12 +52,15 @@ type AgentState = {
   error: string | null
   lastLoopStatus: LoopStatus
   initError: string | null
+  sessions: SessionSummary[]
 
   // mutators
   setSessionId: (sid: string) => void
   setInitError: (err: string) => void
   setError: (err: string | null) => void
   setBusy: (b: boolean) => void
+  setSessions: (s: SessionSummary[]) => void
+  switchToSession: (sid: string) => void
 
   appendUserMessage: (text: string) => string
   /** 起 assistant 訊息槽位(streaming 即將開始),回傳 message id。 */
@@ -70,18 +82,27 @@ const newId = (() => {
   return () => `m-${Date.now()}-${n++}`
 })()
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+export const useAgentStore = create<AgentState>((set) => ({
   sessionId: null,
   messages: [],
   busy: false,
   error: null,
   lastLoopStatus: null,
   initError: null,
+  sessions: [],
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
   setError: (err) => set({ error: err }),
   setBusy: (b) => set({ busy: b }),
+  setSessions: (s) => set({ sessions: s }),
+  switchToSession: (sid) =>
+    set({
+      sessionId: sid,
+      messages: [],
+      error: null,
+      lastLoopStatus: null,
+    }),
 
   appendUserMessage: (text) => {
     const id = newId()

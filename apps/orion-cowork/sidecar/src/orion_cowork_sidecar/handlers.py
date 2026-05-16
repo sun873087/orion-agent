@@ -39,6 +39,9 @@ class Handlers:
     def __init__(self) -> None:
         self._conversations: dict[str, Conversation] = {}
         self._aborts: dict[str, AgentContext] = {}
+        # Phase 31-C iter 3:metadata for UI sidebar
+        # sid → {provider, model, title (first user msg snippet), created_at, n_messages}
+        self._meta: dict[str, dict[str, Any]] = {}
 
     # ─── Dispatch table ─────────────────────────────────────────────────
     def methods(self) -> dict[str, Any]:
@@ -48,6 +51,8 @@ class Handlers:
             "conversation.create": self.conversation_create,
             "conversation.send": self.conversation_send,
             "conversation.abort": self.conversation_abort,
+            "conversation.list": self.conversation_list,
+            "conversation.delete": self.conversation_delete,
         }
 
     # ─── Methods ────────────────────────────────────────────────────────
@@ -98,6 +103,15 @@ class Handlers:
         )
         sid = str(conv.session_id)
         self._conversations[sid] = conv
+        import time
+        self._meta[sid] = {
+            "session_id": sid,
+            "provider": provider_name,
+            "model": model,
+            "title": None,  # set on first user message
+            "created_at": time.time(),
+            "n_messages": 0,
+        }
         yield {
             "event": "conversation_created",
             "data": {"session_id": sid, "provider": provider_name, "model": model},
@@ -129,6 +143,10 @@ class Handlers:
             return
 
         conv = self._conversations[sid]
+        meta = self._meta.get(sid)
+        # 首次 user prompt → 設 title(取前 60 字)
+        if meta is not None and meta.get("title") is None:
+            meta["title"] = prompt[:60].strip()
         ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
         self._aborts[sid] = ctx
         try:
@@ -138,6 +156,9 @@ class Handlers:
                     yield frame
         finally:
             self._aborts.pop(sid, None)
+            # 同步 n_messages(粗略)
+            if meta is not None:
+                meta["n_messages"] = len(conv.state_messages)
 
     async def conversation_abort(
         self, params: dict[str, Any]
@@ -155,3 +176,42 @@ class Handlers:
         # Give the loop a chance to observe the abort
         await asyncio.sleep(0)
         yield {"event": "abort_requested", "data": {"session_id": sid}, "final": True}
+
+    async def conversation_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """列當前 sidecar 內所有 conversation metadata,by created_at desc。"""
+        items = sorted(
+            self._meta.values(),
+            key=lambda m: m.get("created_at", 0),
+            reverse=True,
+        )
+        yield {
+            "event": "conversation_list",
+            "data": {"sessions": items},
+            "final": True,
+        }
+
+    async def conversation_delete(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        if sid is None or sid not in self._conversations:
+            yield {
+                "event": "error",
+                "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                "final": True,
+            }
+            return
+        # 中止 in-flight turn(若有)
+        ctx = self._aborts.get(sid)
+        if ctx is not None:
+            ctx.abort_event.set()
+        self._conversations.pop(sid, None)
+        self._meta.pop(sid, None)
+        self._aborts.pop(sid, None)
+        yield {
+            "event": "conversation_deleted",
+            "data": {"session_id": sid},
+            "final": True,
+        }

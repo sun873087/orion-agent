@@ -82,3 +82,31 @@ export async function fetchModels(): Promise<ModelCatalog> {
   if (!result) throw new Error('models.list returned no data')
   return result
 }
+
+export type SessionSummary = {
+  session_id: string
+  provider: string
+  model: string
+  title: string | null
+  created_at: number
+  n_messages: number
+}
+
+export async function listConversations(): Promise<SessionSummary[]> {
+  let result: SessionSummary[] = []
+  await window.agent.call('conversation.list', {}, (frame) => {
+    if (frame.event === 'conversation_list' && frame.data) {
+      const data = frame.data as { sessions: SessionSummary[] }
+      result = data.sessions ?? []
+    }
+  })
+  return result
+}
+
+export async function deleteConversation(sessionId: string): Promise<void> {
+  await window.agent.call(
+    'conversation.delete',
+    { session_id: sessionId },
+    () => {},
+  )
+}
