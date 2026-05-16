@@ -153,6 +153,9 @@ class Handlers:
             "conversation.regenerate": self.conversation_regenerate,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
+            "mcp.config_list": self.mcp_config_list,
+            "mcp.config_upsert": self.mcp_config_upsert,
+            "mcp.config_delete": self.mcp_config_delete,
             "maintenance.migrate_attachments": self.maintenance_migrate_attachments,
             "maintenance.cleanup_blobs": self.maintenance_cleanup_blobs,
         }
@@ -750,6 +753,106 @@ class Handlers:
                     for s in statuses
                 ],
             },
+            "final": True,
+        }
+
+    async def mcp_config_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀 mcp.json 全部 server raw config(給 UI 編輯用)。"""
+        from orion_cowork_sidecar.mcp_integration import (
+            cowork_mcp_config_path,
+            read_mcp_config_raw,
+        )
+        servers = read_mcp_config_raw()
+        yield {
+            "event": "mcp_config_list",
+            "data": {
+                "config_path": str(cowork_mcp_config_path()),
+                "servers": [
+                    {"name": name, "config": cfg}
+                    for name, cfg in servers.items()
+                ],
+            },
+            "final": True,
+        }
+
+    async def mcp_config_upsert(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """新增 / 更新一筆 server。寫 mcp.json 後 reload manager。
+
+        params:
+          - name: 必填
+          - config: 必填 dict,含 type=stdio|http + (command/args/env or url/headers)
+          - rename_from: 可選,原 name(改名時舊 entry 一起刪)
+        """
+        from orion_cowork_sidecar.mcp_integration import (
+            read_mcp_config_raw,
+            write_mcp_config_raw,
+        )
+        name = params.get("name")
+        config = params.get("config")
+        rename_from = params.get("rename_from")
+        if not isinstance(name, str) or not name.strip():
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "name required"}, "final": True}
+            return
+        if not isinstance(config, dict):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "config must be dict"}, "final": True}
+            return
+        # 基本 schema 檢驗 — type 必填
+        t = config.get("type", "stdio")
+        if t not in ("stdio", "http"):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": f"unknown type: {t}"}, "final": True}
+            return
+        if t == "stdio" and not isinstance(config.get("command"), str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "stdio config needs command"}, "final": True}
+            return
+        if t == "http" and not isinstance(config.get("url"), str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "http config needs url"}, "final": True}
+            return
+
+        servers = read_mcp_config_raw()
+        if isinstance(rename_from, str) and rename_from and rename_from != name:
+            servers.pop(rename_from, None)
+        servers[name.strip()] = config
+        write_mcp_config_raw(servers)
+        # reload manager 讓變更生效(若 mcp 還沒 start,reload 內 start 也會跑)
+        await self._mcp.reload()
+        self._mcp_started = True
+        yield {
+            "event": "mcp_config_upserted",
+            "data": {"name": name.strip()},
+            "final": True,
+        }
+
+    async def mcp_config_delete(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        from orion_cowork_sidecar.mcp_integration import (
+            read_mcp_config_raw,
+            write_mcp_config_raw,
+        )
+        name = params.get("name")
+        if not isinstance(name, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        servers = read_mcp_config_raw()
+        if name not in servers:
+            yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+            return
+        servers.pop(name)
+        write_mcp_config_raw(servers)
+        await self._mcp.reload()
+        self._mcp_started = True
+        yield {
+            "event": "mcp_config_deleted",
+            "data": {"name": name},
             "final": True,
         }
 

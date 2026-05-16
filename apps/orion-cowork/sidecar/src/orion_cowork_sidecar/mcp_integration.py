@@ -181,3 +181,37 @@ class CoworkMcpManager:
         if self._supervisor is not None:
             self._supervisor.reset_attempts(name)
         return await self._manager.reconnect(name)
+
+    async def reload(self) -> None:
+        """完整 shutdown + restart,讓 mcp.json 變更生效。"""
+        await self.shutdown()
+        await self.start()
+
+
+def read_mcp_config_raw() -> dict[str, dict[str, Any]]:
+    """直接讀 mcp.json 內的 mcpServers dict,給 UI 顯示用(含未驗 config)。"""
+    path = cowork_mcp_config_path()
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for name, raw in servers.items():
+        if isinstance(raw, dict):
+            out[name] = raw
+    return out
+
+
+def write_mcp_config_raw(servers: dict[str, dict[str, Any]]) -> None:
+    """atomic write — tmp file + rename。"""
+    path = cowork_mcp_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"mcpServers": servers}
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)

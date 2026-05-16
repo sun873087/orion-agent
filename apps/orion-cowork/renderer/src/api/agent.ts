@@ -354,6 +354,56 @@ export async function fetchMcpStatus(): Promise<McpStatus> {
   return result
 }
 
+export type McpStdioConfig = {
+  type: 'stdio'
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+}
+
+export type McpHttpConfig = {
+  type: 'http'
+  url: string
+  headers?: Record<string, string>
+}
+
+export type McpServerConfig = McpStdioConfig | McpHttpConfig
+
+export type McpConfigEntry = {
+  name: string
+  config: McpServerConfig
+}
+
+export async function listMcpConfigs(): Promise<{
+  config_path: string
+  servers: McpConfigEntry[]
+}> {
+  let out: { config_path: string; servers: McpConfigEntry[] } = {
+    config_path: '',
+    servers: [],
+  }
+  await window.agent.call('mcp.config_list', {}, (frame) => {
+    if (frame.event === 'mcp_config_list' && frame.data) {
+      out = frame.data as { config_path: string; servers: McpConfigEntry[] }
+    }
+  })
+  return out
+}
+
+export async function upsertMcpConfig(
+  name: string,
+  config: McpServerConfig,
+  renameFrom?: string,
+): Promise<void> {
+  const params: Record<string, unknown> = { name, config }
+  if (renameFrom) params.rename_from = renameFrom
+  await window.agent.call('mcp.config_upsert', params, () => {})
+}
+
+export async function deleteMcpConfig(name: string): Promise<void> {
+  await window.agent.call('mcp.config_delete', { name }, () => {})
+}
+
 export async function reconnectMcp(name: string): Promise<boolean> {
   let ok = false
   await window.agent.call('mcp.reconnect', { name }, (frame) => {

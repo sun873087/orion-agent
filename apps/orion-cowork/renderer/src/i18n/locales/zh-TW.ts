@@ -114,6 +114,23 @@ export default {
   'settings.mcp.none': '尚未設定任何 MCP 伺服器。\n請編輯 ~/.orion-cowork/mcp.json 後重新整理。',
   'settings.mcp.tools': '{n} 個工具',
   'settings.mcp.reconnect': '重新連線',
+  // MCP CRUD
+  'mcp.new': '新增伺服器',
+  'mcp.edit': '編輯',
+  'mcp.delete': '刪除',
+  'mcp.deleteConfirm': '確定刪除 MCP 伺服器 {name}?',
+  'mcp.empty': '尚未設定 MCP 伺服器。\n按右上「新增伺服器」加入。',
+  'mcp.field.name': '名稱(內部識別,例 filesystem)',
+  'mcp.field.namePlaceholder': '只能英數和底線',
+  'mcp.field.type': '類型',
+  'mcp.field.command': '指令',
+  'mcp.field.commandHint': 'sidecar 會以此指令啟動 server',
+  'mcp.field.args': '參數(一行一個)',
+  'mcp.field.argsHint': '例:-y / @modelcontextprotocol/server-filesystem / /path',
+  'mcp.field.env': '環境變數(KEY=VALUE,一行一個)',
+  'mcp.field.envHint': '可選,sensitive 也可寫但別 commit',
+  'mcp.field.url': 'URL',
+  'mcp.field.headers': '標頭(KEY=VALUE,一行一個)',
   'settings.about.text': 'Orion Cowork · Phase 31。模型與外觀偏好存於 localStorage。MCP 伺服器設定於 ~/.orion-cowork/mcp.json。',
 
   // Language names
