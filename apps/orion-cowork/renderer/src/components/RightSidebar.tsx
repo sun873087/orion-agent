@@ -356,24 +356,69 @@ export function InlineFileCards({
   }, [toolCalls, messageText])
   if (files.length === 0) return null
   return (
-    <div className="mt-2 flex flex-col gap-1">
+    <div className="mt-2 flex flex-col gap-2">
       {files.map((f) => (
-        <button
+        <div
           key={f.path}
-          type="button"
-          onClick={() => window.shellApi.openPath(f.path)}
-          className="flex items-center gap-2 rounded-lg border border-bg-hover bg-bg-panel px-3 py-2 text-left hover:bg-bg-hover"
+          className="flex items-center gap-3 rounded-xl border border-bg-hover bg-bg-panel p-3"
         >
-          <FileText size={16} className="shrink-0 text-fg-muted" />
+          <FileText size={28} className="shrink-0 text-fg-muted" strokeWidth={1.5} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm text-fg-base">
+            <div className="truncate text-sm font-medium text-fg-base">
               {f.path.split('/').pop()}
             </div>
-            <div className="truncate font-mono text-[10px] text-fg-subtle">{f.path}</div>
+            <div className="truncate text-[11px] text-fg-subtle">
+              {extLabel(f.path)}
+            </div>
           </div>
-          <ExternalLink size={12} className="shrink-0 text-fg-subtle" />
-        </button>
+          <button
+            type="button"
+            onClick={() => window.shellApi.openPath(f.path)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+            title={f.path}
+          >
+            <ExternalLink size={14} />
+            <span>Open</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => window.shellApi.revealInFinder(f.path)}
+            className="flex shrink-0 items-center justify-center rounded-lg border border-bg-hover bg-bg-input p-2 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+            title="Show in Finder"
+          >
+            <Folder size={14} />
+          </button>
+        </div>
       ))}
     </div>
   )
+}
+
+function extLabel(path: string): string {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return path
+  const ext = path.slice(dot + 1).toUpperCase()
+  const map: Record<string, string> = {
+    PPTX: 'Presentation · PPTX',
+    PPT: 'Presentation · PPT',
+    DOCX: 'Document · DOCX',
+    DOC: 'Document · DOC',
+    XLSX: 'Spreadsheet · XLSX',
+    XLS: 'Spreadsheet · XLS',
+    PDF: 'Document · PDF',
+    PNG: 'Image · PNG',
+    JPG: 'Image · JPG',
+    JPEG: 'Image · JPEG',
+    GIF: 'Image · GIF',
+    SVG: 'Image · SVG',
+    MP4: 'Video · MP4',
+    MOV: 'Video · MOV',
+    MP3: 'Audio · MP3',
+    ZIP: 'Archive · ZIP',
+    HTML: 'Web · HTML',
+    MD: 'Markdown',
+    CSV: 'Data · CSV',
+    JSON: 'Data · JSON',
+  }
+  return map[ext] ?? ext
 }

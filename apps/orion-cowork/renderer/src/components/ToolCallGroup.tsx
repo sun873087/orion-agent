@@ -180,7 +180,10 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
   // 任一個 tool running → group 預設展開讓 user 看到即時 progress
   const anyRunning = toolCalls.some((t) => t.status === 'running')
   const effectiveOpen = open || anyRunning
-  const anyError = toolCalls.some((t) => t.status === 'error')
+  // 中間錯誤常見(model 試錯再 fix-forward),不該污染整個 group。
+  // 只看最後一個 tool 的狀態 = turn 的 final outcome。
+  const lastTool = toolCalls[toolCalls.length - 1]
+  const groupErrored = lastTool?.status === 'error'
 
   function toggleRow(id: string) {
     setExpandedIds((prev) => {
@@ -194,7 +197,7 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
   return (
     <div
       className={`overflow-hidden rounded-lg border ${
-        anyError ? 'border-error/30' : 'border-bg-hover'
+        groupErrored ? 'border-error/30' : 'border-bg-hover'
       } bg-bg-panel`}
     >
       <button
@@ -205,7 +208,7 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
         {effectiveOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {anyRunning ? (
           <Loader2 size={14} className="animate-spin text-fg-muted" />
-        ) : anyError ? (
+        ) : groupErrored ? (
           <CircleX size={14} className="text-error" />
         ) : (
           <CircleCheck size={14} className="text-success" />

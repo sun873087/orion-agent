@@ -36,7 +36,7 @@ export function MessageBubble({
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <Avatar role={message.role} />
-      <div className={`flex min-w-0 max-w-[85%] flex-1 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 max-w-[85%] flex-1 flex-col ${isUser ? 'items-end' : 'items-stretch'}`}>
         {/* 附件圖(只 user 訊息會帶) — 歷史 attachment 用 ref lazy load。 */}
         {!!message.attachments?.length && (
           <div className={`mb-2 flex flex-wrap gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>

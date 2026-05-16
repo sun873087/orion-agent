@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Paperclip, Send, Square, X } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
@@ -100,6 +100,21 @@ export function InputBox({ onSend, onAbort }: Props) {
 
   const [dragOver, setDragOver] = useState(false)
 
+  // Safety net:window-level dragend / drop / mouseup 一律 reset dragOver。
+  // 避免 user drag 出 InputBox 外才 release,onDragLeave 沒精準 fire 導致
+  // 藍框 stuck 在 UI 上。
+  useEffect(() => {
+    const reset = () => setDragOver(false)
+    window.addEventListener('dragend', reset)
+    window.addEventListener('drop', reset)
+    window.addEventListener('mouseup', reset)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('drop', reset)
+      window.removeEventListener('mouseup', reset)
+    }
+  }, [])
+
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
     e.stopPropagation()
@@ -117,8 +132,11 @@ export function InputBox({ onSend, onAbort }: Props) {
   }
 
   function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
-    // 只在離開外層元素時才取消 — 子元素 enter/leave 會觸發父
-    if (e.currentTarget === e.target) setDragOver(false)
+    // 用 relatedTarget(離開時新進入的元素)判斷:不在 wrapper 內就 reset
+    const related = e.relatedTarget as Node | null
+    if (!related || !e.currentTarget.contains(related)) {
+      setDragOver(false)
+    }
   }
 
   return (
