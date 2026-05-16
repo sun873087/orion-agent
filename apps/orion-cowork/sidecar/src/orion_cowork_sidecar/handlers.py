@@ -61,16 +61,29 @@ _COWORK_PROMPT_BASE = (
     "with the full plan, then update items as you progress "
     "(pending → in_progress → completed). This shows the user a live progress "
     "timeline. Skip TodoWrite only for genuinely one-step trivia (single read, "
-    "single open_url, answering a question without tool use).\n"
-    "\n"
-    "# Use AskUserQuestion for interactive Q&A\n"
-    "When the user asks you to interview them, quiz them, gather requirements, "
-    "let them pick between options, or otherwise needs to choose / answer in a "
-    "structured way — call the `AskUserQuestion` tool instead of writing the "
-    "question in plain text. The Cowork UI renders it as clickable option "
-    "buttons + free-text input, which is much friendlier than scrolling chat. "
-    "One question per call (the schema lets you batch up to 4, but single is "
-    "almost always better). After the user answers, continue naturally."
+    "single open_url, answering a question without tool use)."
+)
+
+
+# Per-turn permission_mode addendum — appended to system_prompt before send,
+# 之後 restore。'ask' 鼓勵用 AskUserQuestion;'act' 嚴禁反問,直接決定。
+_ASK_MODE_NOTE = (
+    "\n\n# Interactive Q&A is enabled (Ask mode)\n"
+    "The user has enabled 'Ask before acting' mode. When you genuinely need "
+    "input (interview, quiz, requirements gathering, pick between options) — "
+    "use the `AskUserQuestion` tool. The UI renders clickable options + "
+    "free-text input. One question per call is usually best."
+)
+_ACT_MODE_NOTE = (
+    "\n\n# Autonomous mode (Act without asking)\n"
+    "The user has enabled 'Act without asking' — they want you to proceed "
+    "autonomously without interrupting them. Do NOT ask clarifying questions, "
+    "neither via any tool nor in plain text. Make your best judgment from the "
+    "available information and execute. If you are uncertain between options, "
+    "pick the most reasonable default, mention your choice briefly, and "
+    "continue. Only stop if you hit a hard blocker that genuinely cannot be "
+    "resolved without user input — and even then, prefer to explain what's "
+    "blocked rather than asking a question."
 )
 
 
@@ -415,20 +428,29 @@ class Handlers:
         out_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         conv.can_use_tool = self._build_can_use_tool(permission_mode, out_queue)
 
-        # ─── AskUserQuestion asker wiring ──────────────────────────────
-        # 只在 Ask 模式才把 tool 對外開放 + 綁 asker:Act 模式 = 「放手讓我做」,
-        # user 期望 AI 不要打擾,所以把 AskUserQuestion 收回 deferred(LLM 看不到
-        # schema),asker 維持 None,模型自然不會反問。Ask 模式則開放 schema +
-        # 推 ask_user_question frame 給 renderer 渲互動按鈕。
-        for tool in conv.tools:
-            if getattr(tool, "name", None) == "AskUserQuestion":
-                if permission_mode == "ask":
+        # ─── AskUserQuestion + system prompt wiring per mode ───────────
+        # Ask 模式:綁 asker + system prompt 加 _ASK_MODE_NOTE 鼓勵互動
+        # Act 模式(放手讓我做):從 conv.tools 把 AskUserQuestion 拿掉,system
+        #          prompt 加 _ACT_MODE_NOTE 嚴禁反問(包含純文字)— 否則 LLM
+        #          失去 tool 仍會 fallback 用文字列問題。
+        # 結束 finally restore tools + system_prompt。
+        #
+        # NOTE: SDK 的 `should_defer` 只影響 docstring,**不會** 真的把 tool
+        # 從 LLM API tools list 拿掉,所以必須直接從 conv.tools 移除。
+        original_tools = list(conv.tools)
+        original_system_prompt = conv.system_prompt
+        if permission_mode == "ask":
+            conv.system_prompt = original_system_prompt + _ASK_MODE_NOTE
+            for tool in conv.tools:
+                if getattr(tool, "name", None) == "AskUserQuestion":
                     tool.asker = self._build_asker(out_queue)
-                    tool.should_defer = False
-                else:
-                    tool.asker = None
-                    tool.should_defer = True
-                break
+                    break
+        else:
+            conv.system_prompt = original_system_prompt + _ACT_MODE_NOTE
+            conv.tools = [
+                t for t in conv.tools
+                if getattr(t, "name", None) != "AskUserQuestion"
+            ]
 
         async def _producer() -> None:
             try:
@@ -472,6 +494,9 @@ class Handlers:
                 if not fut.done():
                     fut.set_result({})
             self._ask_pending.clear()
+            # Restore conv.tools + system_prompt(per-mode 變動只活到 turn 結束)
+            conv.tools = original_tools
+            conv.system_prompt = original_system_prompt
             self._aborts.pop(sid, None)
             # Persist new messages(只 append 這 turn 增加的)
             new_msgs = conv.state_messages[before_count:]
