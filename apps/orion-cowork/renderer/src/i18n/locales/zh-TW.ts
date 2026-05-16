@@ -253,6 +253,8 @@ export default {
 
   // Message
   'message.regenerate': '重新生成',
+  'message.copy': '複製',
+  'message.copied': '已複製',
   'message.expand': '展開',
   'message.collapse': '收合',
   'message.failedHistory': '對話歷史載入失敗:{msg}',

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ChevronDown, ChevronUp, User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
@@ -115,10 +115,40 @@ export function MessageBubble({
             messageText={message.text}
           />
         )}
-        {/* Regenerate(只最後一個 assistant message 顯示)*/}
-        {!isUser && isLastAssistant && !message.streaming && <RegenerateButton />}
+        {/* Action row(Copy + optional Regenerate)— streaming 中不顯,避免閃 */}
+        {message.text && !message.streaming && (
+          <div className={`mt-1 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <CopyButton text={message.text} />
+            {!isUser && isLastAssistant && <RegenerateButton />}
+          </div>
+        )}
       </div>
     </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // 罕見:剪貼簿被拒(non-secure context 等);無提示但不炸
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={copied ? t('message.copied') : t('message.copy')}
+      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+    >
+      {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+      <span>{copied ? t('message.copied') : t('message.copy')}</span>
+    </button>
   )
 }
 

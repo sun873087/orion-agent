@@ -237,6 +237,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '重新生成',
+  'message.copy': '复制',
+  'message.copied': '已复制',
   'message.expand': '展开',
   'message.collapse': '收起',
   'message.failedHistory': '对话历史加载失败:{msg}',

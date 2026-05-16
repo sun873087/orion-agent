@@ -237,6 +237,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': 'Regenerate',
+  'message.copy': 'Copy',
+  'message.copied': 'Copied',
   'message.expand': 'Show more',
   'message.collapse': 'Show less',
   'message.failedHistory': 'failed to load history: {msg}',
