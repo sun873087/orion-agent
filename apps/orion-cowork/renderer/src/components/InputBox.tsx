@@ -31,6 +31,8 @@ export function InputBox({ onSend, onAbort }: Props) {
   const inputReady = !initError
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // IME composition tracking — 注音 / 拼音中 Enter 確認候選詞時不要送出。
+  const composingRef = useRef(false)
 
   const canSend =
     !busy && inputReady && (text.trim().length > 0 || attachments.length > 0)
@@ -42,6 +44,11 @@ export function InputBox({ onSend, onAbort }: Props) {
     setText('')
     setAttachments([])
     setAttachError(null)
+    // 直接清 textarea DOM value:避免 IME / React batching 時序 race
+    // 讓送出後字符仍殘留在輸入框。
+    if (textareaRef.current) {
+      textareaRef.current.value = ''
+    }
     autoResize()
     await onSend(payload, att.length ? att : undefined)
   }
@@ -189,7 +196,16 @@ export function InputBox({ onSend, onAbort }: Props) {
               setText(e.target.value)
               autoResize()
             }}
+            onCompositionStart={() => {
+              composingRef.current = true
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false
+            }}
             onKeyDown={(e) => {
+              // IME 在組字中(注音/拼音)按 Enter 是確認候選詞,不是送出。
+              // e.nativeEvent.isComposing 是現代瀏覽器 spec;composingRef 雙保險。
+              if (e.nativeEvent.isComposing || composingRef.current) return
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()
