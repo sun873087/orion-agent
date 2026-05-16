@@ -8,6 +8,7 @@ function_call_output)。
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -205,6 +206,20 @@ class OpenAIProvider:
                     # OpenAI 的 input_tokens 含 cached(Anthropic 是 disjoint)—
                     # 統一語義扣掉,讓累積 stats / cache_hit_rate 公式跨 provider 一致。
                     fresh_input = max(0, usage.input_tokens - cached)
+                    # 開 ORION_DEBUG_OPENAI_USAGE=1 才印 usage debug。預設安靜。
+                    if os.environ.get("ORION_DEBUG_OPENAI_USAGE"):
+                        import sys as _sys
+                        try:
+                            raw_dump = usage.model_dump() if hasattr(usage, "model_dump") else vars(usage)
+                        except Exception:  # noqa: BLE001
+                            raw_dump = str(usage)
+                        print(
+                            f"[openai usage] model={self.model} input={usage.input_tokens} "
+                            f"(fresh={fresh_input}, cached={cached}) "
+                            f"output={usage.output_tokens} reasoning={reasoning} "
+                            f"raw={raw_dump}",
+                            file=_sys.stderr, flush=True,
+                        )
                     yield MessageStopEvent(
                         stop_reason=cast(Any, stop_reason),
                         usage=NormalizedUsage(
