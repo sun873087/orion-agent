@@ -13,6 +13,13 @@ export default {
   'sidebar.settings': '設定',
   'sidebar.localUser': '本機使用者',
   'sidebar.openMenu': '開啟選單',
+  'sidebar.collapse': '收合側邊欄',
+  'sidebar.expand': '展開側邊欄',
+  'sidebar.search': '搜尋對話',
+  'sidebar.searchPlaceholder': '搜尋標題與對話內容⋯',
+  'sidebar.searching': '搜尋中⋯',
+  'sidebar.clearSearch': '清除搜尋',
+  'sidebar.noMatches': '沒有符合的對話',
 
   // User menu
   'menu.settings': '設定',

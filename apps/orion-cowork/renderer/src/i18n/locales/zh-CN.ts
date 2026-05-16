@@ -11,6 +11,13 @@ export default {
   'sidebar.settings': '设置',
   'sidebar.localUser': '本机用户',
   'sidebar.openMenu': '打开菜单',
+  'sidebar.collapse': '收起侧边栏',
+  'sidebar.expand': '展开侧边栏',
+  'sidebar.search': '搜索对话',
+  'sidebar.searchPlaceholder': '搜索标题与对话内容⋯',
+  'sidebar.searching': '搜索中⋯',
+  'sidebar.clearSearch': '清除搜索',
+  'sidebar.noMatches': '没有匹配的对话',
 
   'menu.settings': '设置',
   'menu.language': '语言',

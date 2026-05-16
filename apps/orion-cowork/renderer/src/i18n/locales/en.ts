@@ -11,6 +11,13 @@ export default {
   'sidebar.settings': 'Settings',
   'sidebar.localUser': 'Local user',
   'sidebar.openMenu': 'Open menu',
+  'sidebar.collapse': 'Collapse sidebar',
+  'sidebar.expand': 'Expand sidebar',
+  'sidebar.search': 'Search conversations',
+  'sidebar.searchPlaceholder': 'Search titles and content…',
+  'sidebar.searching': 'Searching…',
+  'sidebar.clearSearch': 'Clear search',
+  'sidebar.noMatches': 'No matching conversations',
 
   'menu.settings': 'Settings',
   'menu.language': 'Language',

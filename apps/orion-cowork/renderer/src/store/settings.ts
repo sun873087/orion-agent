@@ -41,6 +41,13 @@ type SettingsState = {
   /** 當前 Settings page 高亮的 section id。Page 是 list-driven 全頁,不再是 modal。 */
   activeSettingsSection: string
 
+  /** Sidebar 收合(persist 到 localStorage)。 */
+  sidebarCollapsed: boolean
+  /** Sidebar 搜尋輸入框是否打開(ephemeral)。 */
+  sidebarSearchOpen: boolean
+  /** Sidebar 搜尋輸入內容(ephemeral)。 */
+  sidebarSearchQuery: string
+
   setTheme: (t: Theme) => void
   toggleTheme: () => void
   setLocale: (l: Locale) => void
@@ -49,6 +56,10 @@ type SettingsState = {
   openSettings: (section?: string) => void
   closeSettings: () => void
   setActiveSettingsSection: (id: string) => void
+
+  toggleSidebar: () => void
+  toggleSidebarSearch: () => void
+  setSidebarSearchQuery: (q: string) => void
 }
 
 const STORAGE_KEY = 'orion-cowork-settings/v1'
@@ -64,6 +75,9 @@ export const useSettingsStore = create<SettingsState>()(
       catalogLoaded: false,
       settingsOpen: false,
       activeSettingsSection: 'appearance',
+      sidebarCollapsed: false,
+      sidebarSearchOpen: false,
+      sidebarSearchQuery: '',
 
       setTheme: (t) => {
         set({ theme: t })
@@ -89,6 +103,17 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       closeSettings: () => set({ settingsOpen: false }),
       setActiveSettingsSection: (id) => set({ activeSettingsSection: id }),
+
+      toggleSidebar: () =>
+        set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      toggleSidebarSearch: () =>
+        set((s) => ({
+          // 開啟搜尋會順勢展開 sidebar(否則搜尋框看不到);關閉時清空 query
+          sidebarSearchOpen: !s.sidebarSearchOpen,
+          sidebarCollapsed: s.sidebarSearchOpen ? s.sidebarCollapsed : false,
+          sidebarSearchQuery: s.sidebarSearchOpen ? '' : s.sidebarSearchQuery,
+        })),
+      setSidebarSearchQuery: (q) => set({ sidebarSearchQuery: q }),
     }),
     {
       name: STORAGE_KEY,
@@ -97,6 +122,7 @@ export const useSettingsStore = create<SettingsState>()(
         locale: s.locale,
         selectedProvider: s.selectedProvider,
         selectedModel: s.selectedModel,
+        sidebarCollapsed: s.sidebarCollapsed,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

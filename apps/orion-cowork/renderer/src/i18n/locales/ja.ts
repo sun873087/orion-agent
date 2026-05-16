@@ -11,6 +11,13 @@ export default {
   'sidebar.settings': '設定',
   'sidebar.localUser': 'ローカルユーザー',
   'sidebar.openMenu': 'メニューを開く',
+  'sidebar.collapse': 'サイドバーを閉じる',
+  'sidebar.expand': 'サイドバーを開く',
+  'sidebar.search': '会話を検索',
+  'sidebar.searchPlaceholder': 'タイトルと内容を検索⋯',
+  'sidebar.searching': '検索中⋯',
+  'sidebar.clearSearch': '検索をクリア',
+  'sidebar.noMatches': '一致する会話がありません',
 
   'menu.settings': '設定',
   'menu.language': '言語',

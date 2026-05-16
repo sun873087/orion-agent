@@ -11,6 +11,7 @@ export function App() {
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)
+  const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
 
   // Settings 是全頁 view — 開時整個 chat layout 被取代,不疊 modal。
   if (settingsOpen) {
@@ -19,7 +20,7 @@ export function App() {
 
   return (
     <div className="flex h-full w-full">
-      <Sidebar />
+      {!sidebarCollapsed && <Sidebar />}
       <div className="flex flex-1 flex-col">
         <Header />
         <MessageList />

@@ -344,6 +344,98 @@ async def read_attachment_data_url(
     return f"data:{media_type};base64,{b64}"
 
 
+@dataclass
+class SearchHit:
+    session_id: str
+    title: str | None
+    provider: str
+    model: str
+    created_at: float
+    match_count: int
+    snippet: str  # 第一個 match 周邊 ~100 字
+
+
+def _extract_text_from_content(content_json: Any) -> str:
+    """從 raw content_json 抽出可搜尋文字(text + tool_result content)。
+
+    跳過 image / tool_use input(那是結構化資料)。Return lower-cased,給
+    case-insensitive substring match 用。
+    """
+    if isinstance(content_json, str):
+        return content_json.lower()
+    if not isinstance(content_json, list):
+        return ""
+    parts: list[str] = []
+    for b in content_json:
+        if not isinstance(b, dict):
+            continue
+        btype = b.get("type")
+        if btype == "text":
+            parts.append(str(b.get("text", "")))
+        elif btype == "tool_result":
+            c = b.get("content")
+            if isinstance(c, str):
+                parts.append(c)
+            elif isinstance(c, list):
+                # tool_result content 可能是 list of {type:text, text:...}
+                for inner in c:
+                    if isinstance(inner, dict) and inner.get("type") == "text":
+                        parts.append(str(inner.get("text", "")))
+        elif btype == "thinking":
+            parts.append(str(b.get("thinking", "")))
+    return "\n".join(parts).lower()
+
+
+async def search_messages(
+    engine: AsyncEngine,
+    query: str,
+    *,
+    limit: int = 50,
+) -> list[SearchHit]:
+    """In-memory 全文搜尋(對單機桌機 app data scale 夠用)。
+
+    Match title + message text + tool result。skip image / blob_id / tool input。
+    回 sessions 排序:match_count desc,created_at desc。
+    """
+    q = query.strip().lower()
+    if not q:
+        return []
+    sessions = await list_sessions(engine)
+    hits: list[SearchHit] = []
+    for sess in sessions:
+        # Title match 計入,但不 generate snippet(title 本身就顯在 row 上)
+        title_lower = (sess.title or "").lower()
+        match_count = title_lower.count(q) if title_lower else 0
+        snippet = ""
+        rows = await load_raw_messages(engine, sess.session_id)
+        for _role, content_json in rows:
+            text = _extract_text_from_content(content_json)
+            if not text:
+                continue
+            idx = text.find(q)
+            if idx < 0:
+                continue
+            match_count += text.count(q)
+            if not snippet:
+                start = max(0, idx - 30)
+                end = min(len(text), idx + len(q) + 70)
+                prefix = "…" if start > 0 else ""
+                suffix = "…" if end < len(text) else ""
+                snippet = f"{prefix}{text[start:end]}{suffix}"
+        if match_count > 0:
+            hits.append(SearchHit(
+                session_id=sess.session_id,
+                title=sess.title,
+                provider=sess.provider,
+                model=sess.model,
+                created_at=sess.created_at,
+                match_count=match_count,
+                snippet=snippet,
+            ))
+    hits.sort(key=lambda h: (-h.match_count, -h.created_at))
+    return hits[:limit]
+
+
 async def migrate_inline_attachments_to_blobs(engine: AsyncEngine) -> dict[str, int]:
     """掃所有 messages row,把 inline base64 ImageBlock 抽進 blob store,
     改寫 row 為 blob ref。

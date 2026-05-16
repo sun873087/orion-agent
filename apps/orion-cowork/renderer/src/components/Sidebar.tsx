@@ -5,11 +5,14 @@ import {
   Globe,
   MessageSquare,
   Plus,
+  Search,
   Settings as SettingsIcon,
   Trash2,
   User,
+  X,
 } from 'lucide-react'
 
+import { searchConversations, type SearchHit } from '../api/agent'
 import { LOCALES, useTranslation, type Locale } from '../i18n'
 import { useDeleteConversation, useNewConversation, useSwitchConversation } from '../hooks/useAgent'
 import { useAgentStore } from '../store/agent'
@@ -23,6 +26,43 @@ export function Sidebar() {
   const newConv = useNewConversation()
   const switchTo = useSwitchConversation()
   const del = useDeleteConversation()
+  const searchOpen = useSettingsStore((s) => s.sidebarSearchOpen)
+  const searchQuery = useSettingsStore((s) => s.sidebarSearchQuery)
+  const setSearchQuery = useSettingsStore((s) => s.setSidebarSearchQuery)
+  const toggleSearch = useSettingsStore((s) => s.toggleSidebarSearch)
+
+  // Backend full-text search:有 query 時 debounce 300ms call sidecar;空就清空
+  const q = searchQuery.trim()
+  const [hits, setHits] = useState<SearchHit[]>([])
+  const [searching, setSearching] = useState(false)
+  useEffect(() => {
+    if (!q) {
+      setHits([])
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    const handle = setTimeout(() => {
+      let cancelled = false
+      searchConversations(q)
+        .then((r) => {
+          if (!cancelled) setHits(r)
+        })
+        .catch(() => {
+          if (!cancelled) setHits([])
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }, 300)
+    return () => clearTimeout(handle)
+  }, [q])
+
+  // 有 query 用 hits;空 query 用 sessions
+  const showHits = q.length > 0
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-bg-hover bg-bg-panel">
@@ -36,8 +76,58 @@ export function Sidebar() {
           <span>{t('sidebar.newChat')}</span>
         </button>
       </div>
+      {searchOpen && (
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onClose={toggleSearch}
+        />
+      )}
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
-        {sessions.length === 0 ? (
+        {showHits ? (
+          searching && hits.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-fg-subtle">{t('sidebar.searching')}</div>
+          ) : hits.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-fg-subtle">{t('sidebar.noMatches')}</div>
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {hits.map((h) => {
+                const active = h.session_id === currentId
+                return (
+                  <li key={h.session_id}>
+                    <div
+                      className={`group flex flex-col gap-0.5 rounded-md px-2 py-2 cursor-pointer ${
+                        active
+                          ? 'bg-bg-hover text-fg-base'
+                          : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+                      }`}
+                      onClick={() => switchTo(h.session_id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare size={12} className="shrink-0" />
+                        <span className="flex-1 truncate text-sm" title={h.title ?? h.session_id}>
+                          {h.title || (
+                            <span className="text-fg-subtle italic">
+                              {t('sidebar.newConversation')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="rounded bg-bg-input px-1 font-mono text-[10px] text-fg-subtle">
+                          {h.match_count}
+                        </span>
+                      </div>
+                      {h.snippet && (
+                        <div className="line-clamp-2 pl-5 text-[11px] text-fg-subtle">
+                          {h.snippet}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        ) : sessions.length === 0 ? (
           <div className="px-3 py-2 text-xs text-fg-subtle">{t('sidebar.empty')}</div>
         ) : (
           <ul className="flex flex-col gap-0.5">
@@ -82,6 +172,49 @@ export function Sidebar() {
 
       <UserMenu />
     </aside>
+  )
+}
+
+function SearchBar({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+  return (
+    <div className="px-3 pb-2">
+      <div className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2">
+        <Search size={12} className="text-fg-subtle" />
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onClose()
+          }}
+          placeholder={t('sidebar.searchPlaceholder')}
+          className="flex-1 bg-transparent py-1.5 text-xs text-fg-base placeholder:text-fg-subtle focus:outline-none"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-base"
+            title={t('sidebar.clearSearch')}
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 

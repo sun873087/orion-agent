@@ -119,6 +119,7 @@ class Handlers:
             "conversation.send": self.conversation_send,
             "conversation.abort": self.conversation_abort,
             "conversation.list": self.conversation_list,
+            "conversation.search": self.conversation_search,
             "conversation.delete": self.conversation_delete,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
@@ -373,6 +374,44 @@ class Handlers:
                         "n_messages": r.n_messages,
                     }
                     for r in rows
+                ],
+            },
+            "final": True,
+        }
+
+    async def conversation_search(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """跨 session 全文搜尋:title + message text + tool result。
+
+        in-memory 比對(對單機 sessions 規模夠用),回 [{session_id, title,
+        snippet, match_count, ...}]。
+        """
+        query = str(params.get("query") or "").strip()
+        if not query:
+            yield {
+                "event": "conversation_search_result",
+                "data": {"query": query, "sessions": []},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        hits = await storage.search_messages(engine, query)
+        yield {
+            "event": "conversation_search_result",
+            "data": {
+                "query": query,
+                "sessions": [
+                    {
+                        "session_id": h.session_id,
+                        "title": h.title,
+                        "provider": h.provider,
+                        "model": h.model,
+                        "created_at": h.created_at,
+                        "match_count": h.match_count,
+                        "snippet": h.snippet,
+                    }
+                    for h in hits
                 ],
             },
             "final": True,

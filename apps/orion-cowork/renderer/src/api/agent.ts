@@ -120,6 +120,30 @@ export async function listConversations(): Promise<SessionSummary[]> {
   return result
 }
 
+export type SearchHit = {
+  session_id: string
+  title: string | null
+  provider: string
+  model: string
+  created_at: number
+  match_count: number
+  snippet: string
+}
+
+/** 跨 session 全文搜尋。query 空字串時直接回 [],不打 sidecar。 */
+export async function searchConversations(query: string): Promise<SearchHit[]> {
+  const q = query.trim()
+  if (!q) return []
+  let result: SearchHit[] = []
+  await window.agent.call('conversation.search', { query: q }, (frame) => {
+    if (frame.event === 'conversation_search_result' && frame.data) {
+      const d = frame.data as { sessions: SearchHit[] }
+      result = d.sessions ?? []
+    }
+  })
+  return result
+}
+
 export async function deleteConversation(sessionId: string): Promise<void> {
   await window.agent.call(
     'conversation.delete',
