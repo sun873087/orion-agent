@@ -17,6 +17,11 @@ try {
   document.documentElement.classList.add('dark')
 }
 
+// Window 級別擋 Electron 預設的 file drop 行為(會 navigate 走當前頁)。
+// InputBox 自己的 onDrop 會 stopPropagation;這裡兜底處理其他區域的 drop。
+window.addEventListener('dragover', (e) => e.preventDefault())
+window.addEventListener('drop', (e) => e.preventDefault())
+
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')
 createRoot(root).render(

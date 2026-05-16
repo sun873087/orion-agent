@@ -38,6 +38,14 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   })
+
+  // Drop 檔案到非 InputBox 區域時,Electron 預設行為是 navigate 到該檔(取代整個
+  // renderer)。我們不要那個 — file:// navigation 一律擋掉,讓 renderer 自己的
+  // onDrop handler 處理。
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file://')) e.preventDefault()
+  })
+
   if (isDev) {
     await win.loadURL('http://127.0.0.1:5174')
     win.webContents.openDevTools({ mode: 'detach' })

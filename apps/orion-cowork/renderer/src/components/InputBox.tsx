@@ -18,12 +18,15 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const busy = useAgentStore((s) => s.busy)
-  const sessionReady = useAgentStore((s) => !!s.sessionId)
+  // sidecar 啟動後一直可輸入;sessionId 為 null(New chat 後)時由 useSendPrompt
+  // lazy create。只有 initError(sidecar 連不上)才完全 disable。
+  const initError = useAgentStore((s) => s.initError)
+  const inputReady = !initError
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const canSend =
-    !busy && sessionReady && (text.trim().length > 0 || attachments.length > 0)
+    !busy && inputReady && (text.trim().length > 0 || attachments.length > 0)
 
   async function handleSubmit() {
     if (!canSend) return
@@ -76,8 +79,38 @@ export function InputBox({ onSend, onAbort }: Props) {
     setAttachments((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  const [dragOver, setDragOver] = useState(false)
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    if (!inputReady) return
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files)
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dragOver) setDragOver(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    // 只在離開外層元素時才取消 — 子元素 enter/leave 會觸發父
+    if (e.currentTarget === e.target) setDragOver(false)
+  }
+
   return (
-    <div className="border-t border-bg-hover bg-bg-base px-6 py-3">
+    <div
+      className={`border-t border-bg-hover bg-bg-base px-6 py-3 transition-colors ${
+        dragOver ? 'bg-accent/10 ring-2 ring-inset ring-accent' : ''
+      }`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
       <div className="mx-auto max-w-3xl">
         {/* Attachment thumbnails */}
         {attachments.length > 0 && (
@@ -122,7 +155,7 @@ export function InputBox({ onSend, onAbort }: Props) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!sessionReady || busy}
+            disabled={!inputReady || busy}
             title="Attach image (PNG/JPEG/GIF/WebP, max 20 MB each)"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -167,13 +200,13 @@ export function InputBox({ onSend, onAbort }: Props) {
                 handleFiles(dt.files)
               }
             }}
-            disabled={!sessionReady}
+            disabled={!inputReady}
             placeholder={
-              !sessionReady
-                ? 'initializing…'
+              !inputReady
+                ? 'sidecar unavailable'
                 : busy
                   ? 'agent thinking — press Stop to abort'
-                  : 'Send a message  (Enter to send · Shift+Enter for newline · paste image to attach)'
+                  : 'Send a message  (Enter to send · Shift+Enter for newline · paste / drop image to attach)'
             }
             rows={1}
             className="scrollbar-thin max-h-[200px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
