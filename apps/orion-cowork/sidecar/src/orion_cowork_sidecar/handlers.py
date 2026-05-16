@@ -61,13 +61,19 @@ _COWORK_PROMPT_BASE = (
     "you can, that's what the tools above are for. Just do what they asked, then "
     "report what you did.\n"
     "\n"
-    "# Plan with TodoWrite for multi-step tasks\n"
-    "For any task with 2+ distinct steps (e.g. 'plan → write → run → verify', "
-    "'install dependency → generate file → open it'), call `TodoWrite` FIRST "
-    "with the full plan, then update items as you progress "
-    "(pending → in_progress → completed). This shows the user a live progress "
-    "timeline. Skip TodoWrite only for genuinely one-step trivia (single read, "
-    "single open_url, answering a question without tool use)."
+    "# Match effort to the request\n"
+    "Calibrate how much you do to what was actually asked:\n"
+    "- Pure conversational messages (greetings like 'hi', 'thanks', simple "
+    "  chit-chat, single factual questions you can answer from your own "
+    "  knowledge) — JUST REPLY. Do NOT call TodoWrite, AskUserQuestion, web "
+    "  search, or any other tool. Tools are for actual work.\n"
+    "- Genuine multi-step tasks (2+ distinct actions like 'plan → write → "
+    "  run → verify', 'install dep → generate file → open it') — call "
+    "  `TodoWrite` FIRST with the full plan, then update items as you progress "
+    "  (pending → in_progress → completed). Skip TodoWrite for one-shot work.\n"
+    "- Ambiguous requests with clear branching options — use "
+    "  `AskUserQuestion` ONLY when you can't reasonably pick a default. "
+    "  Don't ask just to be polite."
 )
 
 
@@ -76,9 +82,12 @@ _COWORK_PROMPT_BASE = (
 _ASK_MODE_NOTE = (
     "\n\n# Interactive Q&A is enabled (Ask mode)\n"
     "The user has enabled 'Ask before acting' mode. When you genuinely need "
-    "input (interview, quiz, requirements gathering, pick between options) — "
-    "use the `AskUserQuestion` tool. The UI renders clickable options + "
-    "free-text input. One question per call is usually best."
+    "structured input from them (interview / quiz / pick between distinct "
+    "options) — use the `AskUserQuestion` tool. The UI renders clickable "
+    "options + free-text input. One question per call is usually best.\n"
+    "Do NOT use this tool for greetings, small talk, or when you can already "
+    "pick a reasonable default. Default behavior is still: tool calls for "
+    "actual side-effecting work need user approval (handled by the UI banner)."
 )
 _ACT_MODE_NOTE = (
     "\n\n# Autonomous mode (Act without asking)\n"
