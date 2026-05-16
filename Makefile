@@ -26,7 +26,7 @@ help:
 	@echo "  gen-types       openapi + ws-schema → web/src/types/*.gen.ts"
 	@echo ""
 	@echo "Dev mode:"
-	@echo "  dev-cli PROMPT='hello'   orion run \"<PROMPT>\""
+	@echo "  dev-cli PROMPT='hello'   orion \"<PROMPT>\""
 	@echo "  dev-api                  orion-chat-api serve --reload --port 8000"
 	@echo "  dev-web                  vite dev (apps/orion-chat/web)"
 	@echo "  dev-cowork               Electron + Vite + sidecar (apps/orion-cowork)"
@@ -87,15 +87,15 @@ gen-types:
 PROMPT ?= hello
 
 dev-cli:
-	uv run --package orion-cli orion run "$(PROMPT)"
+	uv run --package orion-cli orion "$(PROMPT)"
 
 # Demo:跑一個讀檔案的 prompt 驗證 provider + tools 整條鏈通。
 demo-anthropic:
-	uv run --package orion-cli orion run --provider anthropic --model claude-sonnet-4-6 \
+	uv run --package orion-cli orion --provider anthropic --model claude-sonnet-4-6 \
 	  "Read /etc/hosts and tell me what's in it"
 
 demo-openai:
-	uv run --package orion-cli orion run --provider openai --model gpt-4o-mini \
+	uv run --package orion-cli orion --provider openai --model gpt-4o-mini \
 	  "Read /etc/hosts and tell me what's in it"
 
 dev-api:
