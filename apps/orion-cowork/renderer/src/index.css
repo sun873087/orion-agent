@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 桌機 app 預設 dark,html.dark 由 main.tsx 加上 */
+html, body, #root {
+  @apply h-full w-full bg-bg-base text-fg-base font-sans antialiased;
+}
+
+/* Markdown 區塊樣式(react-markdown 渲染後加上) */
+.prose-orion {
+  @apply leading-relaxed text-fg-base;
+}
+.prose-orion code:not(pre code) {
+  @apply rounded bg-bg-input px-1 py-0.5 font-mono text-sm text-fg-base;
+}
+.prose-orion pre {
+  @apply my-2 overflow-x-auto rounded-lg bg-bg-panel p-3 font-mono text-sm;
+}
+.prose-orion ul, .prose-orion ol {
+  @apply my-2 ml-5 list-outside;
+}
+.prose-orion ul { @apply list-disc; }
+.prose-orion ol { @apply list-decimal; }
+.prose-orion p {
+  @apply my-2;
+}
+.prose-orion p:first-child { @apply mt-0; }
+.prose-orion p:last-child  { @apply mb-0; }
+.prose-orion a {
+  @apply text-accent hover:text-accent-hover underline;
+}
+.prose-orion h1, .prose-orion h2, .prose-orion h3 {
+  @apply mt-3 mb-1 font-semibold;
+}
+.prose-orion h1 { @apply text-lg; }
+.prose-orion h2 { @apply text-base; }
+.prose-orion h3 { @apply text-sm; }
+
+/* Cursor 閃爍 — streaming text 結束處 */
+.cursor-blink::after {
+  content: '▍';
+  animation: blink 1s step-end infinite;
+  @apply text-fg-muted;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Scroll bar(消失感) */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply rounded bg-bg-hover;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  @apply bg-fg-subtle;
+}
