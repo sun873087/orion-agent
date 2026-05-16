@@ -17,7 +17,10 @@ from orion_cowork_sidecar.rpc import RpcServer
 async def _serve() -> None:
     handlers = Handlers()
     server = RpcServer(handlers.methods())
-    await server.serve()
+    try:
+        await server.serve()
+    finally:
+        await handlers.shutdown()
 
 
 def main() -> None:

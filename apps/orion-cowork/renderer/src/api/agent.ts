@@ -110,3 +110,36 @@ export async function deleteConversation(sessionId: string): Promise<void> {
     () => {},
   )
 }
+
+export type McpServerInfo = {
+  name: string
+  status: 'connected' | 'failed' | 'gave_up' | 'pending'
+  error: string | null
+  tools: string[]
+}
+
+export type McpStatus = {
+  config_path: string
+  servers: McpServerInfo[]
+}
+
+export async function fetchMcpStatus(): Promise<McpStatus> {
+  let result: McpStatus | null = null
+  await window.agent.call('mcp.list', {}, (frame) => {
+    if (frame.event === 'mcp_list' && frame.data) {
+      result = frame.data as McpStatus
+    }
+  })
+  if (!result) throw new Error('mcp.list returned no data')
+  return result
+}
+
+export async function reconnectMcp(name: string): Promise<boolean> {
+  let ok = false
+  await window.agent.call('mcp.reconnect', { name }, (frame) => {
+    if (frame.event === 'mcp_reconnect_result' && frame.data) {
+      ok = Boolean((frame.data as { ok?: boolean }).ok)
+    }
+  })
+  return ok
+}

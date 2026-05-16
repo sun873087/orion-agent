@@ -21,6 +21,7 @@ from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
 from orion_cowork_sidecar import storage
+from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.streaming import to_rpc_frame
 
 load_dotenv()
@@ -40,6 +41,10 @@ class Handlers:
         self._engine_lock = asyncio.Lock()
         # in-mem cache for fast title-on-first-prompt(避免每 turn 都打 DB select)
         self._title_done: set[str] = set()
+        # Phase 31-D 下:MCP manager(lazy start)
+        self._mcp = CoworkMcpManager()
+        self._mcp_started = False
+        self._mcp_lock = asyncio.Lock()
 
     async def ensure_engine(self) -> AsyncEngine:
         # 加 lock 避免兩個 concurrent task 都跑 init_db → "table already exists"
@@ -47,6 +52,22 @@ class Handlers:
             if self._engine is None:
                 self._engine = await storage.init_storage()
             return self._engine
+
+    async def ensure_mcp(self) -> CoworkMcpManager:
+        """Lazy start McpManager + supervisor — 首次需要 mcp tools 或 mcp.list 時才連。"""
+        async with self._mcp_lock:
+            if not self._mcp_started:
+                try:
+                    await self._mcp.start()
+                except Exception:  # noqa: BLE001
+                    # Start 失敗不該擋 sidecar — 沒 MCP 也能跑 builtin tools
+                    pass
+                self._mcp_started = True
+            return self._mcp
+
+    async def shutdown(self) -> None:
+        """sidecar 退出時清理 MCP。"""
+        await self._mcp.shutdown()
 
     # ─── Dispatch table ─────────────────────────────────────────────────
     def methods(self) -> dict[str, Any]:
@@ -58,6 +79,8 @@ class Handlers:
             "conversation.abort": self.conversation_abort,
             "conversation.list": self.conversation_list,
             "conversation.delete": self.conversation_delete,
+            "mcp.list": self.mcp_list,
+            "mcp.reconnect": self.mcp_reconnect,
         }
 
     # ─── Methods ────────────────────────────────────────────────────────
@@ -98,7 +121,8 @@ class Handlers:
         provider_name = params.get("provider", "anthropic")
         model = params.get("model", "claude-sonnet-4-6")
         llm = get_provider(provider_name, model)
-        tools = build_default_tool_set(asker=None)
+        mcp = await self.ensure_mcp()
+        tools = build_default_tool_set(asker=None) + mcp.tools
         conv = Conversation(
             provider=llm,
             tools=tools,
@@ -194,7 +218,8 @@ class Handlers:
             return None
 
         provider = get_provider(match.provider, match.model)
-        tools = build_default_tool_set(asker=None)
+        mcp = await self.ensure_mcp()
+        tools = build_default_tool_set(asker=None) + mcp.tools
         from uuid import UUID as _UUID
         conv = Conversation(
             provider=provider,
@@ -284,5 +309,51 @@ class Handlers:
         yield {
             "event": "conversation_deleted",
             "data": {"session_id": sid},
+            "final": True,
+        }
+
+    # ─── MCP methods ────────────────────────────────────────────────────
+
+    async def mcp_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """列當前 mcp.json 內每個 server 的 connection status + tools。"""
+        mcp = await self.ensure_mcp()
+        statuses = mcp.list_status()
+        from orion_cowork_sidecar.mcp_integration import cowork_mcp_config_path
+        yield {
+            "event": "mcp_list",
+            "data": {
+                "config_path": str(cowork_mcp_config_path()),
+                "servers": [
+                    {
+                        "name": s.name,
+                        "status": s.status,
+                        "error": s.error,
+                        "tools": s.tools,
+                    }
+                    for s in statuses
+                ],
+            },
+            "final": True,
+        }
+
+    async def mcp_reconnect(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """手動觸發 reconnect 某個 server。"""
+        name = params.get("name")
+        if not name:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "name required"},
+                "final": True,
+            }
+            return
+        mcp = await self.ensure_mcp()
+        ok = await mcp.reconnect(name)
+        yield {
+            "event": "mcp_reconnect_result",
+            "data": {"name": name, "ok": ok},
             "final": True,
         }
