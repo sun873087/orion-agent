@@ -42,12 +42,56 @@ function extractTodos(toolCalls: Array<{ toolName: string; input?: Record<string
   return []
 }
 
-type WorkingFile = { path: string; action: 'wrote' | 'edited' }
+type WorkingFile = { path: string; action: 'wrote' | 'edited' | 'opened' }
+
+/** 腳本 / 中間檔 — model 寫來執行的,不算「結果產物」。 */
+const SCRIPT_EXTS = new Set([
+  '.py', '.pyc', '.ipynb',
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+  '.sh', '.bash', '.zsh', '.fish',
+  '.rb', '.go', '.rs', '.java', '.kt', '.swift',
+  '.cpp', '.c', '.h', '.hpp', '.cc', '.cs',
+  '.lua', '.pl', '.php',
+])
+
+/** 「結果產物」副檔名白名單 — 從 message 文字內抽 path 時用。 */
+const OUTPUT_EXTS = new Set([
+  '.pdf', '.pptx', '.ppt', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.tsv',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.tiff',
+  '.mp4', '.mov', '.mkv', '.webm', '.mp3', '.wav', '.ogg', '.flac',
+  '.zip', '.tar', '.gz', '.tgz', '.7z', '.rar',
+  '.html', '.htm', '.md', '.txt', '.json', '.yaml', '.yml', '.xml',
+  '.epub', '.psd', '.ai', '.sketch', '.fig',
+])
+
+function isScriptFile(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  return SCRIPT_EXTS.has(path.slice(dot).toLowerCase())
+}
+
+function isOutputFile(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  return OUTPUT_EXTS.has(path.slice(dot).toLowerCase())
+}
+
+/** 從文字內掃絕對 path,只留結果產物(白名單副檔名)。 */
+function outputPathsFromText(text: string): string[] {
+  if (!text) return []
+  // 匹配 / 開頭、空白 / 中文字 / 引號 / 換行為界、含一個 . 的 path
+  const matches = text.matchAll(/(\/[^\s"'<>()`,;]+\.[a-zA-Z0-9]+)/g)
+  const out = new Set<string>()
+  for (const m of matches) {
+    const p = m[1]
+    if (isOutputFile(p)) out.add(p)
+  }
+  return Array.from(out)
+}
 
 /** Fallback:從 tool result text 推 file path(舊 sidecar 沒 emit tool_start 時用)。 */
 function pathFromText(text: string): string | null {
   if (!text) return null
-  // 常見格式:"Wrote N bytes to /path", "edited /path", "Created /path"
   const m =
     text.match(/(?:wrote|edited|created|overwrote)\s+(?:\d+\s+bytes\s+to\s+)?(\/\S+)/i) ??
     text.match(/(\/\S+\.\w+)/)
@@ -57,15 +101,20 @@ function pathFromText(text: string): string | null {
 function extractWorkingFiles(
   toolCalls: Array<{ toolName: string; input?: Record<string, unknown>; status: string; text?: string }>,
 ): WorkingFile[] {
-  // 對每個 file path 留最後一次 action(wrote 優先於 edited)
+  // 對每個 file path 留最後一次 action;優先序:opened > wrote > edited
+  // (opened = model 給 user 看的結果產物,優先顯)
+  const rank: Record<WorkingFile['action'], number> = { opened: 3, wrote: 2, edited: 1 }
   const map = new Map<string, WorkingFile>()
   for (const tc of toolCalls) {
     if (tc.status === 'error') continue
     const i = tc.input ?? {}
     let p: string | undefined
     let action: WorkingFile['action'] | undefined
-    // SDK tool names = Write / Edit / NotebookEdit;input field = path
-    if (tc.toolName === 'Write') {
+    if (tc.toolName === 'open_path') {
+      // model 開啟給 user 看的檔 = 結果產物
+      p = typeof i.path === 'string' ? i.path : undefined
+      action = 'opened'
+    } else if (tc.toolName === 'Write') {
       p = (typeof i.path === 'string' ? i.path : undefined)
         ?? (pathFromText(tc.text ?? '') ?? undefined)
       action = 'wrote'
@@ -79,11 +128,13 @@ function extractWorkingFiles(
         ?? (pathFromText(tc.text ?? '') ?? undefined)
       action = 'edited'
     }
-    if (p && action) {
-      const prev = map.get(p)
-      if (!prev || (action === 'wrote' && prev.action === 'edited')) {
-        map.set(p, { path: p, action })
-      }
+    if (!p || !action) continue
+    // 過濾腳本檔(Write/Edit 寫的中間檔,只有 open_path 才不過濾 — 因為 user
+    // 確實有時想看開過的程式碼)
+    if (action !== 'opened' && isScriptFile(p)) continue
+    const prev = map.get(p)
+    if (!prev || rank[action] > rank[prev.action]) {
+      map.set(p, { path: p, action })
     }
   }
   return Array.from(map.values())
@@ -125,12 +176,38 @@ export function RightSidebar() {
     return out
   }, [messages])
 
+  const allAssistantText = useMemo(
+    () => messages.filter((m) => m.role === 'assistant').map((m) => m.text).join('\n\n'),
+    [messages],
+  )
+
   const todos = useMemo(() => extractTodos(allCalls), [allCalls])
-  const workingFiles = useMemo(() => extractWorkingFiles(allCalls), [allCalls])
+  const workingFiles = useMemo(() => {
+    // 工作資料夾:只顯結果產物 — wrote/edited 過濾 script;再補上 text 內的 output paths
+    const fromTools = extractWorkingFiles(allCalls).filter(
+      (f) => f.action === 'opened' || isOutputFile(f.path),
+    )
+    const seen = new Set(fromTools.map((f) => f.path))
+    for (const p of outputPathsFromText(allAssistantText)) {
+      if (!seen.has(p)) {
+        fromTools.push({ path: p, action: 'opened' })
+        seen.add(p)
+      }
+    }
+    return fromTools
+  }, [allCalls, allAssistantText])
   const skills = useMemo(() => extractSkills(allCalls), [allCalls])
 
   return (
-    <aside className="scrollbar-thin flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-bg-hover bg-bg-panel px-3 py-3">
+    <aside
+      className={
+        // 小視窗:fixed overlay 從右側滑入(z-30 浮在 chat area 上,陰影區隔)
+        // ≥lg(1024px):relative 變 flex item,跟 chat area 並排
+        'scrollbar-thin flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-bg-hover bg-bg-panel px-3 py-3 ' +
+        'fixed inset-y-0 right-0 z-30 shadow-2xl ' +
+        'lg:relative lg:inset-auto lg:z-auto lg:shadow-none'
+      }
+    >
       <Section title={t('rightSidebar.progress')}>
         {todos.length === 0 ? (
           <Empty>{t('rightSidebar.noProgress')}</Empty>
@@ -245,9 +322,10 @@ function Empty({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** 訊息底部 inline 檔案卡(被 MessageBubble 用)。 */
+/** 訊息底部 inline 檔案卡(被 MessageBubble 用)— 只顯結果產物,不顯腳本中間檔。 */
 export function InlineFileCards({
   toolCalls,
+  messageText,
 }: {
   toolCalls: Array<{
     toolName: string
@@ -255,8 +333,26 @@ export function InlineFileCards({
     status: string
     text?: string
   }>
+  messageText?: string
 }) {
-  const files = useMemo(() => extractWorkingFiles(toolCalls), [toolCalls])
+  const files = useMemo(() => {
+    const fromTools = extractWorkingFiles(toolCalls)
+    // Inline card 嚴格只顯「結果產物」 — 過濾 wrote/edited 內非 output 的 path
+    const filtered = fromTools.filter(
+      (f) => f.action === 'opened' || isOutputFile(f.path),
+    )
+    // 補上從 message text 抽出的 output paths(model 在文字內提到但沒 open_path)
+    const seen = new Set(filtered.map((f) => f.path))
+    if (messageText) {
+      for (const p of outputPathsFromText(messageText)) {
+        if (!seen.has(p)) {
+          filtered.push({ path: p, action: 'opened' })
+          seen.add(p)
+        }
+      }
+    }
+    return filtered
+  }, [toolCalls, messageText])
   if (files.length === 0) return null
   return (
     <div className="mt-2 flex flex-col gap-1">

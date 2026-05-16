@@ -47,7 +47,15 @@ _COWORK_PROMPT_BASE = (
     "When the user attaches images, describe or analyze them as requested. "
     "Do not refuse desktop actions on grounds of 'I can't control your computer' — "
     "you can, that's what the tools above are for. Just do what they asked, then "
-    "report what you did."
+    "report what you did.\n"
+    "\n"
+    "# Plan with TodoWrite for multi-step tasks\n"
+    "For any task with 2+ distinct steps (e.g. 'plan → write → run → verify', "
+    "'install dependency → generate file → open it'), call `TodoWrite` FIRST "
+    "with the full plan, then update items as you progress "
+    "(pending → in_progress → completed). This shows the user a live progress "
+    "timeline. Skip TodoWrite only for genuinely one-step trivia (single read, "
+    "single open_url, answering a question without tool use)."
 )
 
 

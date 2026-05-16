@@ -104,14 +104,15 @@ export function MessageBubble({
               </>}
         {/* Inline file cards — assistant message 結尾若有 FileWrite/Edit,
             顯卡片讓 user 一鍵 open 生成的檔案。 */}
-        {!isUser && !message.streaming && message.toolCalls && (
+        {!isUser && !message.streaming && (
           <InlineFileCards
-            toolCalls={message.toolCalls.map((t) => ({
+            toolCalls={(message.toolCalls ?? []).map((t) => ({
               toolName: t.toolName,
               input: t.input,
               status: t.status,
               text: t.text,
             }))}
+            messageText={message.text}
           />
         )}
         {/* Regenerate(只最後一個 assistant message 顯示)*/}
