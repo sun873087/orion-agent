@@ -4,7 +4,9 @@ import {
   ChevronRight,
   Folder,
   Globe,
+  Inbox,
   MessageSquare,
+  MoreHorizontal,
   Plus,
   Search,
   Settings as SettingsIcon,
@@ -13,7 +15,12 @@ import {
   X,
 } from 'lucide-react'
 
-import { getSessionWorkspace, searchConversations, type SearchHit } from '../api/agent'
+import {
+  getSessionWorkspace,
+  searchConversations,
+  setSessionProject,
+  type SearchHit,
+} from '../api/agent'
 import { LOCALES, useTranslation, type Locale } from '../i18n'
 import { useDeleteConversation, useNewConversation, useSwitchConversation } from '../hooks/useAgent'
 import { useLoadProjectsOnce, useProjects } from '../hooks/useProjects'
@@ -171,34 +178,17 @@ export function Sidebar() {
               const active = s.session_id === currentId
               return (
                 <li key={s.session_id}>
-                  <div
-                    className={`group flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer ${
-                      active
-                        ? 'bg-bg-hover text-fg-base'
-                        : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
-                    }`}
+                  <SessionRow
+                    sessionId={s.session_id}
+                    title={s.title}
+                    active={active}
                     onClick={() => switchTo(s.session_id)}
-                  >
-                    <MessageSquare size={14} className="shrink-0" />
-                    <span className="flex-1 truncate" title={s.title ?? s.session_id}>
-                      {s.title || (
-                        <span className="text-fg-subtle italic">{t('sidebar.newConversation')}</span>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (window.confirm(t('sidebar.deleteConfirm'))) {
-                          del(s.session_id)
-                        }
-                      }}
-                      title={t('sidebar.deleteTooltip')}
-                      className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-error/20 hover:text-error"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                    onDelete={() => {
+                      if (window.confirm(t('sidebar.deleteConfirm'))) {
+                        del(s.session_id)
+                      }
+                    }}
+                  />
                 </li>
               )
             })}
@@ -208,6 +198,117 @@ export function Sidebar() {
 
       <UserMenu />
     </aside>
+  )
+}
+
+function SessionRow({
+  sessionId,
+  title,
+  active,
+  onClick,
+  onDelete,
+}: {
+  sessionId: string
+  title: string | null
+  active: boolean
+  onClick: () => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  const projects = useProjects()
+  const refreshSidebar = useAgentStore((s) => s.setSessions)  // placeholder for refresh ref
+  // 用 useEffect refresh trigger;真正 refresh sessions 走 sidebar 既有的 useEffect chain
+  const [menuOpen, setMenuOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onDocClick)
+    return () => window.removeEventListener('mousedown', onDocClick)
+  }, [menuOpen])
+
+  async function moveTo(projectId: string | null) {
+    setMenuOpen(false)
+    await setSessionProject(sessionId, projectId)
+    // 觸發 sidebar refresh — 既有 conversation_list 再拉一次
+    // 直接 refetch 走 store action 即可
+    const { listConversations } = await import('../api/agent')
+    const list = await listConversations()
+    refreshSidebar(list)
+  }
+
+  return (
+    <div
+      ref={wrapRef}
+      className={`group relative flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer ${
+        active ? 'bg-bg-hover text-fg-base' : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+      }`}
+      onClick={onClick}
+    >
+      <MessageSquare size={14} className="shrink-0" />
+      <span className="flex-1 truncate" title={title ?? sessionId}>
+        {title || (
+          <span className="text-fg-subtle italic">{t('sidebar.newConversation')}</span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setMenuOpen((o) => !o)
+        }}
+        title={t('sidebar.moveTo')}
+        className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+      >
+        <MoreHorizontal size={12} />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete()
+        }}
+        title={t('sidebar.deleteTooltip')}
+        className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-error/20 hover:text-error"
+      >
+        <Trash2 size={12} />
+      </button>
+      {menuOpen && (
+        <div
+          className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-bg-hover bg-bg-base p-1 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-0.5 px-2 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
+            {t('sidebar.moveTo')}
+          </div>
+          <button
+            type="button"
+            onClick={() => moveTo(null)}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-fg-base hover:bg-bg-hover"
+          >
+            <Inbox size={11} />
+            <span>{t('sidebar.personalConversations')}</span>
+          </button>
+          {projects.length > 0 && <div className="my-1 border-t border-bg-hover/60" />}
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => moveTo(p.id)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-fg-base hover:bg-bg-hover"
+            >
+              <Folder size={11} />
+              <span className="truncate">{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -245,10 +346,13 @@ function ProjectsSection() {
                 : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
             }`}
           >
-            <MessageSquare size={13} className="shrink-0" />
-            <span className="flex-1 truncate text-left">{t('sidebar.allConversations')}</span>
+            <Inbox size={13} className="shrink-0" />
+            <span className="flex-1 truncate text-left">{t('sidebar.personalConversations')}</span>
           </button>
         </li>
+        {projects.length > 0 && (
+          <li className="mx-1 my-1 border-t border-bg-hover/60" aria-hidden />
+        )}
         {projects.map((p) => (
           <li key={p.id}>
             <div

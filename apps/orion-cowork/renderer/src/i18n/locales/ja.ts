@@ -20,6 +20,8 @@ export default {
   'sidebar.noMatches': '一致する会話がありません',
   'sidebar.projects': 'プロジェクト',
   'sidebar.allConversations': 'すべての会話',
+  'sidebar.personalConversations': '個人チャット',
+  'sidebar.moveTo': '移動先⋯',
   'sidebar.newProject': '新規プロジェクト',
   'sidebar.noProjects': 'プロジェクトがありません',
 
@@ -59,6 +61,7 @@ export default {
   'header.workspace.from.session': 'この会話で個別設定',
   'header.workspace.from.project': '現在のプロジェクトから継承',
   'header.workspace.from.default': 'デフォルト workspace を使用',
+  'header.exitProject': 'プロジェクト退出',
   'header.workspace.source.session': '会話',
   'header.workspace.source.project': 'プロジェクト',
   'header.workspace.source.default': 'デフォルト',

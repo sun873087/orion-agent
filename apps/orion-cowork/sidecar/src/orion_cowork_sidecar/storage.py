@@ -135,7 +135,24 @@ async def init_storage() -> AsyncEngine:
     await init_db(engine)
     await _upsert_local_user(engine)
     await _ensure_cowork_ext_tables(engine)
+    await _ensure_default_workspace(engine)
     return engine
+
+
+async def _ensure_default_workspace(engine: AsyncEngine) -> None:
+    """個人對話的 default workspace:`<data_dir>/users/<uid>/workspace/`。
+
+    第一次啟動建目錄並寫進 prefs(若 user 還沒手動設過),之後 user 在
+    Settings 改了 prefs 我們不覆蓋。
+    """
+    default_ws = data_dir() / "users" / LOCAL_USER_ID / "workspace"
+    try:
+        default_ws.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    existing = await get_pref(engine, "default_workspace_dir")
+    if not existing:
+        await set_pref(engine, "default_workspace_dir", str(default_ws))
 
 
 async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:

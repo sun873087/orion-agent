@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles, X } from 'lucide-react'
 
 import { getPrefs, getProject, getSessionWorkspace } from '../api/agent'
 import { useTranslation } from '../i18n'
+import { useProjects } from '../hooks/useProjects'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
 
@@ -21,6 +22,13 @@ export function Header() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const toggleSidebarSearch = useSettingsStore((s) => s.toggleSidebarSearch)
+  const activeProjectId = useSettingsStore((s) => s.activeProjectId)
+  const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
+  const projects = useProjects()
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId) ?? null,
+    [projects, activeProjectId],
+  )
   const [workspace, setWorkspace] = useState<WorkspaceState>(null)
 
   // session 變動 → 解析來源:session-level > project > default
@@ -87,6 +95,24 @@ export function Header() {
           <Sparkles size={16} className="text-accent" />
           <h1 className="text-sm font-semibold">{t('app.title')}</h1>
         </div>
+        {/* Active project badge — 點 × 退出 project */}
+        {activeProject && (
+          <div
+            className="ml-3 flex items-center gap-1 rounded-md bg-accent/15 px-2 py-1 text-xs text-accent"
+            title={activeProject.workspace_dir ?? undefined}
+          >
+            <Folder size={11} />
+            <span className="max-w-[140px] truncate font-medium">{activeProject.name}</span>
+            <button
+              type="button"
+              onClick={() => setActiveProjectId(null)}
+              title={t('header.exitProject')}
+              className="ml-1 rounded p-0.5 hover:bg-accent/20"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3">

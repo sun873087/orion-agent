@@ -20,6 +20,8 @@ export default {
   'sidebar.noMatches': 'No matching conversations',
   'sidebar.projects': 'Projects',
   'sidebar.allConversations': 'All conversations',
+  'sidebar.personalConversations': 'Personal chats',
+  'sidebar.moveTo': 'Move to…',
   'sidebar.newProject': 'New project',
   'sidebar.noProjects': 'No projects yet',
 
@@ -59,6 +61,7 @@ export default {
   'header.workspace.from.session': 'Override set for this chat',
   'header.workspace.from.project': 'Inherited from current project',
   'header.workspace.from.default': 'Default workspace',
+  'header.exitProject': 'Exit project',
   'header.workspace.source.session': 'chat',
   'header.workspace.source.project': 'project',
   'header.workspace.source.default': 'default',

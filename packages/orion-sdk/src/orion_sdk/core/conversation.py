@@ -162,6 +162,11 @@ class Conversation:
     auto_extract_memories: bool = True
     """True → 對話結束 fork 子 agent 萃取 memory(失敗不影響主對話)。"""
 
+    memory_dir_override: "Path | None" = None
+    """若給定,extract 寫入這個目錄而非 user_memory_paths(user_id).memory_dir。
+    Cowork project chat 用此 override 把 memory 寫到 <workspace>/.orion-cowork/memory/。
+    """
+
     include_workspace_context: bool = True
     """True → 帶入 cwd-derived 內容(git_status、`<cwd>/.orion/instructions.md`、
     env_info 內 cwd 顯示)。CLI 預設 True;chat / desktop app 沒「user 工作目錄」
@@ -446,7 +451,18 @@ class Conversation:
         self, messages: list[NormalizedMessage]
     ) -> None:
         try:
-            paths = user_memory_paths(self.user_id)
+            from orion_sdk.memory.paths import MemoryPaths
+            if self.memory_dir_override is not None:
+                # override 是 .../memory 路徑;MemoryPaths.memory_dir = root/"memory"
+                paths = MemoryPaths(
+                    user_id=self.user_id,
+                    root=self.memory_dir_override.parent,
+                )
+                # safety:若 dir name 不是 "memory" 就 fallback 給 user-level
+                if paths.memory_dir != self.memory_dir_override:
+                    paths = user_memory_paths(self.user_id)
+            else:
+                paths = user_memory_paths(self.user_id)
             existing = scan_memory_dir(paths).memories
             await extract_memories(
                 messages, existing, provider=self.provider, paths=paths,

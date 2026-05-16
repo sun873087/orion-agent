@@ -20,6 +20,8 @@ export default {
   'sidebar.noMatches': '没有匹配的对话',
   'sidebar.projects': '项目',
   'sidebar.allConversations': '全部对话',
+  'sidebar.personalConversations': '个人对话',
+  'sidebar.moveTo': '移到⋯',
   'sidebar.newProject': '新建项目',
   'sidebar.noProjects': '尚未创建任何项目',
 
@@ -59,6 +61,7 @@ export default {
   'header.workspace.from.session': '此对话单独设置',
   'header.workspace.from.project': '继承自当前项目',
   'header.workspace.from.default': '使用默认工作目录',
+  'header.exitProject': '退出项目',
   'header.workspace.source.session': '对话',
   'header.workspace.source.project': '项目',
   'header.workspace.source.default': '默认',

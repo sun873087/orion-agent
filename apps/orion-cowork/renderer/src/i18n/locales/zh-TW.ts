@@ -22,6 +22,8 @@ export default {
   'sidebar.noMatches': '沒有符合的對話',
   'sidebar.projects': '專案',
   'sidebar.allConversations': '全部對話',
+  'sidebar.personalConversations': '個人對話',
+  'sidebar.moveTo': '移到⋯',
   'sidebar.newProject': '新增專案',
   'sidebar.noProjects': '尚未建立任何專案',
 
@@ -63,6 +65,7 @@ export default {
   'header.workspace.from.session': '此對話獨立設定',
   'header.workspace.from.project': '繼承自當前專案',
   'header.workspace.from.default': '使用預設工作目錄',
+  'header.exitProject': '退出專案',
   'header.workspace.source.session': '對話',
   'header.workspace.source.project': '專案',
   'header.workspace.source.default': '預設',

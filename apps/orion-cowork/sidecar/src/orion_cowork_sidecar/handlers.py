@@ -435,6 +435,7 @@ class Handlers:
         state_messages: list[Any] | None,
         engine: AsyncEngine,
     ) -> tuple[Conversation, str | None]:
+        from pathlib import Path
         """集中 Cowork Conversation 建構邏輯:吸收 workspace + project 設定。
 
         回 (conv, effective_workspace_dir)。effective_workspace_dir 是
@@ -488,6 +489,12 @@ class Handlers:
             )
 
         include_ws = bool(effective_workspace)
+        # Project chat → auto-extract 寫 <workspace>/.orion-cowork/memory/
+        # 沒 project → 寫 user-level(SDK default)
+        memory_override: Path | None = None
+        if project_id and effective_workspace:
+            memory_override = Path(effective_workspace) / ".orion-cowork" / "memory"
+            memory_override.mkdir(parents=True, exist_ok=True)
 
         conv_kwargs: dict[str, Any] = dict(
             provider=llm,
@@ -496,6 +503,7 @@ class Handlers:
             user_id=storage.LOCAL_USER_ID,
             memory_enabled=True,
             auto_extract_memories=True,
+            memory_dir_override=memory_override,
             include_workspace_context=include_ws,
             include_env_info=True,
             system_prompt=system_prompt,
