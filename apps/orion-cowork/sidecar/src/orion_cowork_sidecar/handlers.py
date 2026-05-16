@@ -1914,6 +1914,34 @@ def _is_user_prompt_row(content_json: Any) -> bool:
     return has_non_tool_result
 
 
+def _strip_mode_prefix(text: str) -> str:
+    """剝掉 conversation_send 在 LLM 看的版本注入的 Ask/Act mode prefix。
+
+    Mode prefix 寫進 DB 是故意的(保 cache prefix byte-identical),但 user
+    重看歷史時不該看到自己根本沒打的東西。RPC 回 renderer 前 strip 一下。
+
+    Pattern:`[Ask mode is active — ...]\\n\\n<real user content>` 或
+            `[Act mode is active — ...]\\n\\n<real user content>`。
+    """
+    if not text:
+        return text
+    if not text.startswith("["):
+        return text
+    # 找第一個 `]\n\n`(prefix 結束標記)
+    for marker in ("Ask mode is active", "Act mode is active"):
+        if not text.startswith(f"[{marker}"):
+            continue
+        end = text.find("]\n\n")
+        if end < 0:
+            # Fallback: 只 `]` 沒換行 — 也 strip 到 `]` 為止
+            end = text.find("]")
+            if end < 0:
+                return text
+            return text[end + 1:].lstrip()
+        return text[end + 3:]
+    return text
+
+
 def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, Any]]:
     """Raw (role, content_json) → UI dict,不 hydrate image blob bytes。
 
@@ -1977,7 +2005,7 @@ def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, An
             if text or attachments:
                 out.append({
                     "role": "user",
-                    "text": text,
+                    "text": _strip_mode_prefix(text),
                     "attachments": attachments,
                     "tool_calls": [],
                     "blocks": [],
