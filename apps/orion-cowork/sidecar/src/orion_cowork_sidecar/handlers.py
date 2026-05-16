@@ -849,18 +849,30 @@ class Handlers:
         }
 
     async def mcp_config_list(
-        self, _params: dict[str, Any]
+        self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
-        """讀 mcp.json 全部 server raw config(給 UI 編輯用)。"""
+        """讀 mcp.json 全部 server raw config。有 project_id 走 project mcp.json。"""
+        from pathlib import Path
         from orion_cowork_sidecar.mcp_integration import (
             cowork_mcp_config_path,
             read_mcp_config_raw,
         )
-        servers = read_mcp_config_raw()
+        project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+        target: Path
+        if project_id:
+            engine = await self.ensure_engine()
+            proj = await storage.get_project(engine, project_id)
+            if proj is None or not proj.workspace_dir:
+                yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+                return
+            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+        else:
+            target = cowork_mcp_config_path()
+        servers = read_mcp_config_raw(target)
         yield {
             "event": "mcp_config_list",
             "data": {
-                "config_path": str(cowork_mcp_config_path()),
+                "config_path": str(target),
                 "servers": [
                     {"name": name, "config": cfg}
                     for name, cfg in servers.items()
@@ -909,14 +921,25 @@ class Handlers:
                    "message": "http config needs url"}, "final": True}
             return
 
-        servers = read_mcp_config_raw()
+        from pathlib import Path
+        project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+        target: Path | None = None
+        if project_id:
+            engine = await self.ensure_engine()
+            proj = await storage.get_project(engine, project_id)
+            if proj is None or not proj.workspace_dir:
+                yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+                return
+            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+        servers = read_mcp_config_raw(target)
         if isinstance(rename_from, str) and rename_from and rename_from != name:
             servers.pop(rename_from, None)
         servers[name.strip()] = config
-        write_mcp_config_raw(servers)
-        # reload manager 讓變更生效(若 mcp 還沒 start,reload 內 start 也會跑)
-        await self._mcp.reload()
-        self._mcp_started = True
+        write_mcp_config_raw(servers, target)
+        # global 變更 reload manager;project 變更靠下次 send 時 _sync_mcp_for_session
+        if not project_id:
+            await self._mcp.reload()
+            self._mcp_started = True
         yield {
             "event": "mcp_config_upserted",
             "data": {"name": name.strip()},
@@ -934,14 +957,25 @@ class Handlers:
         if not isinstance(name, str):
             yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
             return
-        servers = read_mcp_config_raw()
+        from pathlib import Path
+        project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+        target: Path | None = None
+        if project_id:
+            engine = await self.ensure_engine()
+            proj = await storage.get_project(engine, project_id)
+            if proj is None or not proj.workspace_dir:
+                yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+                return
+            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+        servers = read_mcp_config_raw(target)
         if name not in servers:
             yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
             return
         servers.pop(name)
-        write_mcp_config_raw(servers)
-        await self._mcp.reload()
-        self._mcp_started = True
+        write_mcp_config_raw(servers, target)
+        if not project_id:
+            await self._mcp.reload()
+            self._mcp_started = True
         yield {
             "event": "mcp_config_deleted",
             "data": {"name": name},

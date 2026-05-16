@@ -224,9 +224,9 @@ def load_project_mcp_configs(workspace_dir: Path) -> dict[str, McpServerConfig]:
     return parsed
 
 
-def read_mcp_config_raw() -> dict[str, dict[str, Any]]:
-    """直接讀 mcp.json 內的 mcpServers dict,給 UI 顯示用(含未驗 config)。"""
-    path = cowork_mcp_config_path()
+def read_mcp_config_raw(target_path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """讀 mcp.json 內的 mcpServers dict。target_path None → global cowork mcp.json。"""
+    path = target_path or cowork_mcp_config_path()
     if not path.is_file():
         return {}
     try:
@@ -243,9 +243,12 @@ def read_mcp_config_raw() -> dict[str, dict[str, Any]]:
     return out
 
 
-def write_mcp_config_raw(servers: dict[str, dict[str, Any]]) -> None:
-    """atomic write — tmp file + rename。"""
-    path = cowork_mcp_config_path()
+def write_mcp_config_raw(
+    servers: dict[str, dict[str, Any]],
+    target_path: Path | None = None,
+) -> None:
+    """atomic write — tmp file + rename。target_path None → global。"""
+    path = target_path or cowork_mcp_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"mcpServers": servers}
     tmp = path.with_suffix(".json.tmp")

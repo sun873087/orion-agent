@@ -169,7 +169,7 @@ export type Memory = MemoryListItem & {
   body: string
 }
 
-export async function listMemories(): Promise<{
+export async function listMemories(projectId?: string | null): Promise<{
   memory_dir: string
   memories: MemoryListItem[]
 }> {
@@ -177,7 +177,9 @@ export async function listMemories(): Promise<{
     memory_dir: '',
     memories: [],
   }
-  await window.agent.call('memory.list', {}, (frame) => {
+  const params: Record<string, unknown> = {}
+  if (projectId) params.project_id = projectId
+  await window.agent.call('memory.list', params, (frame) => {
     if (frame.event === 'memory_list' && frame.data) {
       out = frame.data as { memory_dir: string; memories: MemoryListItem[] }
     }
@@ -185,9 +187,11 @@ export async function listMemories(): Promise<{
   return out
 }
 
-export async function getMemory(filename: string): Promise<Memory | null> {
+export async function getMemory(filename: string, projectId?: string | null): Promise<Memory | null> {
   let m: Memory | null = null
-  await window.agent.call('memory.get', { filename }, (frame) => {
+  const params: Record<string, unknown> = { filename }
+  if (projectId) params.project_id = projectId
+  await window.agent.call('memory.get', params, (frame) => {
     if (frame.event === 'memory' && frame.data) {
       const d = frame.data as { memory: Memory }
       m = d.memory
@@ -203,6 +207,7 @@ export async function writeMemory(input: {
   type: MemoryType
   body: string
   expires_at?: string | null
+  project_id?: string | null
 }): Promise<{ filename: string; memory: Memory | null }> {
   let out: { filename: string; memory: Memory | null } = { filename: '', memory: null }
   await window.agent.call('memory.write', input as Record<string, unknown>, (frame) => {
@@ -214,8 +219,10 @@ export async function writeMemory(input: {
   return out
 }
 
-export async function deleteMemory(filename: string): Promise<void> {
-  await window.agent.call('memory.delete', { filename }, () => {})
+export async function deleteMemory(filename: string, projectId?: string | null): Promise<void> {
+  const params: Record<string, unknown> = { filename }
+  if (projectId) params.project_id = projectId
+  await window.agent.call('memory.delete', params, () => {})
 }
 
 export type SkillSource = 'bundled' | 'system' | 'user' | 'other' | 'unknown'
@@ -233,7 +240,7 @@ export type Skill = SkillListItem & {
   body: string
 }
 
-export async function listSkills(): Promise<{
+export async function listSkills(projectId?: string | null): Promise<{
   user_skills_dir: string
   skills: SkillListItem[]
 }> {
@@ -241,7 +248,9 @@ export async function listSkills(): Promise<{
     user_skills_dir: '',
     skills: [],
   }
-  await window.agent.call('skill.list', {}, (frame) => {
+  const params: Record<string, unknown> = {}
+  if (projectId) params.project_id = projectId
+  await window.agent.call('skill.list', params, (frame) => {
     if (frame.event === 'skill_list' && frame.data) {
       out = frame.data as { user_skills_dir: string; skills: SkillListItem[] }
     }
@@ -249,9 +258,11 @@ export async function listSkills(): Promise<{
   return out
 }
 
-export async function getSkill(name: string): Promise<Skill | null> {
+export async function getSkill(name: string, projectId?: string | null): Promise<Skill | null> {
   let s: Skill | null = null
-  await window.agent.call('skill.get', { name }, (frame) => {
+  const params: Record<string, unknown> = { name }
+  if (projectId) params.project_id = projectId
+  await window.agent.call('skill.get', params, (frame) => {
     if (frame.event === 'skill' && frame.data) {
       const d = frame.data as { skill: Skill }
       s = d.skill
@@ -266,12 +277,15 @@ export async function writeSkill(input: {
   description: string
   body: string
   rename_from?: string | null
+  project_id?: string | null
 }): Promise<void> {
   await window.agent.call('skill.write', input as Record<string, unknown>, () => {})
 }
 
-export async function deleteSkill(filename: string): Promise<void> {
-  await window.agent.call('skill.delete', { filename }, () => {})
+export async function deleteSkill(filename: string, projectId?: string | null): Promise<void> {
+  const params: Record<string, unknown> = { filename }
+  if (projectId) params.project_id = projectId
+  await window.agent.call('skill.delete', params, () => {})
 }
 
 export async function getPrefs(): Promise<Record<string, string>> {
@@ -445,7 +459,7 @@ export type McpConfigEntry = {
   config: McpServerConfig
 }
 
-export async function listMcpConfigs(): Promise<{
+export async function listMcpConfigs(projectId?: string | null): Promise<{
   config_path: string
   servers: McpConfigEntry[]
 }> {
@@ -453,7 +467,9 @@ export async function listMcpConfigs(): Promise<{
     config_path: '',
     servers: [],
   }
-  await window.agent.call('mcp.config_list', {}, (frame) => {
+  const params: Record<string, unknown> = {}
+  if (projectId) params.project_id = projectId
+  await window.agent.call('mcp.config_list', params, (frame) => {
     if (frame.event === 'mcp_config_list' && frame.data) {
       out = frame.data as { config_path: string; servers: McpConfigEntry[] }
     }
@@ -465,14 +481,18 @@ export async function upsertMcpConfig(
   name: string,
   config: McpServerConfig,
   renameFrom?: string,
+  projectId?: string | null,
 ): Promise<void> {
   const params: Record<string, unknown> = { name, config }
   if (renameFrom) params.rename_from = renameFrom
+  if (projectId) params.project_id = projectId
   await window.agent.call('mcp.config_upsert', params, () => {})
 }
 
-export async function deleteMcpConfig(name: string): Promise<void> {
-  await window.agent.call('mcp.config_delete', { name }, () => {})
+export async function deleteMcpConfig(name: string, projectId?: string | null): Promise<void> {
+  const params: Record<string, unknown> = { name }
+  if (projectId) params.project_id = projectId
+  await window.agent.call('mcp.config_delete', params, () => {})
 }
 
 export async function reconnectMcp(name: string): Promise<boolean> {

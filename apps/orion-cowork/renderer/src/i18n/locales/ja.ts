@@ -49,6 +49,11 @@ export default {
   'projectSettings.mcpPath': 'MCP 設定',
   'projectSettings.resourcesHint': 'workspace 内の .orion-cowork/ を直接編集。次回この project でチャットすると自動ロード。',
 
+  'projectSettings.section.general': '一般',
+  'projectSettings.section.skills': 'スキル',
+  'projectSettings.section.memory': 'メモリ',
+  'projectSettings.section.mcp': 'MCP サーバー',
+
   'header.workspace.none': 'workspace なし',
   'header.workspace.setInSettings': '設定 → 一般 でデフォルト workspace を設定',
   'header.workspace.from.session': 'この会話で個別設定',

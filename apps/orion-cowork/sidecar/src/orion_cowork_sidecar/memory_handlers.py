@@ -11,18 +11,30 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from orion_sdk.memory.paths import user_memory_paths
+from orion_sdk.memory.paths import MemoryPaths, user_memory_paths
 from orion_sdk.memory.scan import (
     load_memory_file,
     scan_memory_dir,
 )
 from orion_sdk.memory.types import MemoryFrontmatter, MemoryType
 
+from orion_cowork_sidecar import storage
 from orion_cowork_sidecar.storage import LOCAL_USER_ID
 
 
-def _paths():
-    return user_memory_paths(LOCAL_USER_ID)
+async def _resolve_paths(project_id: str | None) -> MemoryPaths:
+    """project_id 給就走 <workspace>/.orion-cowork/memory;沒就 user-level。"""
+    if project_id:
+        engine = await storage.init_storage()
+        proj = await storage.get_project(engine, project_id)
+        if proj is not None and proj.workspace_dir:
+            root = Path(proj.workspace_dir) / ".orion-cowork"
+            p = MemoryPaths(user_id=f"_project_{project_id}", root=root)
+            p.ensure_dirs()
+            return p
+    paths = user_memory_paths(LOCAL_USER_ID)
+    paths.ensure_dirs()
+    return paths
 
 
 def _slugify(name: str) -> str:
@@ -57,9 +69,9 @@ def _memory_to_dict(m: Any) -> dict[str, Any]:
     }
 
 
-async def memory_list(_params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-    paths = _paths()
-    paths.ensure_dirs()
+async def memory_list(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    paths = await _resolve_paths(project_id)
     index = scan_memory_dir(paths, exclude_expired=False)
     # 用 type + name 排序方便瀏覽
     sorted_mems = sorted(
@@ -90,7 +102,8 @@ async def memory_get(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     if not isinstance(filename, str) or not filename.endswith(".md"):
         yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
         return
-    paths = _paths()
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    paths = await _resolve_paths(project_id)
     path = paths.memory_file(filename)
     if not path.is_file():
         yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
@@ -151,8 +164,8 @@ async def memory_write(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         type=mtype,
         expires_at=expires,
     )
-    paths = _paths()
-    paths.ensure_dirs()
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    paths = await _resolve_paths(project_id)
 
     # filename 解析
     filename = params.get("filename")
@@ -196,7 +209,8 @@ async def memory_delete(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]
     if "/" in filename or filename.startswith("."):
         yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
         return
-    paths = _paths()
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    paths = await _resolve_paths(project_id)
     path = paths.memory_file(filename)
     if not path.is_file():
         yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}

@@ -15,7 +15,7 @@ import { useTranslation } from '../../i18n'
 
 type EditTarget = { mode: 'new' } | { mode: 'edit'; entry: McpConfigEntry } | null
 
-export function McpSection() {
+export function McpSection({ projectId }: { projectId?: string | null } = {}) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<McpStatus | null>(null)
   const [configs, setConfigs] = useState<McpConfigEntry[]>([])
@@ -27,8 +27,15 @@ export function McpSection() {
   async function refresh() {
     setLoading(true)
     try {
-      const [st, cfg] = await Promise.all([fetchMcpStatus(), listMcpConfigs()])
-      setStatus(st)
+      // Project scope:只 read project's mcp.json,不查 connection status
+      // (那是 global 的)
+      const cfg = await listMcpConfigs(projectId ?? null)
+      if (!projectId) {
+        const st = await fetchMcpStatus()
+        setStatus(st)
+      } else {
+        setStatus({ config_path: cfg.config_path, servers: [] })
+      }
       setConfigs(cfg.servers)
       setConfigPath(cfg.config_path)
     } catch {
@@ -40,7 +47,7 @@ export function McpSection() {
 
   useEffect(() => {
     refresh()
-  }, [])
+  }, [projectId])
 
   async function handleReconnect(name: string) {
     setReconnecting(name)
@@ -54,7 +61,7 @@ export function McpSection() {
 
   async function handleDelete(name: string) {
     if (!window.confirm(t('mcp.deleteConfirm', { name }))) return
-    await deleteMcpConfig(name)
+    await deleteMcpConfig(name, projectId ?? null)
     await refresh()
   }
 
@@ -62,6 +69,7 @@ export function McpSection() {
     return (
       <McpEditor
         target={edit}
+        projectId={projectId ?? null}
         onClose={() => setEdit(null)}
         onSaved={async () => {
           setEdit(null)
@@ -187,10 +195,12 @@ function StatusIcon({ status }: { status: McpStatus['servers'][number]['status']
 
 function McpEditor({
   target,
+  projectId,
   onClose,
   onSaved,
 }: {
   target: { mode: 'new' } | { mode: 'edit'; entry: McpConfigEntry }
+  projectId?: string | null
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
@@ -254,6 +264,7 @@ function McpEditor({
         name.trim(),
         cfg,
         existing && existing.name !== name.trim() ? existing.name : undefined,
+        projectId ?? null,
       )
       await onSaved()
     } catch (e) {

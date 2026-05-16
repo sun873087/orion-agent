@@ -19,7 +19,7 @@ const SOURCE_COLOR: Record<string, string> = {
   unknown: 'text-fg-subtle',
 }
 
-export function SkillsSection() {
+export function SkillsSection({ projectId }: { projectId?: string | null } = {}) {
   const { t } = useTranslation()
   const [items, setItems] = useState<SkillListItem[]>([])
   const [userDir, setUserDir] = useState('')
@@ -29,7 +29,7 @@ export function SkillsSection() {
   async function refresh() {
     setLoading(true)
     try {
-      const r = await listSkills()
+      const r = await listSkills(projectId ?? null)
       setItems(r.skills)
       setUserDir(r.user_skills_dir)
     } finally {
@@ -39,17 +39,18 @@ export function SkillsSection() {
 
   useEffect(() => {
     refresh()
-  }, [])
+  }, [projectId])
 
   async function openItem(name: string) {
-    const s = await getSkill(name)
+    const s = await getSkill(name, projectId ?? null)
     if (s) setEditing(s)
   }
 
   async function handleDelete(s: SkillListItem) {
-    if (!s.editable) return
+    // project scope:project 內所有 skill 都可刪;user scope:只 editable
+    if (!projectId && !s.editable) return
     if (!window.confirm(t('skill.deleteConfirm', { name: s.name }))) return
-    await deleteSkill(s.filename)
+    await deleteSkill(s.filename, projectId ?? null)
     await refresh()
   }
 
@@ -57,6 +58,7 @@ export function SkillsSection() {
     return (
       <SkillEditor
         skill={editing === 'new' ? null : editing}
+        projectId={projectId ?? null}
         onClose={() => setEditing(null)}
         onSaved={async () => {
           setEditing(null)
@@ -134,15 +136,18 @@ export function SkillsSection() {
 
 function SkillEditor({
   skill,
+  projectId,
   onClose,
   onSaved,
 }: {
   skill: Skill | null
+  projectId?: string | null
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
-  const readonly = skill !== null && !skill.editable
+  // project scope 內所有 skill 都可改;user scope 仰賴 editable 旗標
+  const readonly = skill !== null && !projectId && !skill.editable
   const [name, setName] = useState(skill?.name ?? '')
   const [description, setDescription] = useState(skill?.description ?? '')
   const [body, setBody] = useState(skill?.body ?? '')
@@ -159,7 +164,8 @@ function SkillEditor({
         name: name.trim(),
         description: description.trim(),
         body,
-        rename_from: skill?.editable ? skill.filename : null,
+        rename_from: skill && (projectId || skill.editable) ? skill.filename : null,
+        project_id: projectId ?? null,
       })
       await onSaved()
     } finally {

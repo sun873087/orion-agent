@@ -52,6 +52,12 @@ export default {
   'projectSettings.mcpPath': 'MCP 設定',
   'projectSettings.resourcesHint': '直接編 workspace 內的 .orion-cowork/ 子目錄。下次該專案對話開始時自動載入。',
 
+  // ProjectSettingsPage categories
+  'projectSettings.section.general': '一般',
+  'projectSettings.section.skills': '技能',
+  'projectSettings.section.memory': '記憶',
+  'projectSettings.section.mcp': 'MCP 伺服器',
+
   'header.workspace.none': '無 workspace',
   'header.workspace.setInSettings': '在「設定 → 一般」設定預設工作目錄',
   'header.workspace.from.session': '此對話獨立設定',

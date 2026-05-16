@@ -49,6 +49,11 @@ export default {
   'projectSettings.mcpPath': 'MCP config',
   'projectSettings.resourcesHint': 'Edit .orion-cowork/ inside the workspace directly. Auto-loaded next time you chat in this project.',
 
+  'projectSettings.section.general': 'General',
+  'projectSettings.section.skills': 'Skills',
+  'projectSettings.section.memory': 'Memory',
+  'projectSettings.section.mcp': 'MCP Servers',
+
   'header.workspace.none': 'No workspace',
   'header.workspace.setInSettings': 'Set default workspace in Settings → General',
   'header.workspace.from.session': 'Override set for this chat',

@@ -28,6 +28,18 @@ def _user_skills_dir() -> Path:
     return default_users_root() / LOCAL_USER_ID / "skills"
 
 
+async def _project_skills_dir(project_id: str) -> Path | None:
+    """<workspace>/.orion-cowork/skills/ 若 project 有 workspace。"""
+    from orion_cowork_sidecar import storage as _storage
+    engine = await _storage.init_storage()
+    proj = await _storage.get_project(engine, project_id)
+    if proj is None or not proj.workspace_dir:
+        return None
+    d = Path(proj.workspace_dir) / ".orion-cowork" / "skills"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", name).strip().lower()
     slug = re.sub(r"[\s-]+", "-", slug)[:50]
@@ -61,17 +73,30 @@ def _skill_to_dict(skill: Any) -> dict[str, Any]:
     }
 
 
-async def skill_list(_params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-    """合併 4 個來源的 skills(後勝同名),回 metadata。"""
+async def skill_list(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """有 project_id → 只列 project 的 skills(co-located in workspace)。
+    沒 → 合併 bundled / system / user。
+    """
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    if project_id:
+        pdir = await _project_skills_dir(project_id)
+        items = load_skills_dir(pdir) if pdir else []
+        yield {
+            "event": "skill_list",
+            "data": {
+                "user_skills_dir": str(pdir) if pdir else "",
+                "skills": [_skill_to_dict(s) for s in items],
+            },
+            "final": True,
+        }
+        return
     by_name: dict[str, Any] = {}
-    # 順序由低到高:bundled → system → user(project 在 chat app 沒意義,略)
     for skill in _bundled_skills():
         by_name[skill.name] = skill
     for skill in load_skills_dir(_system_skills_dir()):
         by_name[skill.name] = skill
     for skill in load_skills_dir(_user_skills_dir()):
         by_name[skill.name] = skill
-
     items = sorted(by_name.values(), key=lambda s: s.name.lower())
     yield {
         "event": "skill_list",
@@ -84,18 +109,24 @@ async def skill_list(_params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
 
 
 async def skill_get(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-    """單 skill 完整內容(body)。 by name(同名 user 級會勝)。"""
     name = params.get("name")
     if not isinstance(name, str):
         yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
         return
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
     by_name: dict[str, Any] = {}
-    for skill in _bundled_skills():
-        by_name[skill.name] = skill
-    for skill in load_skills_dir(_system_skills_dir()):
-        by_name[skill.name] = skill
-    for skill in load_skills_dir(_user_skills_dir()):
-        by_name[skill.name] = skill
+    if project_id:
+        pdir = await _project_skills_dir(project_id)
+        if pdir:
+            for skill in load_skills_dir(pdir):
+                by_name[skill.name] = skill
+    else:
+        for skill in _bundled_skills():
+            by_name[skill.name] = skill
+        for skill in load_skills_dir(_system_skills_dir()):
+            by_name[skill.name] = skill
+        for skill in load_skills_dir(_user_skills_dir()):
+            by_name[skill.name] = skill
     skill = by_name.get(name)
     if skill is None:
         yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
@@ -133,8 +164,17 @@ async def skill_write(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     assert isinstance(description, str)
     assert isinstance(body, str)
 
-    user_dir = _user_skills_dir()
-    user_dir.mkdir(parents=True, exist_ok=True)
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    if project_id:
+        pdir = await _project_skills_dir(project_id)
+        if pdir is None:
+            yield {"event": "error", "data": {"code": "NOT_FOUND",
+                   "message": "project has no workspace"}, "final": True}
+            return
+        user_dir = pdir
+    else:
+        user_dir = _user_skills_dir()
+        user_dir.mkdir(parents=True, exist_ok=True)
 
     filename = params.get("filename")
     if not isinstance(filename, str) or not filename:
@@ -174,12 +214,20 @@ async def skill_write(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
 
 
 async def skill_delete(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-    """刪 user-level skill(整個 folder)。"""
+    """刪 user-level 或 project-level skill(整個 folder)。"""
     filename = params.get("filename")
     if not isinstance(filename, str) or "/" in filename or filename.startswith("."):
         yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
         return
-    target = _user_skills_dir() / filename
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    if project_id:
+        pdir = await _project_skills_dir(project_id)
+        if pdir is None:
+            yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+            return
+        target = pdir / filename
+    else:
+        target = _user_skills_dir() / filename
     if not target.is_dir():
         yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
         return

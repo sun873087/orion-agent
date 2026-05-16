@@ -14,7 +14,7 @@ import { useTranslation } from '../../i18n'
 
 const TYPES: MemoryType[] = ['user', 'feedback', 'project', 'reference']
 
-export function MemorySection() {
+export function MemorySection({ projectId }: { projectId?: string | null } = {}) {
   const { t } = useTranslation()
   const [memDir, setMemDir] = useState('')
   const [items, setItems] = useState<MemoryListItem[]>([])
@@ -24,7 +24,7 @@ export function MemorySection() {
   async function refresh() {
     setLoading(true)
     try {
-      const r = await listMemories()
+      const r = await listMemories(projectId ?? null)
       setMemDir(r.memory_dir)
       setItems(r.memories)
     } finally {
@@ -34,16 +34,16 @@ export function MemorySection() {
 
   useEffect(() => {
     refresh()
-  }, [])
+  }, [projectId])
 
   async function openItem(filename: string) {
-    const m = await getMemory(filename)
+    const m = await getMemory(filename, projectId ?? null)
     if (m) setEditing(m)
   }
 
   async function handleDelete(filename: string) {
     if (!window.confirm(t('memory.deleteConfirm'))) return
-    await deleteMemory(filename)
+    await deleteMemory(filename, projectId ?? null)
     await refresh()
   }
 
@@ -51,6 +51,7 @@ export function MemorySection() {
     return (
       <MemoryEditor
         memory={editing === 'new' ? null : editing}
+        projectId={projectId ?? null}
         onClose={() => setEditing(null)}
         onSaved={async () => {
           setEditing(null)
@@ -129,10 +130,12 @@ export function MemorySection() {
 
 function MemoryEditor({
   memory,
+  projectId,
   onClose,
   onSaved,
 }: {
   memory: Memory | null
+  projectId?: string | null
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
@@ -157,6 +160,7 @@ function MemoryEditor({
         type,
         body,
         expires_at: expires.trim() || null,
+        project_id: projectId ?? null,
       })
       await onSaved()
     } finally {
