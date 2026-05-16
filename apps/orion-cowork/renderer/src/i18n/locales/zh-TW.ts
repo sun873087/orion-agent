@@ -126,7 +126,8 @@ export default {
   'input.askMode.askDesc': '每個工具呼叫前先停下等你按 Approve。(尚未實作,目前僅 UI)',
   'input.askMode.actLabel': '放手讓我做',
   'input.askMode.actDesc': 'Orion 一路執行到底,不會中途停下。',
-  'input.modelPill.tooltip': '到設定變更模型',
+  'input.modelPill.tooltip': '變更模型',
+  'input.modelPill.manage': '到設定管理模型…',
   'input.lastTurn': '上一次:{reason} · {turns} 個回合',
   'input.lastTurn.singular': '上一次:{reason} · {turns} 個回合',
 

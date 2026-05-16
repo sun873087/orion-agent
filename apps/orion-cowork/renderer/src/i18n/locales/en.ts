@@ -116,7 +116,8 @@ export default {
   'input.askMode.askDesc': 'Orion pauses so you can approve each action. (Coming soon — currently UI only.)',
   'input.askMode.actLabel': 'Act without asking',
   'input.askMode.actDesc': 'Orion works without pausing for approval.',
-  'input.modelPill.tooltip': 'Change model in Settings',
+  'input.modelPill.tooltip': 'Change model',
+  'input.modelPill.manage': 'Manage models in Settings…',
   'input.lastTurn': 'last: {reason} · {turns} turns',
   'input.lastTurn.singular': 'last: {reason} · {turns} turn',
 

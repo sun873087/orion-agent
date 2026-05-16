@@ -116,7 +116,8 @@ export default {
   'input.askMode.askDesc': '各ツール呼び出し前に承認を求めます。(未実装、UI のみ)',
   'input.askMode.actLabel': '確認せず実行',
   'input.askMode.actDesc': 'Orion は止まらずに最後まで実行します。',
-  'input.modelPill.tooltip': '設定からモデルを変更',
+  'input.modelPill.tooltip': 'モデルを変更',
+  'input.modelPill.manage': '設定でモデルを管理…',
   'input.lastTurn': '前回:{reason} · {turns} ターン',
   'input.lastTurn.singular': '前回:{reason} · {turns} ターン',
 

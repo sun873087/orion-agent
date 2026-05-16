@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
+import { fetchModels } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore, type PermissionMode } from '../store/settings'
@@ -432,21 +433,149 @@ function PermissionModeRow({
   )
 }
 
-/** Model 名稱 pill — 點開跳 Settings → Models。 */
+/** Model pill — 點開直接列 providers / models 選,沒設 API key 的 disabled。 */
 function ModelPill() {
   const { t } = useTranslation()
-  const model = useSettingsStore((s) => s.selectedModel)
+  const providers = useSettingsStore((s) => s.providers)
+  const catalogLoaded = useSettingsStore((s) => s.catalogLoaded)
+  const setCatalog = useSettingsStore((s) => s.setCatalog)
+  const selectedProvider = useSettingsStore((s) => s.selectedProvider)
+  const selectedModel = useSettingsStore((s) => s.selectedModel)
+  const setSelectedModel = useSettingsStore((s) => s.setSelectedModel)
   const openSettings = useSettingsStore((s) => s.openSettings)
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  // popup 向上開可用的高度 = button.top - 16 (留 padding)
+  // empty state 時 InputBox 中央定位,popup 往上空間有限;active state 在視窗
+  // 底,空間很大。動態算才不會被視窗頂裁掉。
+  const [popupMaxH, setPopupMaxH] = useState<number>(400)
+
+  // Lazy load catalog — InputBox 是 cold-start 第一個看到的 UI,user 不一定
+  // 進過 Settings → Models,所以這裡也自己 fetch 一次。
+  useEffect(() => {
+    if (catalogLoaded) return
+    fetchModels()
+      .then((cat) =>
+        setCatalog(
+          cat.providers.map((p) => ({
+            id: p.id,
+            label: p.label,
+            models: p.models,
+            api_key_configured: p.api_key_configured,
+          })),
+        ),
+      )
+      .catch(() => {})
+  }, [catalogLoaded, setCatalog])
+
+  // 點外面關掉 popup
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  // 打開時即時量 button 距視窗頂的距離,popup max-h 不超過就不會被裁
+  useEffect(() => {
+    if (!open) return
+    const measure = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      if (r) setPopupMaxH(Math.max(120, r.top - 16))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [open])
+
+  // 找目前 model 的 label;catalog 沒 load 完就 fallback 顯 id
+  const activeLabel =
+    providers
+      .find((p) => p.id === selectedProvider)
+      ?.models.find((m) => m.id === selectedModel)?.label ?? selectedModel
+
   return (
-    <button
-      type="button"
-      onClick={() => openSettings('models')}
-      title={t('input.modelPill.tooltip')}
-      className="flex h-8 max-w-[180px] items-center gap-1 rounded-lg px-2 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
-    >
-      <span className="truncate">{model}</span>
-      <ChevronDown size={12} />
-    </button>
+    <div ref={wrapRef} className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 max-w-[180px] items-center gap-1 rounded-lg px-2 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+      >
+        <span className="truncate">{activeLabel}</span>
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-full right-0 z-40 mb-2 flex w-72 flex-col overflow-hidden rounded-xl border border-bg-hover bg-bg-panel shadow-xl"
+          style={{ maxHeight: `${popupMaxH}px` }}
+        >
+          <div className="scrollbar-thin flex-1 overflow-y-auto">
+            {!catalogLoaded ? (
+              <div className="px-3 py-3 text-xs text-fg-muted">
+                {t('settings.model.loading')}
+              </div>
+            ) : providers.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-error">
+                {t('settings.model.failed')}
+              </div>
+            ) : (
+              providers.map((p) => (
+                <div key={p.id}>
+                  <div className="flex items-center justify-between border-b border-bg-hover px-3 py-1.5 text-[11px] uppercase tracking-wide text-fg-subtle">
+                    <span>{p.label}</span>
+                    {!p.api_key_configured && (
+                      <span className="text-warning">
+                        {t('settings.model.apiKeyMissing')}
+                      </span>
+                    )}
+                  </div>
+                  {p.models.map((m) => {
+                    const active =
+                      selectedProvider === p.id && selectedModel === m.id
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        disabled={!p.api_key_configured}
+                        onClick={() => {
+                          setSelectedModel(p.id, m.id)
+                          setOpen(false)
+                        }}
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40 ${
+                          active ? 'text-accent' : 'text-fg-base'
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          {active && <Check size={12} className="shrink-0" />}
+                          <span className="truncate">{m.label}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
+                          {m.id}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              openSettings('models')
+            }}
+            className="shrink-0 border-t border-bg-hover px-3 py-2 text-left text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          >
+            {t('input.modelPill.manage')}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
