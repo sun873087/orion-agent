@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Orion · Anthropic Prompt Caching — 視覺圖解 4 BP + tools / memory / skill / mode</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --fg: #f0f6fc;
+    --muted: #9ea7b3;
+    --accent: #58a6ff;
+    --bp1: #1f6feb;
+    --bp2: #238636;
+    --bp3: #bf8700;
+    --bp4: #b62324;
+  }
+  body {
+    font-family: -apple-system, "SF Pro Text", "Microsoft JhengHei", sans-serif;
+    max-width: 1100px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.6rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  h2 { font-size: 1.2rem; color: var(--accent); margin-top: 2.5rem; }
+  h3 { font-size: 1rem; margin-top: 1.4rem; }
+  code, pre { font-family: "SF Mono", Menlo, Consolas, monospace; }
+  code { background: var(--panel); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85rem; }
+  pre { background: var(--panel); padding: 0.9rem; border-radius: 6px; overflow-x: auto; font-size: 0.78rem; line-height: 1.5; }
+  figure { margin: 1.5rem 0; text-align: center; }
+  figcaption { font-size: 0.82rem; color: var(--muted); margin-top: 0.5rem; }
+  svg { max-width: 100%; background: var(--panel); border-radius: 8px; padding: 1rem; box-sizing: border-box; }
+  table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; font-size: 0.88rem; }
+  th, td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--accent); font-weight: 600; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 3rem 0 1.5rem; }
+  .legend { display: flex; gap: 1.5rem; justify-content: center; margin: 0.5rem 0 1rem; flex-wrap: wrap; font-size: 0.82rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch { display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>Orion · Prompt Caching — tools / memory / skill / mode 在 4 BP 中的位置(視覺圖解)</h1>
+
+<p class="muted">
+Anthropic API 允許每 request 最多 4 個 <code>cache_control</code> breakpoint。Orion 把它們配在 system 兩段 + messages rolling 兩個。本文用 SVG 視覺化解釋 <strong>tools / memory / skill / mode prefix / git_status / user 真實輸入</strong> 各自落在哪個區、哪個 bp 命中。
+</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="swatch" style="background:#1f6feb"></span> BP 1 (static)</div>
+  <div class="legend-item"><span class="swatch" style="background:#238636"></span> BP 2 (session-stable)</div>
+  <div class="legend-item"><span class="swatch" style="background:#bf8700"></span> BP 3 (rolling read)</div>
+  <div class="legend-item"><span class="swatch" style="background:#b62324"></span> BP 4 (rolling write)</div>
+  <div class="legend-item"><span class="swatch" style="background:#3fb950"></span> 永遠固定</div>
+  <div class="legend-item"><span class="swatch" style="background:#d29922"></span> 每 turn 變</div>
+</div>
+
+<h2>🗺️ 圖 1:完整 Request 全景 — 7 大塊 + 4 BP 位置</h2>
+
+<figure>
+<svg viewBox="0 0 1000 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp1-grad" x1="0" x2="1"><stop offset="0" stop-color="#1f6feb" stop-opacity="0.25"/><stop offset="1" stop-color="#1f6feb" stop-opacity="0.1"/></linearGradient>
+    <linearGradient id="bp2-grad" x1="0" x2="1"><stop offset="0" stop-color="#238636" stop-opacity="0.25"/><stop offset="1" stop-color="#238636" stop-opacity="0.1"/></linearGradient>
+    <linearGradient id="bp3-grad" x1="0" x2="1"><stop offset="0" stop-color="#bf8700" stop-opacity="0.25"/><stop offset="1" stop-color="#bf8700" stop-opacity="0.1"/></linearGradient>
+    <linearGradient id="bp4-grad" x1="0" x2="1"><stop offset="0" stop-color="#b62324" stop-opacity="0.25"/><stop offset="1" stop-color="#b62324" stop-opacity="0.1"/></linearGradient>
+  </defs>
+  <style>
+    .label { font: 600 13px sans-serif; fill: #f0f6fc; }
+    .sub { font: 11px sans-serif; fill: #9ea7b3; }
+    .bp-line { stroke: #fff; stroke-width: 2; stroke-dasharray: 4 3; }
+    .bp-text { font: 700 12px monospace; fill: #fff; text-anchor: middle; }
+    .zone { font: 600 11px monospace; fill: #58a6ff; text-anchor: middle; }
+    .item { font: 12px sans-serif; fill: #f0f6fc; }
+    .item-meta { font: 10px sans-serif; fill: #9ea7b3; }
+  </style>
+
+  <!-- TOOLS ZONE -->
+  <rect x="20" y="20" width="960" height="80" rx="8" fill="url(#bp1-grad)" stroke="#1f6feb" stroke-width="1"/>
+  <text x="500" y="42" class="zone">📦 TOOLS 參數 (API 獨立欄位)</text>
+  <text x="40" y="65" class="item">tools = [ Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch,</text>
+  <text x="40" y="82" class="item">         <tspan fill="#bf8700">Skill</tspan>, AskUserQuestion, TodoWrite, MCP tools, open_url, open_path ]</text>
+  <text x="800" y="90" class="item-meta">📍 永遠固定 → BP 1 prefix</text>
+
+  <!-- BP 1 LINE -->
+  <line x1="20" y1="115" x2="980" y2="115" class="bp-line" stroke="#1f6feb"/>
+  <rect x="430" y="105" width="140" height="22" rx="11" fill="#1f6feb"/>
+  <text x="500" y="120" class="bp-text">━━ BP 1 (cache) ━━</text>
+
+  <!-- SYSTEM ELEMENT 0 -->
+  <rect x="20" y="140" width="960" height="120" rx="8" fill="url(#bp1-grad)" stroke="#1f6feb" stroke-width="1"/>
+  <text x="500" y="160" class="zone">📋 system Element 0 — static block</text>
+  <text x="40" y="183" class="item">• _COWORK_PROMPT_BASE (Cowork desktop 自介 + effort matching)</text>
+  <text x="40" y="200" class="item">• _paths_section (workspace paths)</text>
+  <text x="40" y="217" class="item">• user_instructions (從 prefs / 設定→一般)</text>
+  <text x="40" y="234" class="item">• project_custom_instructions (project / instructions.md)</text>
+  <text x="40" y="251" class="item">• SDK render_static_block() — 7 段固定 system (safety / tool 通則 etc.)</text>
+
+  <!-- BP 1 (already shown above, this is the actual cache_control mark) -->
+
+  <!-- SYSTEM ELEMENT 1 -->
+  <rect x="20" y="290" width="960" height="110" rx="8" fill="url(#bp2-grad)" stroke="#238636" stroke-width="1"/>
+  <text x="500" y="310" class="zone">📋 system Element 1 — session-stable 動態段</text>
+  <text x="40" y="332" class="item">• env_info (platform / cwd / 日期)</text>
+  <text x="40" y="349" class="item">• instructions (user / project 級 .md)</text>
+  <text x="40" y="366" class="item">• mcp_instructions (MCP server 描述)</text>
+  <text x="40" y="383" class="item">• language / output_style / session_guidance</text>
+
+  <!-- BP 2 LINE -->
+  <line x1="20" y1="415" x2="980" y2="415" class="bp-line" stroke="#238636"/>
+  <rect x="430" y="405" width="140" height="22" rx="11" fill="#238636"/>
+  <text x="500" y="420" class="bp-text">━━ BP 2 (cache) ━━</text>
+
+  <!-- MESSAGES HISTORY -->
+  <rect x="20" y="440" width="960" height="100" rx="8" fill="url(#bp3-grad)" stroke="#bf8700" stroke-width="1"/>
+  <text x="500" y="460" class="zone">💬 messages — 歷史 (frozen turns 0..N-1)</text>
+  <text x="40" y="483" class="item">user 0 → assistant 0 → user 1 (tool_results) → assistant 1 → ... → user N-1</text>
+  <text x="40" y="503" class="item-meta">★ Skill 被呼叫過,Skill markdown 內容存在這片區的 tool_result 內</text>
+  <text x="40" y="520" class="item-meta">★ Mode prefix / memory / git_status 從本輪「凍結」進 state_messages 後也在這(只 mode 進 DB,memory/git 只在 messages_for_loop 不進 DB)</text>
+
+  <!-- BP 3 LINE -->
+  <line x1="20" y1="555" x2="980" y2="555" class="bp-line" stroke="#bf8700"/>
+  <rect x="380" y="545" width="240" height="22" rx="11" fill="#bf8700"/>
+  <text x="500" y="560" class="bp-text">━━ BP 3 (rolling reader) ━━</text>
+
+  <!-- LAST USER MSG -->
+  <rect x="20" y="580" width="960" height="110" rx="8" fill="url(#bp4-grad)" stroke="#b62324" stroke-width="1"/>
+  <text x="500" y="600" class="zone">💬 messages — 最後一條 user msg (本輪變動)</text>
+  <text x="40" y="622" class="item">🧠 memory (per_turn_text,不進 state_messages,SDK 注入)</text>
+  <text x="40" y="639" class="item">🔀 git_status (per_turn_text,同上)</text>
+  <text x="40" y="656" class="item">⚙️ mode prefix [Ask mode is active...] (sidecar 注入,進 state_messages → DB)</text>
+  <text x="40" y="673" class="item">📝 user 真實輸入 (text + 圖片)</text>
+
+  <!-- BP 4 LINE -->
+  <line x1="20" y1="700" x2="980" y2="700" class="bp-line" stroke="#b62324"/>
+  <rect x="380" y="690" width="240" height="22" rx="11" fill="#b62324"/>
+  <text x="500" y="705" class="bp-text">━━ BP 4 (rolling writer) ━━</text>
+</svg>
+<figcaption>所有 cache-able 內容的位置 + 4 個 cache_control 標在哪。Tools 雖然不是 bp,但在 BP 1 之前所以一起被 cache。</figcaption>
+</figure>
+
+<h2>🧠 圖 2:Memory 生命週期</h2>
+
+<figure>
+<svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .box { fill: #161b22; stroke: #30363d; stroke-width: 1; rx: 6; }
+    .box-hot { fill: #b6232420; stroke: #b62324; stroke-width: 1.5; }
+    .box-cached { fill: #1f6feb20; stroke: #1f6feb; stroke-width: 1.5; }
+    .arrow { stroke: #58a6ff; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+    .label { font: 600 12px sans-serif; fill: #f0f6fc; }
+    .sub { font: 11px sans-serif; fill: #9ea7b3; }
+    .small { font: 10px monospace; fill: #c9d1d9; }
+  </style>
+  <defs>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/>
+    </marker>
+  </defs>
+
+  <!-- Memory source -->
+  <rect x="20" y="30" width="200" height="80" rx="8" class="box"/>
+  <text x="120" y="55" text-anchor="middle" class="label">🗂️ ~/.orion-cowork/</text>
+  <text x="120" y="72" text-anchor="middle" class="label">users/cowork-local/memory/</text>
+  <text x="120" y="93" text-anchor="middle" class="sub">.md files</text>
+
+  <!-- memory_section() -->
+  <rect x="280" y="30" width="200" height="80" rx="8" class="box"/>
+  <text x="380" y="55" text-anchor="middle" class="label">memory_section()</text>
+  <text x="380" y="75" text-anchor="middle" class="sub">SDK 依本 prompt 篩出</text>
+  <text x="380" y="90" text-anchor="middle" class="sub">相關回憶</text>
+
+  <!-- per_turn_text -->
+  <rect x="540" y="30" width="200" height="80" rx="8" class="box"/>
+  <text x="640" y="55" text-anchor="middle" class="label">per_turn_text</text>
+  <text x="640" y="75" text-anchor="middle" class="sub">memory + git_status</text>
+  <text x="640" y="90" text-anchor="middle" class="sub">合併一段</text>
+
+  <!-- inject -->
+  <rect x="800" y="30" width="180" height="80" rx="8" class="box-hot"/>
+  <text x="890" y="55" text-anchor="middle" class="label">inject_per_turn_</text>
+  <text x="890" y="70" text-anchor="middle" class="label">into_user_message()</text>
+  <text x="890" y="92" text-anchor="middle" class="sub">SDK 內部</text>
+
+  <!-- arrows row 1 -->
+  <path d="M 220 70 L 280 70" class="arrow"/>
+  <path d="M 480 70 L 540 70" class="arrow"/>
+  <path d="M 740 70 L 800 70" class="arrow"/>
+
+  <!-- messages_for_loop -->
+  <rect x="20" y="180" width="450" height="150" rx="8" class="box-hot"/>
+  <text x="245" y="205" text-anchor="middle" class="label">messages_for_loop (LLM 看的版本)</text>
+  <text x="40" y="232" class="small">[ user 0, assistant 0, user 1, ..., assistant N-1,</text>
+  <text x="40" y="252" class="small">  user N: ───────────────────────────────</text>
+  <text x="60" y="272" class="small" style="fill:#d29922">    [memory 注入] + [git_status 注入]  ← per_turn</text>
+  <text x="60" y="289" class="small">    [Ask/Act mode prefix]                ← state</text>
+  <text x="60" y="306" class="small">    "user 真實打的字"                    ← state</text>
+  <text x="40" y="323" class="small">                              ─────────── ]</text>
+
+  <!-- state_messages -->
+  <rect x="510" y="180" width="470" height="150" rx="8" class="box-cached"/>
+  <text x="745" y="205" text-anchor="middle" class="label">state_messages (持久化 / 下 turn 看的版本)</text>
+  <text x="530" y="232" class="small">[ user 0, assistant 0, user 1, ..., assistant N-1,</text>
+  <text x="530" y="252" class="small">  user N: ───────────────────────────────</text>
+  <text x="550" y="272" class="small" style="fill:#3fb950">    (memory / git 沒寫進去)</text>
+  <text x="550" y="289" class="small">    [Ask/Act mode prefix]                ← 有</text>
+  <text x="550" y="306" class="small">    "user 真實打的字"                    ← 有</text>
+  <text x="530" y="323" class="small">                              ─────────── ]</text>
+
+  <!-- arrow from inject to messages_for_loop -->
+  <path d="M 890 110 Q 890 150 245 180" class="arrow"/>
+  <text x="690" y="158" class="sub">注入到 messages_for_loop[-1] 開頭</text>
+
+  <!-- arrow comparison -->
+  <path d="M 470 255 L 510 255" stroke="#9ea7b3" stroke-dasharray="4 3" fill="none"/>
+  <text x="490" y="248" text-anchor="middle" class="sub" style="font-size:9px">vs</text>
+</svg>
+<figcaption>Memory 每 turn 重新計算,只進 messages_for_loop(LLM 看)。state_messages 不含,所以 DB / 下 turn 的「歷史」內也沒有,維持 cache prefix 穩定。</figcaption>
+</figure>
+
+<h2>🛠️ 圖 3:Skill 從 tool 定義 → 內容載入 → 進歷史的全流程</h2>
+
+<figure>
+<svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .box { fill: #161b22; stroke: #30363d; stroke-width: 1; rx: 6; }
+    .box-bp1 { fill: #1f6feb20; stroke: #1f6feb; }
+    .box-bp3 { fill: #bf870030; stroke: #bf8700; }
+    .box-bp4 { fill: #b6232420; stroke: #b62324; }
+    .arrow { stroke: #58a6ff; stroke-width: 1.5; fill: none; marker-end: url(#ar3); }
+    .label { font: 600 12px sans-serif; fill: #f0f6fc; }
+    .sub { font: 11px sans-serif; fill: #9ea7b3; }
+    .small { font: 10px monospace; fill: #c9d1d9; }
+    .stage { font: 700 14px sans-serif; fill: #58a6ff; }
+  </style>
+  <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker></defs>
+
+  <!-- Stage 1 -->
+  <text x="50" y="40" class="stage">① Skill tool 定義</text>
+  <rect x="50" y="55" width="380" height="80" rx="8" class="box-bp1"/>
+  <text x="240" y="80" text-anchor="middle" class="label">tools array(API 獨立欄位)</text>
+  <text x="70" y="105" class="small">[..., Skill(name, description, input_schema), ...]</text>
+  <text x="70" y="122" class="small" style="fill:#9ea7b3">只 schema,沒 skill 內容。永遠在,享 BP 1 cache。</text>
+
+  <!-- Stage 2 -->
+  <text x="540" y="40" class="stage">② LLM 看到工具,呼叫 Skill</text>
+  <rect x="540" y="55" width="420" height="80" rx="8" class="box-bp4"/>
+  <text x="750" y="80" text-anchor="middle" class="label">本 turn assistant msg 的 tool_use block</text>
+  <text x="560" y="105" class="small">tool_use(name=Skill, input={skill_name: "python-pro"})</text>
+  <text x="560" y="122" class="small" style="fill:#9ea7b3">寫進本 turn → BP 4 cache write</text>
+
+  <!-- arrow 1->2 -->
+  <path d="M 430 95 L 540 95" class="arrow"/>
+
+  <!-- Stage 3 -->
+  <text x="50" y="190" class="stage">③ Sidecar 載 skill markdown,作 tool_result 回</text>
+  <rect x="50" y="205" width="910" height="80" rx="8" class="box-bp4"/>
+  <text x="505" y="230" text-anchor="middle" class="label">本 turn user role tool_result(append 進 state_messages)</text>
+  <text x="70" y="253" class="small">tool_result(tool_use_id=..., content="# Python Pro Skill\n\nUse uv for deps. Use pytest. ...")</text>
+  <text x="70" y="270" class="small" style="fill:#9ea7b3">完整 skill markdown 內容塞進 message content,凍結後伴隨對話歷史</text>
+
+  <!-- arrow 2->3 -->
+  <path d="M 750 135 L 750 165 L 500 165 L 500 205" class="arrow"/>
+
+  <!-- Stage 4 -->
+  <text x="50" y="335" class="stage">④ 下一 turn 起,skill 內容在歷史中 → 享 BP 3 read</text>
+  <rect x="50" y="350" width="910" height="100" rx="8" class="box-bp3"/>
+  <text x="505" y="375" text-anchor="middle" class="label">下個 turn 的 messages 結構</text>
+  <text x="70" y="398" class="small">[user 0, assistant 0, ..., assistant N-1 (含 Skill tool_use),</text>
+  <text x="70" y="415" class="small"> user N-1 (含 Skill tool_result + skill markdown), ← BP 3 在這附近</text>
+  <text x="70" y="432" class="small"> user N (本輪新)]</text>
+
+  <!-- arrow 3->4 -->
+  <path d="M 500 285 L 500 350" class="arrow"/>
+</svg>
+<figcaption>Skill 是「需要時 load」的模式:tool 定義永遠在 BP 1 cache,但內容只在 LLM 呼叫過後才進歷史。一旦 load,後續 turn 享 BP 3 cache 加成,不必每次都重新載。</figcaption>
+</figure>
+
+<h2>⚙️ 圖 4:Mode prefix 注入 + cache 友善設計</h2>
+
+<figure>
+<svg viewBox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .label { font: 600 13px sans-serif; fill: #f0f6fc; }
+    .sub { font: 11px sans-serif; fill: #9ea7b3; }
+    .small { font: 10px monospace; fill: #c9d1d9; }
+    .box { fill: #161b22; stroke: #30363d; rx: 6; }
+    .bad { stroke: #b62324; stroke-width: 1.5; }
+    .good { stroke: #3fb950; stroke-width: 1.5; }
+    .arrow { stroke: #58a6ff; stroke-width: 1.5; fill: none; marker-end: url(#ar4); }
+    .title { font: 700 14px sans-serif; fill: #58a6ff; }
+  </style>
+  <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker></defs>
+
+  <text x="245" y="30" text-anchor="middle" class="title">❌ 舊設計:Mode 加 system</text>
+  <text x="755" y="30" text-anchor="middle" class="title">✅ 新設計:Mode 加最後 user msg</text>
+
+  <!-- bad design -->
+  <rect x="40" y="50" width="410" height="80" rx="8" class="box bad"/>
+  <text x="245" y="75" text-anchor="middle" class="label">system Element 0</text>
+  <text x="60" y="100" class="small">_COWORK_PROMPT_BASE + ... +</text>
+  <text x="60" y="116" class="small" style="fill:#b62324">+ _ASK_MODE_NOTE (250 tokens)  ◀ 隨 mode 變!</text>
+
+  <rect x="40" y="145" width="410" height="50" rx="8" class="box bad"/>
+  <text x="245" y="170" text-anchor="middle" class="label">tools 陣列</text>
+  <text x="60" y="187" class="small" style="fill:#b62324">Act 模式 remove AskUserQuestion ◀ 隨 mode 變!</text>
+
+  <rect x="40" y="210" width="410" height="50" rx="8" class="box"/>
+  <text x="245" y="235" text-anchor="middle" class="label">最後 user msg</text>
+  <text x="60" y="252" class="small">"user 真實輸入"(乾淨)</text>
+
+  <text x="245" y="295" text-anchor="middle" class="sub" style="fill:#b62324">切 mode → system byte 變 / tools array 變</text>
+  <text x="245" y="312" text-anchor="middle" class="sub" style="fill:#b62324">→ BP 1 / BP 2 全 GG, 整個 prefix cache miss</text>
+
+  <!-- good design -->
+  <rect x="550" y="50" width="410" height="80" rx="8" class="box good"/>
+  <text x="755" y="75" text-anchor="middle" class="label">system Element 0</text>
+  <text x="570" y="100" class="small">_COWORK_PROMPT_BASE + ... </text>
+  <text x="570" y="116" class="small" style="fill:#3fb950">永遠 byte-identical ✓</text>
+
+  <rect x="550" y="145" width="410" height="50" rx="8" class="box good"/>
+  <text x="755" y="170" text-anchor="middle" class="label">tools 陣列</text>
+  <text x="570" y="187" class="small" style="fill:#3fb950">AskUserQuestion 永遠在,行為走 asker dispatch ✓</text>
+
+  <rect x="550" y="210" width="410" height="80" rx="8" class="box good"/>
+  <text x="755" y="232" text-anchor="middle" class="label">最後 user msg(本輪會變)</text>
+  <text x="570" y="255" class="small" style="fill:#bf8700">"[Ask mode is active — ...]"  ← prefix 注入</text>
+  <text x="570" y="271" class="small" style="fill:#bf8700">"" + user 真實輸入</text>
+  <text x="570" y="287" class="small">(都進 BP 4 區,本來就會變,沒事)</text>
+
+  <text x="755" y="320" text-anchor="middle" class="sub" style="fill:#3fb950">切 mode → 只動最後一條 message</text>
+  <text x="755" y="337" text-anchor="middle" class="sub" style="fill:#3fb950">BP 1 / BP 2 / BP 3 全 hit, 只 BP 4 重寫</text>
+
+  <!-- arrow -->
+  <path d="M 460 195 L 540 195" class="arrow"/>
+  <text x="500" y="215" text-anchor="middle" class="sub">重構</text>
+</svg>
+<figcaption>Mode prefix 從 system 搬到最後 user msg 開頭。Cache 命中率從「切 mode 就 GG」變成「切 mode 完全不影響前 3 個 bp」。</figcaption>
+</figure>
+
+<h2>🔁 圖 5:Turn 隨時間推進,4 BP 的滾動</h2>
+
+<figure>
+<svg viewBox="0 0 1000 540" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .label { font: 600 12px sans-serif; fill: #f0f6fc; }
+    .turn { font: 700 13px sans-serif; fill: #58a6ff; }
+    .small { font: 10px monospace; fill: #c9d1d9; }
+    .sub { font: 11px sans-serif; fill: #9ea7b3; }
+    .cached { fill: #1f6feb20; }
+    .writing { fill: #b6232440; }
+    .bp { font: 700 10px monospace; }
+  </style>
+
+  <!-- Turn 1 -->
+  <text x="20" y="30" class="turn">Turn 1(首次)</text>
+  <rect x="20" y="40" width="960" height="60" rx="6" class="writing" stroke="#b62324"/>
+  <text x="40" y="62" class="small">tools / system E0 / system E1 / user 0</text>
+  <text x="40" y="80" class="sub">→ 全部 cache_creation(BP 1+2+3+4 都寫入,1.25× 入價)</text>
+  <text x="900" y="80" text-anchor="end" class="bp" fill="#b62324">★ 全寫入</text>
+
+  <!-- Turn 2 -->
+  <text x="20" y="135" class="turn">Turn 2</text>
+  <rect x="20" y="145" width="760" height="60" rx="6" class="cached" stroke="#1f6feb"/>
+  <text x="40" y="167" class="small">tools / system E0 / system E1 / user 0 / assistant 0</text>
+  <text x="40" y="185" class="sub" style="fill:#1f6feb">→ BP 1/2/3 hit(讀上輪寫的)</text>
+  <rect x="790" y="145" width="190" height="60" rx="6" class="writing" stroke="#b62324"/>
+  <text x="810" y="167" class="small">user 1(本輪)</text>
+  <text x="810" y="185" class="sub" style="fill:#b62324">→ BP 4 寫入</text>
+
+  <!-- Turn 3 -->
+  <text x="20" y="240" class="turn">Turn 3</text>
+  <rect x="20" y="250" width="820" height="60" rx="6" class="cached" stroke="#1f6feb"/>
+  <text x="40" y="272" class="small">tools / system / user 0 / asst 0 / user 1(凍結含 mode prefix)/ asst 1</text>
+  <text x="40" y="290" class="sub" style="fill:#1f6feb">→ BP 1/2/3 hit</text>
+  <rect x="850" y="250" width="130" height="60" rx="6" class="writing" stroke="#b62324"/>
+  <text x="870" y="272" class="small">user 2(本輪)</text>
+  <text x="870" y="290" class="sub" style="fill:#b62324">→ BP 4 寫入</text>
+
+  <!-- Turn 4 mode change -->
+  <text x="20" y="345" class="turn">Turn 4(user 切到 Act 模式)</text>
+  <rect x="20" y="355" width="820" height="60" rx="6" class="cached" stroke="#1f6feb"/>
+  <text x="40" y="377" class="small">tools / system / user 0..2(歷史含 Ask mode 字樣)/ asst 2</text>
+  <text x="40" y="395" class="sub" style="fill:#1f6feb">→ BP 1/2/3 仍 hit!(因為 system 沒動 / tools 沒動 / 歷史 byte-identical)</text>
+  <rect x="850" y="355" width="130" height="60" rx="6" class="writing" stroke="#b62324"/>
+  <text x="870" y="377" class="small">user 3([Act mode])</text>
+  <text x="870" y="395" class="sub" style="fill:#b62324">→ BP 4 寫入</text>
+
+  <!-- Turn 5 -->
+  <text x="20" y="450" class="turn">Turn 5(繼續 Act)</text>
+  <rect x="20" y="460" width="820" height="60" rx="6" class="cached" stroke="#1f6feb"/>
+  <text x="40" y="482" class="small">完整歷史(混合 Ask / Act 標記皆已凍結)</text>
+  <text x="40" y="500" class="sub" style="fill:#1f6feb">→ BP 1/2/3 hit</text>
+  <rect x="850" y="460" width="130" height="60" rx="6" class="writing" stroke="#b62324"/>
+  <text x="870" y="482" class="small">user 4([Act mode])</text>
+  <text x="870" y="500" class="sub" style="fill:#b62324">→ BP 4 寫入</text>
+</svg>
+<figcaption>每 turn 只「最後一條 user msg」要付寫入費(1.25×),其他全部 cache read(0.1×)。即使中途切 mode,前面 cache 完全不受影響。</figcaption>
+</figure>
+
+<h2>📊 各內容區 cache 行為對照表</h2>
+
+<table>
+<thead>
+<tr><th>內容</th><th>位置</th><th>BP</th><th>變動頻率</th><th>cache 效果</th></tr>
+</thead>
+<tbody>
+<tr><td>tools 陣列(全部 tool 定義)</td><td>API <code>tools</code> 欄位</td><td>BP 1 prefix</td><td>永遠固定</td><td>跨 session 都 read</td></tr>
+<tr><td>Skill tool 定義</td><td>tools 陣列內</td><td>BP 1 prefix</td><td>永遠固定</td><td>同上</td></tr>
+<tr><td>Skill 載出來的 markdown 內容</td><td>messages 內 tool_result</td><td>BP 3(被呼叫過的話)</td><td>呼過才有,之後凍結</td><td>下個 turn 起 read</td></tr>
+<tr><td>_COWORK_PROMPT_BASE</td><td>system Element 0</td><td>BP 1</td><td>永遠固定</td><td>跨 session read</td></tr>
+<tr><td>user_instructions / project_custom_instructions</td><td>system Element 0</td><td>BP 1</td><td>改設定才變</td><td>大多時間 read</td></tr>
+<tr><td>SDK static 7 段</td><td>system Element 0</td><td>BP 1</td><td>永遠固定</td><td>跨 session read</td></tr>
+<tr><td>env_info / mcp / language / output_style</td><td>system Element 1</td><td>BP 2</td><td>session 內固定</td><td>session 內 read</td></tr>
+<tr><td>對話歷史(turn 0..N-1)</td><td>messages 中段</td><td>BP 3</td><td>append-only</td><td>每 turn 累積 read</td></tr>
+<tr><td>🧠 memory(per_turn_text)</td><td>注入最後 user msg 開頭(不進 state_messages)</td><td>BP 4 寫入</td><td>每 turn 重算</td><td>本 turn 寫,下 turn 凍結進歷史</td></tr>
+<tr><td>🔀 git_status(per_turn_text)</td><td>同上</td><td>BP 4 寫入</td><td>每 turn 重算</td><td>同上</td></tr>
+<tr><td>⚙️ mode prefix</td><td>最後 user msg 開頭(進 state_messages → DB)</td><td>BP 4 寫入</td><td>切 mode 才變</td><td>進 history 後享 BP 3 read</td></tr>
+<tr><td>📝 user 真實輸入</td><td>最後 user msg 內容</td><td>BP 4 寫入</td><td>每 turn 變</td><td>下 turn 進歷史</td></tr>
+</tbody>
+</table>
+
+<h2>🧮 cache_hit_rate 公式</h2>
+
+<pre>cache_hit_rate = cache_read_tokens / (cache_read_tokens + input_tokens + cache_creation_tokens)</pre>
+
+<p class="muted">分母含 <code>cache_creation</code>(本輪 BP 4 寫入),代表「整 prompt 內有多少占比被 cache 省到」。Turn 1 全寫入 → 0%;Turn 2+ 通常 80-90%+;穩定狀態 95%+。</p>
+
+<h2>🔗 來源碼引用</h2>
+
+<ul>
+  <li><code>packages/orion-sdk/src/orion_sdk/core/message_cache.py</code> — <code>compute_message_breakpoints()</code> 算 BP 3 / 4 位置</li>
+  <li><code>packages/orion-sdk/src/orion_sdk/prompt/assembler.py</code>
+    <ul>
+      <li><code>fetch_system_prompt_parts()</code> — 蒐集 static_block / session_stable_blocks / per_turn_text</li>
+      <li><code>build_system_prompt_list()</code> — 切成 system list[2]</li>
+      <li><code>inject_per_turn_into_user_message()</code> — memory + git 注入最後 user msg(只動 messages_for_loop)</li>
+    </ul>
+  </li>
+  <li><code>packages/orion-sdk/src/orion_sdk/prompt/dynamic_sections.py</code> — memory / git / env / mcp / language sections</li>
+  <li><code>packages/orion-model/src/orion_model/anthropic_provider.py</code>
+    <ul>
+      <li><code>_build_system_param()</code> — system list 每段標 <code>cache_control</code></li>
+      <li><code>apply_cache_breakpoints()</code> — messages 指定 indices 標</li>
+    </ul>
+  </li>
+  <li><code>apps/orion-cowork/sidecar/.../handlers.py</code>
+    <ul>
+      <li><code>_COWORK_PROMPT_BASE</code> / <code>_build_conversation()</code> — 組 system Element 0 的 Cowork 客製部分</li>
+      <li><code>conversation_send()</code> — <code>effective_prompt = mode_prefix + prompt</code> 注入 mode 到本輪 user msg</li>
+      <li><code>_build_mode_aware_asker()</code> — Ask/Act dispatch,tools array 不動</li>
+    </ul>
+  </li>
+</ul>
+
+<hr>
+<p class="muted" style="text-align: center;">Doc 對應實作版本:2026-05-17(commit <code>4a23ef3</code> 後)</p>
+
+</body>
+</html>
