@@ -136,6 +136,14 @@ class Handlers:
             "conversation.list": self.conversation_list,
             "conversation.search": self.conversation_search,
             "conversation.delete": self.conversation_delete,
+            "conversation.get_workspace": self.conversation_get_workspace,
+            "conversation.set_workspace": self.conversation_set_workspace,
+            "conversation.set_project": self.conversation_set_project,
+            "project.list": self.project_list,
+            "project.get": self.project_get,
+            "project.create": self.project_create,
+            "project.update": self.project_update,
+            "project.delete": self.project_delete,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
@@ -182,33 +190,29 @@ class Handlers:
     ) -> AsyncIterator[dict[str, Any]]:
         provider_name = params.get("provider", "anthropic")
         model = params.get("model", "claude-sonnet-4-6")
-        llm = get_provider(provider_name, model)
-        mcp = await self.ensure_mcp()
-        # Cowork-only desktop tools(不污染 SDK builtin,因為 chat-api server
-        # 不該被允許 open_url 操作 user 桌面)。
-        tools = (
-            build_default_tool_set(asker=None)
-            + [OpenUrlTool(), OpenPathTool()]
-            + mcp.tools
-        )
-        conv = Conversation(
-            provider=llm,
-            tools=tools,
-            persistence_enabled=False,  # Phase E:in-memory only
-            memory_enabled=False,
-            auto_extract_memories=False,
-            # Cowork 是聊天 app,不該帶 CLI 的 cwd/git context — 否則 SDK
-            # 會把 repo 的 branch + recent commits 注入 user message,model
-            # 看到滿滿 git 上下文,圖片 prompt 被忽略,直接回 git log。
-            system_prompt=COWORK_SYSTEM_PROMPT,
+        project_id = params.get("project_id")  # 可選
+        workspace_dir = params.get("workspace_dir")  # 可選
+        engine = await self.ensure_engine()
+        conv, _ext_workspace = await self._build_conversation(
+            provider_name=provider_name,
+            model=model,
+            session_id=None,
+            workspace_dir=workspace_dir,
+            project_id=project_id,
+            state_messages=None,
+            engine=engine,
         )
         sid = str(conv.session_id)
         self._conversations[sid] = conv
 
-        engine = await self.ensure_engine()
         await storage.save_session_metadata(
             engine, sid, provider=provider_name, model=model,
         )
+        # 寫 cowork-ext (project / workspace) 若有給
+        if project_id:
+            await storage.set_session_project(engine, sid, project_id)
+        if workspace_dir:
+            await storage.set_session_workspace(engine, sid, workspace_dir)
         yield {
             "event": "conversation_created",
             "data": {"session_id": sid, "provider": provider_name, "model": model},
@@ -301,7 +305,17 @@ class Handlers:
         # 記下 turn 開始時的 message 數,結束後 diff append 新訊息進 DB
         before_count = len(conv.state_messages)
 
-        ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
+        # Workspace / project 設定:有則 ctx.cwd 用 workspace_dir,SDK 看到後就
+        # 跑 cwd-derived sections。沒設用 process cwd 但 include_workspace_context=False
+        # 仍會被 SDK 忽略。
+        ctx_cwd = await self._resolve_session_cwd(sid, engine)
+        ctx_kwargs: dict[str, Any] = dict(
+            feature_flags=load_feature_flags(),
+            user_id=storage.LOCAL_USER_ID,
+        )
+        if ctx_cwd is not None:
+            ctx_kwargs["cwd"] = ctx_cwd
+        ctx = AgentContext(**ctx_kwargs)
         self._aborts[sid] = ctx
         try:
             async for ev in conv.send(prompt, ctx=ctx, images=images or None):
@@ -319,37 +333,106 @@ class Handlers:
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
 
-    async def _resume_from_db(
+    async def _resolve_session_cwd(
         self, sid: str, engine: AsyncEngine
-    ) -> Conversation | None:
-        """從 DB 載入既有對話,重建 Conversation in-memory。"""
-        # 先確認 session 存在(避免幫不存在的 session 建空白 conv)
-        sessions = await storage.list_sessions(engine)
-        match = next((s for s in sessions if s.session_id == sid), None)
-        if match is None:
-            return None
+    ) -> "Path | None":
+        """Session 的 effective workspace_dir(session > project > None)→ Path 或 None。"""
+        from pathlib import Path
+        ext = await storage.get_session_ext(engine, sid)
+        ws = ext["workspace_dir"]
+        if not ws and ext["project_id"]:
+            proj = await storage.get_project(engine, ext["project_id"])
+            if proj is not None:
+                ws = proj.workspace_dir
+        return Path(ws) if ws else None
 
-        provider = get_provider(match.provider, match.model)
+    async def _build_conversation(
+        self,
+        *,
+        provider_name: str,
+        model: str,
+        session_id: str | None,
+        workspace_dir: str | None,
+        project_id: str | None,
+        state_messages: list[Any] | None,
+        engine: AsyncEngine,
+    ) -> tuple[Conversation, str | None]:
+        """集中 Cowork Conversation 建構邏輯:吸收 workspace + project 設定。
+
+        回 (conv, effective_workspace_dir)。effective_workspace_dir 是
+        實際傳給 ctx.cwd 的目錄(session-level > project-level > None)。
+        """
+        from uuid import UUID as _UUID
+
+        from orion_model.provider import get_provider
+
+        llm = get_provider(provider_name, model)
         mcp = await self.ensure_mcp()
-        # Cowork-only desktop tools(不污染 SDK builtin,因為 chat-api server
-        # 不該被允許 open_url 操作 user 桌面)。
         tools = (
             build_default_tool_set(asker=None)
             + [OpenUrlTool(), OpenPathTool()]
             + mcp.tools
         )
-        from uuid import UUID as _UUID
-        conv = Conversation(
-            provider=provider,
+
+        # Resolve workspace_dir + custom_instructions:
+        # session-level workspace > project-level workspace > None
+        # project-level custom_instructions 注入 system_prompt 後
+        effective_workspace: str | None = workspace_dir
+        project_custom_instructions: str | None = None
+        if project_id:
+            proj = await storage.get_project(engine, project_id)
+            if proj is not None:
+                if not effective_workspace and proj.workspace_dir:
+                    effective_workspace = proj.workspace_dir
+                project_custom_instructions = proj.custom_instructions
+
+        system_prompt = COWORK_SYSTEM_PROMPT
+        if project_custom_instructions:
+            system_prompt = (
+                COWORK_SYSTEM_PROMPT
+                + "\n\n# Project instructions\n\n"
+                + project_custom_instructions
+            )
+
+        include_ws = bool(effective_workspace)
+
+        conv_kwargs: dict[str, Any] = dict(
+            provider=llm,
             tools=tools,
             persistence_enabled=False,
-            memory_enabled=False,
-            auto_extract_memories=False,
-            session_id=_UUID(sid),
-            system_prompt=COWORK_SYSTEM_PROMPT,
+            user_id=storage.LOCAL_USER_ID,
+            memory_enabled=True,
+            auto_extract_memories=True,
+            include_workspace_context=include_ws,
+            include_env_info=True,
+            system_prompt=system_prompt,
         )
-        conv.state_messages = await storage.load_messages(engine, sid)
-        # 若已有 messages,title 應已設過,記下避免重複 update
+        if session_id is not None:
+            conv_kwargs["session_id"] = _UUID(session_id)
+        conv = Conversation(**conv_kwargs)
+        if state_messages is not None:
+            conv.state_messages = state_messages
+        return conv, effective_workspace
+
+    async def _resume_from_db(
+        self, sid: str, engine: AsyncEngine
+    ) -> Conversation | None:
+        """從 DB 載入既有對話,重建 Conversation in-memory(吸收 ext / project)。"""
+        sessions = await storage.list_sessions(engine)
+        match = next((s for s in sessions if s.session_id == sid), None)
+        if match is None:
+            return None
+        ext = await storage.get_session_ext(engine, sid)
+        state_messages = await storage.load_messages(engine, sid)
+        conv, _ = await self._build_conversation(
+            provider_name=match.provider,
+            model=match.model,
+            session_id=sid,
+            workspace_dir=ext["workspace_dir"],
+            project_id=ext["project_id"],
+            state_messages=state_messages,
+            engine=engine,
+        )
         if conv.state_messages:
             self._title_done.add(sid)
         return conv
@@ -431,6 +514,177 @@ class Handlers:
                 ],
             },
             "final": True,
+        }
+
+    # ─── Workspace / Project methods ────────────────────────────────────
+
+    async def conversation_get_workspace(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        if not isinstance(sid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ext = await storage.get_session_ext(engine, sid)
+        yield {
+            "event": "session_ext",
+            "data": {
+                "session_id": sid,
+                "workspace_dir": ext["workspace_dir"],
+                "project_id": ext["project_id"],
+            },
+            "final": True,
+        }
+
+    async def conversation_set_workspace(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        ws = params.get("workspace_dir")
+        if not isinstance(sid, str) or (ws is not None and not isinstance(ws, str)):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        await storage.set_session_workspace(engine, sid, ws or None)
+        # 既有 in-memory conv 失效,下次 send 會 resume 帶新 ext
+        self._conversations.pop(sid, None)
+        yield {
+            "event": "session_ext",
+            "data": {"session_id": sid, "workspace_dir": ws or None},
+            "final": True,
+        }
+
+    async def conversation_set_project(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        pid = params.get("project_id")
+        if not isinstance(sid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        if pid is not None and not isinstance(pid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        await storage.set_session_project(engine, sid, pid or None)
+        self._conversations.pop(sid, None)
+        yield {
+            "event": "session_ext",
+            "data": {"session_id": sid, "project_id": pid or None},
+            "final": True,
+        }
+
+    async def project_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        engine = await self.ensure_engine()
+        projects = await storage.list_projects(engine)
+        yield {
+            "event": "project_list",
+            "data": {"projects": [self._project_to_dict(p) for p in projects]},
+            "final": True,
+        }
+
+    async def project_get(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        pid = params.get("project_id")
+        if not isinstance(pid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        proj = await storage.get_project(engine, pid)
+        if proj is None:
+            yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+            return
+        sessions = await storage.list_sessions_in_project(engine, pid)
+        yield {
+            "event": "project",
+            "data": {
+                "project": self._project_to_dict(proj),
+                "session_ids": sessions,
+            },
+            "final": True,
+        }
+
+    async def project_create(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        name = params.get("name")
+        if not isinstance(name, str) or not name.strip():
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "name required"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        proj = await storage.create_project(
+            engine,
+            name=name.strip(),
+            description=params.get("description") or None,
+            workspace_dir=params.get("workspace_dir") or None,
+            custom_instructions=params.get("custom_instructions") or None,
+        )
+        yield {
+            "event": "project",
+            "data": {"project": self._project_to_dict(proj)},
+            "final": True,
+        }
+
+    async def project_update(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        pid = params.get("project_id")
+        if not isinstance(pid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ok = await storage.update_project(
+            engine,
+            pid,
+            name=params.get("name"),
+            description=params.get("description"),
+            workspace_dir=params.get("workspace_dir"),
+            custom_instructions=params.get("custom_instructions"),
+        )
+        # 既有屬於此 project 的 in-memory conv 失效,下次 send 重 build
+        if ok:
+            for sid in list(self._conversations.keys()):
+                ext = await storage.get_session_ext(engine, sid)
+                if ext["project_id"] == pid:
+                    self._conversations.pop(sid, None)
+        yield {
+            "event": "project_updated",
+            "data": {"project_id": pid, "ok": ok},
+            "final": True,
+        }
+
+    async def project_delete(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        pid = params.get("project_id")
+        if not isinstance(pid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ok = await storage.delete_project(engine, pid)
+        # 既有 conv 失效
+        for sid in list(self._conversations.keys()):
+            self._conversations.pop(sid, None)
+        yield {
+            "event": "project_deleted",
+            "data": {"project_id": pid, "ok": ok},
+            "final": True,
+        }
+
+    @staticmethod
+    def _project_to_dict(p: "storage.Project") -> dict[str, Any]:
+        return {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "workspace_dir": p.workspace_dir,
+            "custom_instructions": p.custom_instructions,
+            "created_at": p.created_at,
         }
 
     async def conversation_delete(
@@ -737,7 +991,14 @@ class Handlers:
 
         # Re-send the user prompt(會再 append + persist 新 messages)
         before_count = len(conv.state_messages)
-        ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
+        ctx_cwd = await self._resolve_session_cwd(sid, engine)
+        ctx_kwargs: dict[str, Any] = dict(
+            feature_flags=load_feature_flags(),
+            user_id=storage.LOCAL_USER_ID,
+        )
+        if ctx_cwd is not None:
+            ctx_kwargs["cwd"] = ctx_cwd
+        ctx = AgentContext(**ctx_kwargs)
         self._aborts[sid] = ctx
         try:
             async for ev in conv.send(regen_text, ctx=ctx, images=regen_images or None):

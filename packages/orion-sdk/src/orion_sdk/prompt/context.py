@@ -90,19 +90,25 @@ def get_env_info(cwd: Path | None = None) -> str:
     )
 
 
-def find_instructions_files(cwd: Path | None = None) -> list[Path]:
+def find_instructions_files(
+    cwd: Path | None = None,
+    *,
+    include_project: bool = True,
+    include_user: bool = True,
+) -> list[Path]:
     """搜尋 instructions.md 檔。順序:
 
-    1. ~/.orion/instructions.md(global)
-    2. <cwd>/.orion/instructions.md(per-project)
+    1. ~/.orion/instructions.md(global)— include_user=False 時跳過
+    2. <cwd>/.orion/instructions.md(per-project)— cwd 為 None 或
+       include_project=False 時跳過
 
     回找到的 Path list,失敗回 []。
     """
-    cwd = cwd or Path.cwd()
-    candidates = [
-        Path.home() / ".orion" / _INSTRUCTIONS_FILE,
-        cwd / ".orion" / _INSTRUCTIONS_FILE,
-    ]
+    candidates: list[Path] = []
+    if include_user:
+        candidates.append(Path.home() / ".orion" / _INSTRUCTIONS_FILE)
+    if cwd is not None and include_project:
+        candidates.append(cwd / ".orion" / _INSTRUCTIONS_FILE)
     found: list[Path] = []
     for p in candidates:
         try:

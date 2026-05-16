@@ -72,25 +72,34 @@ async def fetch_system_prompt_parts(
     use_cache: bool = True,
     custom_instructions_user: str | None = None,
     custom_instructions_conversation: str | None = None,
+    include_workspace_context: bool = True,
+    include_env_info: bool = True,
 ) -> SystemPromptParts:
     """並行蒐集 system prompt 各段。
 
     靜態段走 section cache(register_section);動態段每次重算。
 
     Args:
-        cwd: working dir(影響 env / git / instructions)— None 用 Path.cwd()
-        user_id: memory 用
+        cwd: working dir。**None = caller 沒有「user 工作目錄」概念**(chat /
+            desktop app 預設場景),所有 cwd-derived sections(git_status /
+            project-level instructions / env_info 內的 cwd 顯示)會被跳過。
+            CLI 場景必須顯式傳 `Path.cwd()`。
+        user_id: memory 用(跟 cwd 無關)
         conversation_messages: memory rank 比對用,給最近 user query
         provider: memory rank 用(若為 None,純 heuristic)
         language: 強制回應語言(可選)
         output_style: 例 "haiku" / "json" 等(可選)
         session_guidance: ad-hoc per-conversation 指引(可選)
         use_cache: False → 靜態段也重算(/clear command 用)
+        include_workspace_context: 是否帶入 cwd-derived 內容
+            (git_status、`<cwd>/.orion/instructions.md`、env_info 內 cwd 顯示)。
+            chat / desktop app 預設場景應傳 False(沒 user 「工作目錄」概念)。
+        include_env_info: 是否帶 platform / date(跟 cwd 無關)。
+            chat / desktop app 可保 True 讓模型給對的 OS 命令。
 
     Returns:
         SystemPromptParts
     """
-    cwd = cwd or Path.cwd()
     msgs = conversation_messages or []
 
     # ─── 靜態段(走 cache)─────────────────────────────────────────────
@@ -103,17 +112,32 @@ async def fetch_system_prompt_parts(
         static_block = render_static_block()
 
     # ─── per-turn volatile(並行)— 不進 system ─────────────────────
-    git_task = git_status_section(cwd)
-    memory_task = memory_section(
+    # git_status 是 cwd-derived,沒 cwd 或 include_workspace_context=False 就跳
+    if cwd is not None and include_workspace_context:
+        git_text = await git_status_section(cwd)
+    else:
+        git_text = ""
+    memory_text = await memory_section(
         user_id=user_id,
         conversation_messages=msgs,
         provider=provider,
     )
-    git_text, memory_text = await asyncio.gather(git_task, memory_task)
 
     # ─── session-stable 動態段(同步,無 I/O)── 進 system,享 cache ──
-    env_stable_text = env_info_stable_section(cwd)
-    instructions_text = instructions_section(cwd)
+    if include_env_info:
+        env_stable_text = env_info_stable_section(
+            cwd,
+            include_cwd_display=include_workspace_context,
+        )
+    else:
+        env_stable_text = ""
+    # instructions:user-level 永遠看(若 env_info 也關了就跳);
+    # project-level 受 include_workspace_context 控
+    instructions_text = instructions_section(
+        cwd,
+        include_user=include_env_info,
+        include_project=include_workspace_context,
+    )
     language_text = language_section(language)
     output_style_text = output_style_section(output_style)
     session_guidance_text = session_guidance_section(session_guidance)
@@ -148,7 +172,7 @@ async def fetch_system_prompt_parts(
     ]
 
     per_turn_text = "\n\n".join(
-        b.strip() for b in (memory_text, git_text) if b.strip()
+        b.strip() for b in (memory_text, git_text) if b and b.strip()
     )
 
     return SystemPromptParts(

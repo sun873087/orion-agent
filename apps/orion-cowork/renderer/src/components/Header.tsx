@@ -1,5 +1,7 @@
-import { PanelLeft, PanelLeftClose, Search, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles, X } from 'lucide-react'
 
+import { getSessionWorkspace, setSessionWorkspace } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
@@ -14,6 +16,38 @@ export function Header() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const toggleSidebarSearch = useSettingsStore((s) => s.toggleSidebarSearch)
+  const [workspaceDir, setWorkspaceDir] = useState<string | null>(null)
+
+  // session 變動就重 fetch workspace
+  useEffect(() => {
+    if (!sessionId) {
+      setWorkspaceDir(null)
+      return
+    }
+    let cancelled = false
+    getSessionWorkspace(sessionId)
+      .then((ext) => {
+        if (!cancelled) setWorkspaceDir(ext.workspace_dir)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
+
+  async function handleSetWorkspace() {
+    if (!sessionId) return
+    const dir = await window.dialog.selectFolder()
+    if (!dir) return
+    await setSessionWorkspace(sessionId, dir)
+    setWorkspaceDir(dir)
+  }
+
+  async function handleClearWorkspace() {
+    if (!sessionId) return
+    await setSessionWorkspace(sessionId, null)
+    setWorkspaceDir(null)
+  }
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-bg-hover bg-bg-panel px-3">
@@ -41,6 +75,37 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Workspace badge — 只在有 session 時顯示 */}
+        {sessionId &&
+          (workspaceDir ? (
+            <div
+              className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs"
+              title={workspaceDir}
+            >
+              <Folder size={12} className="text-fg-muted" />
+              <span className="max-w-[160px] truncate font-mono text-fg-muted">
+                {workspaceDir.split('/').pop() || workspaceDir}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearWorkspace}
+                title={t('header.workspace.clear')}
+                className="rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-base"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSetWorkspace}
+              title={t('header.workspace.set')}
+              className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+            >
+              <Folder size={12} />
+              <span>{t('header.workspace.none')}</span>
+            </button>
+          ))}
         <button
           type="button"
           onClick={() => openSettings('models')}

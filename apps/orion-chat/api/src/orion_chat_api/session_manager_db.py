@@ -118,6 +118,9 @@ class DbSessionManager:
             state_messages=snapshot.messages,
             replacement_state=snapshot.replacement_state,
             db_engine=self.engine,
+            # Chat-api 是 server,沒 user-side cwd 概念 — 跳過 git_status /
+            # project instructions / env cwd 顯示。env_info (platform/date) 仍開。
+            include_workspace_context=False,
         )
         self._cache[(user_id, session_id)] = conv
         return conv

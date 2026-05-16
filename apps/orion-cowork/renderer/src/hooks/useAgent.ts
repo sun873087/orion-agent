@@ -151,13 +151,16 @@ export function useDeleteConversation() {
 export function useSendPrompt() {
   const provider = useSettingsStore((s) => s.selectedProvider)
   const model = useSettingsStore((s) => s.selectedModel)
+  const activeProjectId = useSettingsStore((s) => s.activeProjectId)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
     if (!sid) {
       // Lazy create — 首次 send 才建 DB session,讓空 New chat 不污染 sidebar
       try {
-        sid = await createConversation(provider, model)
+        sid = await createConversation(provider, model, {
+          projectId: activeProjectId,
+        })
         useAgentStore.getState().setSessionId(sid)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
@@ -193,7 +196,7 @@ export function useSendPrompt() {
       useAgentStore.getState().setBusy(false)
       refreshSessions()
     }
-  }, [])
+  }, [provider, model, activeProjectId])
 }
 
 export function useAbort() {

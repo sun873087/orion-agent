@@ -9,6 +9,12 @@ type StreamFrame = Record<string, unknown> & { id?: string; event?: string; fina
 
 let nextCallId = 0
 
+const dialogApi = {
+  selectFolder: async (): Promise<string | null> => {
+    return ipcRenderer.invoke('dialog:selectFolder')
+  },
+}
+
 const agentApi = {
   /**
    * 呼叫 sidecar RPC。`onFrame` 每個 streaming frame 觸發一次。
@@ -37,9 +43,11 @@ const agentApi = {
 }
 
 contextBridge.exposeInMainWorld('agent', agentApi)
+contextBridge.exposeInMainWorld('dialog', dialogApi)
 
 declare global {
   interface Window {
     agent: typeof agentApi
+    dialog: typeof dialogApi
   }
 }

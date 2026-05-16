@@ -60,6 +60,15 @@ type SettingsState = {
   toggleSidebar: () => void
   toggleSidebarSearch: () => void
   setSidebarSearchQuery: (q: string) => void
+
+  /** 當前選中的 project filter。null = 不 filter(顯所有 sessions)。 */
+  activeProjectId: string | null
+  /** New Project modal 開關。 */
+  newProjectOpen: boolean
+
+  setActiveProjectId: (id: string | null) => void
+  openNewProject: () => void
+  closeNewProject: () => void
 }
 
 const STORAGE_KEY = 'orion-cowork-settings/v1'
@@ -78,6 +87,8 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarCollapsed: false,
       sidebarSearchOpen: false,
       sidebarSearchQuery: '',
+      activeProjectId: null,
+      newProjectOpen: false,
 
       setTheme: (t) => {
         set({ theme: t })
@@ -114,6 +125,10 @@ export const useSettingsStore = create<SettingsState>()(
           sidebarSearchQuery: s.sidebarSearchOpen ? '' : s.sidebarSearchQuery,
         })),
       setSidebarSearchQuery: (q) => set({ sidebarSearchQuery: q }),
+
+      setActiveProjectId: (id) => set({ activeProjectId: id }),
+      openNewProject: () => set({ newProjectOpen: true }),
+      closeNewProject: () => set({ newProjectOpen: false }),
     }),
     {
       name: STORAGE_KEY,

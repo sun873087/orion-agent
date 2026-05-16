@@ -162,6 +162,15 @@ class Conversation:
     auto_extract_memories: bool = True
     """True → 對話結束 fork 子 agent 萃取 memory(失敗不影響主對話)。"""
 
+    include_workspace_context: bool = True
+    """True → 帶入 cwd-derived 內容(git_status、`<cwd>/.orion/instructions.md`、
+    env_info 內 cwd 顯示)。CLI 預設 True;chat / desktop app 沒「user 工作目錄」
+    概念,應傳 False 避免把 process cwd / 啟動 repo git log 注入 prompt。"""
+
+    include_env_info: bool = True
+    """True → 帶 platform / date(跟 cwd 無關)。chat / desktop app 通常保 True
+    讓模型給對的 OS 命令(open vs xdg-open)。"""
+
     # ─── Phase 5 ──────────────────────────────────────────────────────────
     mcp_manager: object | None = None
     """McpManager instance(用 object 型別避免循環 import)。
@@ -303,42 +312,58 @@ class Conversation:
         # 當成對話歷史持久化,replay 時整段送回前端,看起來像 user 自己打的。
         messages_for_loop: list[NormalizedMessage] = list(self.state_messages)
         augmented_user_msg: NormalizedMessage | None = None
-        if self.system_prompt:
-            # caller 給了完整 prompt → 直接用,不做 per-turn 注入
-            effective_system_prompt = self.system_prompt
-        else:
-            try:
-                parts = await fetch_system_prompt_parts(
-                    cwd=ctx.cwd,
-                    user_id=self.user_id,
-                    conversation_messages=self.state_messages,
-                    provider=self.provider if self.memory_enabled else None,
-                    mcp_manager=self.mcp_manager,
-                    custom_instructions_user=self.custom_instructions_user,
-                    custom_instructions_conversation=(
-                        self.custom_instructions_conversation
-                    ),
-                    output_style=self.output_style,
-                )
-                effective_system_prompt = build_system_prompt_list(parts)
+        try:
+            # 從 ctx.cwd 取「workspace cwd」— 但只有 include_workspace_context=True
+            # 才把它當「user 工作目錄」傳下去。否則 cwd=None,assembler 跳過
+            # cwd-derived sections(git_status / project instructions / env cwd 顯示)。
+            workspace_cwd = ctx.cwd if self.include_workspace_context else None
+            parts = await fetch_system_prompt_parts(
+                cwd=workspace_cwd,
+                user_id=self.user_id,
+                conversation_messages=self.state_messages,
+                provider=self.provider if self.memory_enabled else None,
+                mcp_manager=self.mcp_manager,
+                custom_instructions_user=self.custom_instructions_user,
+                custom_instructions_conversation=(
+                    self.custom_instructions_conversation
+                ),
+                output_style=self.output_style,
+                include_workspace_context=self.include_workspace_context,
+                include_env_info=self.include_env_info,
+            )
+            effective_system_prompt = build_system_prompt_list(parts)
+            # caller-supplied static prefix(self.system_prompt)併到組好的 list
+            # 最前面;不再 short-circuit 跳過 fetch — Cowork 同時要 system_prompt
+            # 跟 memory / env_info 兩條路才能並存。
+            if self.system_prompt:
+                if isinstance(effective_system_prompt, list):
+                    effective_system_prompt = [self.system_prompt, *effective_system_prompt]
+                else:
+                    effective_system_prompt = (
+                        self.system_prompt + "\n\n" + effective_system_prompt
+                    )
 
-                # per-turn 注入:只在 messages_for_loop 末尾換成 rendered 版,
-                # self.state_messages 維持 bare,避免 memory 被持久化
-                if (
-                    parts.per_turn_text
-                    and messages_for_loop
-                    and messages_for_loop[-1].role == "user"
-                ):
-                    from orion_sdk.prompt.assembler import (
-                        inject_per_turn_into_user_message,
-                    )
-                    augmented_user_msg = inject_per_turn_into_user_message(
-                        messages_for_loop[-1], parts.per_turn_text
-                    )
-                    messages_for_loop[-1] = augmented_user_msg
-            except Exception:  # noqa: BLE001 — fallback 到純靜態 block
-                from orion_sdk.prompt.static_sections import render_static_block
-                effective_system_prompt = render_static_block()
+            # per-turn 注入:只在 messages_for_loop 末尾換成 rendered 版,
+            # self.state_messages 維持 bare,避免 memory 被持久化
+            if (
+                parts.per_turn_text
+                and messages_for_loop
+                and messages_for_loop[-1].role == "user"
+            ):
+                from orion_sdk.prompt.assembler import (
+                    inject_per_turn_into_user_message,
+                )
+                augmented_user_msg = inject_per_turn_into_user_message(
+                    messages_for_loop[-1], parts.per_turn_text
+                )
+                messages_for_loop[-1] = augmented_user_msg
+        except Exception:  # noqa: BLE001 — fallback 到純靜態 block
+            from orion_sdk.prompt.static_sections import render_static_block
+            effective_system_prompt = render_static_block()
+            if self.system_prompt:
+                effective_system_prompt = (
+                    self.system_prompt + "\n\n" + effective_system_prompt
+                )
 
         # Phase 8:UserPromptSubmit hook 注入的額外 context(append 到 system prompt)
         if injected_context:

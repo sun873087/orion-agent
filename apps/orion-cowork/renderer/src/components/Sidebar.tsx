@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   ChevronRight,
+  Folder,
   Globe,
   MessageSquare,
   Plus,
@@ -12,15 +13,17 @@ import {
   X,
 } from 'lucide-react'
 
-import { searchConversations, type SearchHit } from '../api/agent'
+import { getSessionWorkspace, searchConversations, type SearchHit } from '../api/agent'
 import { LOCALES, useTranslation, type Locale } from '../i18n'
 import { useDeleteConversation, useNewConversation, useSwitchConversation } from '../hooks/useAgent'
+import { useLoadProjectsOnce, useProjects } from '../hooks/useProjects'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
 
 /** 左側對話列表 + 底部 user popup menu(支援 nested submenu)。 */
 export function Sidebar() {
   const { t } = useTranslation()
+  useLoadProjectsOnce()
   const sessions = useAgentStore((s) => s.sessions)
   const currentId = useAgentStore((s) => s.sessionId)
   const newConv = useNewConversation()
@@ -30,8 +33,39 @@ export function Sidebar() {
   const searchQuery = useSettingsStore((s) => s.sidebarSearchQuery)
   const setSearchQuery = useSettingsStore((s) => s.setSidebarSearchQuery)
   const toggleSearch = useSettingsStore((s) => s.toggleSidebarSearch)
+  const activeProjectId = useSettingsStore((s) => s.activeProjectId)
+  const [sessionExt, setSessionExt] = useState<Map<string, { project_id: string | null }>>(
+    new Map(),
+  )
+  // Project filter:抓 sessions 對應 ext,依 activeProjectId filter
+  useEffect(() => {
+    if (!activeProjectId) {
+      setSessionExt(new Map())
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      sessions.map((s) =>
+        getSessionWorkspace(s.session_id).then((ext) => [s.session_id, ext] as const),
+      ),
+    ).then((results) => {
+      if (cancelled) return
+      const m = new Map<string, { project_id: string | null }>()
+      for (const [sid, ext] of results) {
+        m.set(sid, { project_id: ext.project_id })
+      }
+      setSessionExt(m)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeProjectId, sessions])
+  const projectFilteredSessions = activeProjectId
+    ? sessions.filter((s) => sessionExt.get(s.session_id)?.project_id === activeProjectId)
+    : sessions
 
   // Backend full-text search:有 query 時 debounce 300ms call sidecar;空就清空
+  const baseSessions = projectFilteredSessions
   const q = searchQuery.trim()
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
@@ -66,7 +100,7 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-bg-hover bg-bg-panel">
-      <div className="p-3">
+      <div className="px-3 pt-3">
         <button
           type="button"
           onClick={newConv}
@@ -76,6 +110,8 @@ export function Sidebar() {
           <span>{t('sidebar.newChat')}</span>
         </button>
       </div>
+      <ProjectsSection />
+      <div className="mx-3 my-2 border-t border-bg-hover" />
       {searchOpen && (
         <SearchBar
           value={searchQuery}
@@ -127,11 +163,11 @@ export function Sidebar() {
               })}
             </ul>
           )
-        ) : sessions.length === 0 ? (
+        ) : baseSessions.length === 0 ? (
           <div className="px-3 py-2 text-xs text-fg-subtle">{t('sidebar.empty')}</div>
         ) : (
           <ul className="flex flex-col gap-0.5">
-            {sessions.map((s) => {
+            {baseSessions.map((s) => {
               const active = s.session_id === currentId
               return (
                 <li key={s.session_id}>
@@ -172,6 +208,65 @@ export function Sidebar() {
 
       <UserMenu />
     </aside>
+  )
+}
+
+function ProjectsSection() {
+  const { t } = useTranslation()
+  const projects = useProjects()
+  const activeProjectId = useSettingsStore((s) => s.activeProjectId)
+  const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
+  const openNewProject = useSettingsStore((s) => s.openNewProject)
+
+  return (
+    <div className="mt-3 px-2">
+      <div className="mb-1 flex items-center justify-between px-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          {t('sidebar.projects')}
+        </span>
+        <button
+          type="button"
+          onClick={openNewProject}
+          title={t('sidebar.newProject')}
+          className="rounded p-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+      <ul className="flex flex-col gap-0.5">
+        <li>
+          <button
+            type="button"
+            onClick={() => setActiveProjectId(null)}
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              activeProjectId === null
+                ? 'bg-bg-hover text-fg-base'
+                : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+            }`}
+          >
+            <MessageSquare size={13} className="shrink-0" />
+            <span className="flex-1 truncate text-left">{t('sidebar.allConversations')}</span>
+          </button>
+        </li>
+        {projects.map((p) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              onClick={() => setActiveProjectId(p.id)}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                activeProjectId === p.id
+                  ? 'bg-bg-hover text-fg-base'
+                  : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+              }`}
+              title={p.workspace_dir ?? undefined}
+            >
+              <Folder size={13} className="shrink-0" />
+              <span className="flex-1 truncate text-left">{p.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

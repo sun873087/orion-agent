@@ -12,8 +12,17 @@ import asyncio
 import json
 import os
 
-from orion_cowork_sidecar.handlers import Handlers
-from orion_cowork_sidecar.rpc import RpcServer
+# Cowork memory 落獨立 root,跟 CLI / chat-api 的 ~/.orion/users/ 分開。
+# 必須在 import orion_sdk.memory.* 之前設,所以放最頂端。
+from orion_cowork_sidecar import storage as _cowork_storage
+
+os.environ.setdefault(
+    "ORION_USERS_DIR",
+    str(_cowork_storage.data_dir() / "users"),
+)
+
+from orion_cowork_sidecar.handlers import Handlers  # noqa: E402
+from orion_cowork_sidecar.rpc import RpcServer  # noqa: E402
 
 
 def _install_test_provider_override() -> None:

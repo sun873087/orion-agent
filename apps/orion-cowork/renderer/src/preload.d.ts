@@ -19,9 +19,14 @@ interface OrionAgentApi {
   ) => Promise<void>
 }
 
+interface OrionDialogApi {
+  selectFolder: () => Promise<string | null>
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
+    dialog: OrionDialogApi
   }
 }
 

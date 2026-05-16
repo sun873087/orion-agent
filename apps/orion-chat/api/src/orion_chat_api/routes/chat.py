@@ -272,6 +272,8 @@ async def chat_stream(
             max_tokens_per_turn=pick_max_tokens_per_turn(
                 provider.name, provider.model,
             ),
+            # Chat-api server,無 user-side cwd
+            include_workspace_context=False,
         )
         await sm.create(
             user_id=user_id, session_id=session_id, conversation=conv,

@@ -6,7 +6,7 @@
  * - 註冊 IPC handler 把 renderer 的 call 路由到 sidecar
  */
 
-import { BrowserWindow, app, ipcMain } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -71,6 +71,15 @@ app.whenReady().then(async () => {
       const message = err instanceof Error ? err.message : String(err)
       event.sender.send(channel, { id: msg.callId, error: { code: 'IPC_ERROR', message }, final: true })
     }
+  })
+
+  // Folder picker — renderer 走 dialog.showOpenDialog (沒 fs 權限自己叫不到)
+  ipcMain.handle('dialog:selectFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
   })
 
   // 3. 開窗

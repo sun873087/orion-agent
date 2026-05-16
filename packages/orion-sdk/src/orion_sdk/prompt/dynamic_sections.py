@@ -30,12 +30,19 @@ from orion_sdk.prompt.context import (
 )
 
 
-def env_info_stable_section(cwd: Path | None = None) -> str:
+def env_info_stable_section(
+    cwd: Path | None = None,
+    *,
+    include_cwd_display: bool = True,
+) -> str:
     """session-stable env info(platform / cwd / date)— 不含 git。
 
     git_status 抽到 git_status_section(per-turn,不進 system prompt)。
+
+    `cwd` 為 None 或 `include_cwd_display=False` 時,僅顯 platform + date —
+    chat / desktop app 用例(無「user 所在資料夾」概念)。
     """
-    env = get_env_info(cwd)
+    env = get_env_info(cwd if include_cwd_display else None)
     return f"# Environment\n\n{env}"
 
 
@@ -60,9 +67,22 @@ async def env_info_section(cwd: Path | None = None) -> str:
     return f"# Environment\n\n{env}"
 
 
-def instructions_section(cwd: Path | None = None) -> str:
-    """user instructions(.orion/instructions.md)— 沒檔回空。"""
-    files = find_instructions_files(cwd)
+def instructions_section(
+    cwd: Path | None = None,
+    *,
+    include_project: bool = True,
+    include_user: bool = True,
+) -> str:
+    """user instructions(.orion/instructions.md)— 沒檔回空。
+
+    include_project=False:跳過 `<cwd>/.orion/instructions.md`(per-project)。
+    include_user=False:跳過 `~/.orion/instructions.md`(user-level)。
+    """
+    files = find_instructions_files(
+        cwd,
+        include_project=include_project,
+        include_user=include_user,
+    )
     if not files:
         return ""
     text = read_instructions(files)

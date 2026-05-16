@@ -29,14 +29,130 @@ export type SidecarEvent =
 export async function createConversation(
   provider = 'anthropic',
   model = 'claude-sonnet-4-6',
+  opts?: { projectId?: string | null; workspaceDir?: string | null },
 ): Promise<string> {
   let sessionId = ''
-  await window.agent.call('conversation.create', { provider, model }, (frame) => {
+  const params: Record<string, unknown> = { provider, model }
+  if (opts?.projectId) params.project_id = opts.projectId
+  if (opts?.workspaceDir) params.workspace_dir = opts.workspaceDir
+  await window.agent.call('conversation.create', params, (frame) => {
     const data = (frame.data ?? {}) as { session_id?: string }
     if (data.session_id) sessionId = data.session_id
   })
   if (!sessionId) throw new Error('conversation.create returned no session_id')
   return sessionId
+}
+
+export type SessionExt = {
+  session_id: string
+  workspace_dir: string | null
+  project_id: string | null
+}
+
+export async function getSessionWorkspace(sessionId: string): Promise<SessionExt> {
+  let ext: SessionExt = { session_id: sessionId, workspace_dir: null, project_id: null }
+  await window.agent.call(
+    'conversation.get_workspace',
+    { session_id: sessionId },
+    (frame) => {
+      if (frame.event === 'session_ext' && frame.data) {
+        ext = frame.data as SessionExt
+      }
+    },
+  )
+  return ext
+}
+
+export async function setSessionWorkspace(
+  sessionId: string,
+  workspaceDir: string | null,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_workspace',
+    { session_id: sessionId, workspace_dir: workspaceDir },
+    () => {},
+  )
+}
+
+export async function setSessionProject(
+  sessionId: string,
+  projectId: string | null,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_project',
+    { session_id: sessionId, project_id: projectId },
+    () => {},
+  )
+}
+
+export type Project = {
+  id: string
+  name: string
+  description: string | null
+  workspace_dir: string | null
+  custom_instructions: string | null
+  created_at: number
+}
+
+export async function listProjects(): Promise<Project[]> {
+  let projects: Project[] = []
+  await window.agent.call('project.list', {}, (frame) => {
+    if (frame.event === 'project_list' && frame.data) {
+      const d = frame.data as { projects: Project[] }
+      projects = d.projects ?? []
+    }
+  })
+  return projects
+}
+
+export async function getProject(
+  projectId: string,
+): Promise<{ project: Project; session_ids: string[] } | null> {
+  let out: { project: Project; session_ids: string[] } | null = null
+  await window.agent.call('project.get', { project_id: projectId }, (frame) => {
+    if (frame.event === 'project' && frame.data) {
+      const d = frame.data as { project: Project; session_ids?: string[] }
+      out = { project: d.project, session_ids: d.session_ids ?? [] }
+    }
+  })
+  return out
+}
+
+export async function createProject(input: {
+  name: string
+  description?: string | null
+  workspace_dir?: string | null
+  custom_instructions?: string | null
+}): Promise<Project> {
+  let proj: Project | null = null
+  await window.agent.call('project.create', input as Record<string, unknown>, (frame) => {
+    if (frame.event === 'project' && frame.data) {
+      const d = frame.data as { project: Project }
+      proj = d.project
+    }
+  })
+  if (!proj) throw new Error('project.create returned no project')
+  return proj
+}
+
+export async function updateProject(
+  projectId: string,
+  input: Partial<{
+    name: string
+    description: string | null
+    workspace_dir: string | null
+    custom_instructions: string | null
+  }>,
+): Promise<void> {
+  await window.agent.call(
+    'project.update',
+    { project_id: projectId, ...input } as Record<string, unknown>,
+    () => {},
+  )
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await window.agent.call('project.delete', { project_id: projectId }, () => {})
 }
 
 export type Attachment = {

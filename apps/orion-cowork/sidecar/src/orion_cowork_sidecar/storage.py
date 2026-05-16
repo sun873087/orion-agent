@@ -130,11 +130,42 @@ def _hydrate_image_blocks(content_json: Any, blob: BlobStore) -> Any:
 
 
 async def init_storage() -> AsyncEngine:
-    """Init engine + migrations + dummy user。Idempotent。"""
+    """Init engine + migrations + dummy user + cowork-only 擴充表。Idempotent。"""
     engine = create_db_engine(_db_url())
     await init_db(engine)
     await _upsert_local_user(engine)
+    await _ensure_cowork_ext_tables(engine)
     return engine
+
+
+async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
+    """Cowork 專屬擴充表(不動 SDK schema):
+       - cowork_session_ext:per-session workspace_dir + project_id(A2/A3)
+       - cowork_projects:Project 定義(A3)
+    """
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_session_ext (
+                session_id TEXT PRIMARY KEY,
+                workspace_dir TEXT,
+                project_id TEXT
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                workspace_dir TEXT,
+                custom_instructions TEXT,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        await conn.commit()
 
 
 async def _upsert_local_user(engine: AsyncEngine) -> None:
@@ -301,6 +332,53 @@ async def cleanup_orphan_blobs(engine: AsyncEngine) -> dict[str, int]:
     }
 
 
+async def get_session_ext(
+    engine: AsyncEngine, session_id: str
+) -> dict[str, str | None]:
+    """讀 cowork_session_ext row。沒 row 回 {workspace_dir: None, project_id: None}。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT workspace_dir, project_id FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None:
+        return {"workspace_dir": None, "project_id": None}
+    return {"workspace_dir": row[0], "project_id": row[1]}
+
+
+async def set_session_workspace(
+    engine: AsyncEngine, session_id: str, workspace_dir: str | None
+) -> None:
+    """Upsert workspace_dir。None 清空。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, workspace_dir)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET workspace_dir = excluded.workspace_dir
+            """,
+            (session_id, workspace_dir),
+        )
+        await conn.commit()
+
+
+async def set_session_project(
+    engine: AsyncEngine, session_id: str, project_id: str | None
+) -> None:
+    """Upsert project_id。None 清空。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, project_id)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET project_id = excluded.project_id
+            """,
+            (session_id, project_id),
+        )
+        await conn.commit()
+
+
 async def append_messages(
     engine: AsyncEngine,
     session_id: str,
@@ -407,6 +485,129 @@ async def read_attachment_data_url(
     else:
         raise ValueError("image block has neither blob_id nor data")
     return f"data:{media_type};base64,{b64}"
+
+
+@dataclass
+class Project:
+    id: str
+    name: str
+    description: str | None
+    workspace_dir: str | None
+    custom_instructions: str | None
+    created_at: float
+
+
+async def list_projects(engine: AsyncEngine) -> list[Project]:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT id, name, description, workspace_dir, custom_instructions, "
+            "created_at FROM cowork_projects ORDER BY created_at DESC"
+        )
+        return [
+            Project(
+                id=r[0], name=r[1], description=r[2], workspace_dir=r[3],
+                custom_instructions=r[4], created_at=r[5],
+            )
+            for r in result.all()
+        ]
+
+
+async def get_project(engine: AsyncEngine, project_id: str) -> Project | None:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT id, name, description, workspace_dir, custom_instructions, "
+            "created_at FROM cowork_projects WHERE id = ?",
+            (project_id,),
+        )
+        r = result.first()
+    if r is None:
+        return None
+    return Project(
+        id=r[0], name=r[1], description=r[2], workspace_dir=r[3],
+        custom_instructions=r[4], created_at=r[5],
+    )
+
+
+async def create_project(
+    engine: AsyncEngine,
+    *,
+    name: str,
+    description: str | None = None,
+    workspace_dir: str | None = None,
+    custom_instructions: str | None = None,
+) -> Project:
+    from uuid import uuid4
+    pid = str(uuid4())
+    now = time.time()
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            "INSERT INTO cowork_projects (id, name, description, workspace_dir, "
+            "custom_instructions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (pid, name, description, workspace_dir, custom_instructions, now),
+        )
+        await conn.commit()
+    return Project(
+        id=pid, name=name, description=description, workspace_dir=workspace_dir,
+        custom_instructions=custom_instructions, created_at=now,
+    )
+
+
+async def update_project(
+    engine: AsyncEngine,
+    project_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    workspace_dir: str | None = None,
+    custom_instructions: str | None = None,
+) -> bool:
+    """部分更新;None 表示「不動」,要清空傳空字串。回 True 若有 row 被改。"""
+    fields: list[tuple[str, Any]] = []
+    if name is not None:
+        fields.append(("name", name))
+    if description is not None:
+        fields.append(("description", description))
+    if workspace_dir is not None:
+        fields.append(("workspace_dir", workspace_dir or None))
+    if custom_instructions is not None:
+        fields.append(("custom_instructions", custom_instructions or None))
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
+    params = [v for _, v in fields] + [project_id]
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            f"UPDATE cowork_projects SET {set_clause} WHERE id = ?",
+            tuple(params),
+        )
+        await conn.commit()
+        return (result.rowcount or 0) > 0
+
+
+async def delete_project(engine: AsyncEngine, project_id: str) -> bool:
+    """刪 project 本身,session 上的 project_id ref 變孤(自動視為無 project)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "DELETE FROM cowork_projects WHERE id = ?", (project_id,),
+        )
+        # 同時清這個 project 在 sessions 上的 ref
+        await conn.exec_driver_sql(
+            "UPDATE cowork_session_ext SET project_id = NULL WHERE project_id = ?",
+            (project_id,),
+        )
+        await conn.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def list_sessions_in_project(
+    engine: AsyncEngine, project_id: str
+) -> list[str]:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id FROM cowork_session_ext WHERE project_id = ?",
+            (project_id,),
+        )
+        return [r[0] for r in result.all()]
 
 
 @dataclass

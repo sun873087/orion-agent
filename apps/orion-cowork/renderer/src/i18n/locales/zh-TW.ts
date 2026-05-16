@@ -20,6 +20,28 @@ export default {
   'sidebar.searching': '搜尋中⋯',
   'sidebar.clearSearch': '清除搜尋',
   'sidebar.noMatches': '沒有符合的對話',
+  'sidebar.projects': '專案',
+  'sidebar.allConversations': '全部對話',
+  'sidebar.newProject': '新增專案',
+  'sidebar.noProjects': '尚未建立任何專案',
+
+  'project.modal.title': '新增專案',
+  'project.field.name': '名稱',
+  'project.field.namePlaceholder': '例:Orion Agent',
+  'project.field.description': '描述',
+  'project.field.descriptionPlaceholder': '一句話描述這個專案(選填)',
+  'project.field.workspace': '工作目錄',
+  'project.field.workspaceHint': '選一個資料夾,model 看歷史對話跟那邊的檔案才有 cwd / git 上下文',
+  'project.field.selectFolder': '選擇資料夾⋯',
+  'project.field.noFolder': '未選擇',
+  'project.field.instructions': '專案指引(會注入 system prompt)',
+  'project.field.instructionsPlaceholder': '例:這個專案用 TypeScript + Vite,請用 zustand 不要用 redux',
+  'project.create': '建立',
+  'project.cancel': '取消',
+
+  'header.workspace.none': '無 workspace',
+  'header.workspace.set': '設定 workspace',
+  'header.workspace.clear': '清除 workspace',
 
   // User menu
   'menu.settings': '設定',

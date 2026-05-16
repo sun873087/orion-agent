@@ -91,6 +91,8 @@ async def create_session(
         max_tokens_per_turn=pick_max_tokens_per_turn(
             provider_for_session.name, provider_for_session.model,
         ),
+        # Chat-api server,無 user-side cwd
+        include_workspace_context=False,
     )
     sid = await sm.create(
         user_id=user_id, session_id=conv.session_id, conversation=conv,
