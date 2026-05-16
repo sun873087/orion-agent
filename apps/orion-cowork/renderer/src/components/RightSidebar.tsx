@@ -211,8 +211,6 @@ export function RightSidebar() {
         'lg:relative lg:top-auto lg:bottom-auto lg:z-auto lg:shadow-none'
       }
     >
-      <UsageSection />
-
       <Section title={t('rightSidebar.progress')}>
         {todos.length === 0 ? (
           <Empty>{t('rightSidebar.noProgress')}</Empty>
@@ -304,6 +302,8 @@ export function RightSidebar() {
           </>
         )}
       </Section>
+
+      <UsageSection />
     </aside>
   )
 }
