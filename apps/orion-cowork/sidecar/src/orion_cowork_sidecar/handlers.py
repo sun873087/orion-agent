@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -434,13 +435,12 @@ class Handlers:
         # frame。改把 approval-request frame 推 queue,outer loop multiplex
         # 從 queue + conv.send 兩邊收 frame。
         out_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-        # Permission policy:turn-start 載入一次(global + 對應 project),
-        # can_use_tool 內 deny/allow check 用這份。後續 user 改 policy 要等
-        # 下一個 turn 才生效 — 簡化,不做 live reload。
+        # Permission policy:每次 can_use_tool 進來都 reload — 讓 banner 的
+        # 「永遠允許」按鈕加 rule 後同 turn 後續 tool 立即生效,不必等下個 turn。
+        # File I/O 很便宜(小 JSON),per-call 沒 perf 顧慮。
         from pathlib import Path as _P
         ws_for_policy = _P(ctx_cwd) if ctx_cwd else None
-        active_policy = perm_mod.load_policy(ws_for_policy)
-        conv.can_use_tool = self._build_can_use_tool(sid, out_queue, active_policy)
+        conv.can_use_tool = self._build_can_use_tool(sid, out_queue, ws_for_policy)
 
         # ─── AskUserQuestion + system prompt wiring per mode ───────────
         # Ask 模式:綁 asker + system prompt 加 _ASK_MODE_NOTE 鼓勵互動
@@ -525,7 +525,7 @@ class Handlers:
         self,
         sid: str,
         out_queue: asyncio.Queue[dict[str, Any] | None],
-        policy: "perm_mod.Policy",
+        workspace_dir: "Path | None",
     ) -> Any:
         """組 can_use_tool callback。決策順序:
 
@@ -535,14 +535,15 @@ class Handlers:
         4. session mode == 'ask' → 推 banner 等 approval
         5. session mode == 'act' → ALLOW
 
-        Live mode → user 中途切 Ask/Act 立刻生效,不必等下一個 turn。
-        Policy 在 turn-start capture,turn 內固定;改設定要等下一個 turn。
+        Live:mode 跟 policy 都每次 invocation reload,中途切 Ask/Act 或加
+        「永遠允許」rule 立刻生效,不必等下個 turn。
         """
         AUTO_ALLOW_TOOLS = {"AskUserQuestion"}
 
         async def _gate(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
             tool_name = getattr(tool, "name", type(tool).__name__)
-            # ① Policy deny / allow 全 mode 通用
+            # ① Policy deny / allow — 每次 reload 拿最新 rule
+            policy = perm_mod.load_policy(workspace_dir)
             pdec = perm_mod.decide(policy, tool_name, tool_input)
             if pdec == "deny":
                 return PermissionResult(

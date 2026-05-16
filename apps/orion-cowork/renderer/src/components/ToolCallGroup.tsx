@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { sendToolApproval } from '../api/agent'
+import { getPermissions, sendToolApproval, setPermissions } from '../api/agent'
 import { useTranslation } from '../i18n'
 import type { ToolCallState } from '../store/agent'
 
@@ -179,6 +179,37 @@ function summarize(tools: ToolCallState[]): string {
 }
 
 /**
+ * 給「永遠允許」按鈕用的 pattern 建議 — 對熟知 tool 給更精準的 glob。
+ * Bash:抓前兩 token 配 *,WebFetch:抓 hostname。其他就回 tool name 全允許。
+ */
+function suggestAllowPattern(toolName: string, input: Record<string, unknown> | undefined): string {
+  const i = (input ?? {}) as Record<string, unknown>
+  const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = s('command').trim()
+      if (!cmd) return 'Bash'
+      const tokens = cmd.split(/\s+/).filter(Boolean)
+      // 一個 token 就 `Bash(tok *)`(吃所有 sub-args);兩個就前兩 token + *
+      const head = tokens.length >= 2 ? tokens.slice(0, 2).join(' ') : tokens[0]
+      return `Bash(${head} *)`
+    }
+    case 'WebFetch': {
+      const url = s('url')
+      try {
+        const u = new URL(url)
+        if (u.hostname) return `WebFetch(domain:${u.hostname})`
+      } catch {
+        // ignore — fall through
+      }
+      return 'WebFetch'
+    }
+    default:
+      return toolName
+  }
+}
+
+/**
  * 對重點 tool 給「人話」摘要(banner 上方一行讓 user 一眼看懂在做什麼)。
  * 不在這 switch 內的 tool fallback 顯 describe() title。
  */
@@ -224,6 +255,7 @@ function ToolApprovalBanner({
   const [showRaw, setShowRaw] = useState(false)
   const d = describe(toolName, input)
   const summary = humanSummary(toolName, input)
+  const allowPattern = suggestAllowPattern(toolName, input)
   const rawJson =
     input && Object.keys(input).length > 0
       ? JSON.stringify(input, null, 2)
@@ -234,6 +266,23 @@ function ToolApprovalBanner({
     setBusy(true)
     try {
       await sendToolApproval(toolUseId, decision)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 「永遠允許」:把 pattern 加進 global allow,然後 approve 這次 call。 */
+  async function alwaysAllow() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const cur = await getPermissions('global')
+      // 已在 allow list 就不重複加
+      const allow = cur.allow.includes(allowPattern)
+        ? cur.allow
+        : [...cur.allow, allowPattern]
+      await setPermissions('global', allow, cur.deny)
+      await sendToolApproval(toolUseId, 'allow')
     } finally {
       setBusy(false)
     }
@@ -266,7 +315,7 @@ function ToolApprovalBanner({
           )}
         </div>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => decide('allow')}
@@ -275,6 +324,19 @@ function ToolApprovalBanner({
         >
           <Check size={12} />
           <span>{t('approval.allow')}</span>
+        </button>
+        <button
+          type="button"
+          onClick={alwaysAllow}
+          disabled={busy}
+          title={t('approval.alwaysAllow.tooltip', { pattern: allowPattern })}
+          className="flex items-center gap-1 rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success/90 hover:bg-success/20 disabled:opacity-40"
+        >
+          <Check size={12} />
+          <span>
+            {t('approval.alwaysAllow')}{' '}
+            <code className="font-mono text-[10px] opacity-80">{allowPattern}</code>
+          </span>
         </button>
         <button
           type="button"

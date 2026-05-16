@@ -398,6 +398,47 @@ export async function setPermissionMode(
   )
 }
 
+export type PermissionScope = 'global' | 'project'
+
+export type PermissionPolicy = {
+  scope: PermissionScope
+  allow: string[]
+  deny: string[]
+}
+
+/** 讀單一 scope 的 policy。Project scope 需要 workspaceDir。 */
+export async function getPermissions(
+  scope: PermissionScope,
+  workspaceDir?: string | null,
+): Promise<PermissionPolicy> {
+  let out: PermissionPolicy = { scope, allow: [], deny: [] }
+  const params: Record<string, unknown> = { scope }
+  if (workspaceDir) params.workspace_dir = workspaceDir
+  await window.agent.call('permissions.get', params, (frame) => {
+    const d = (frame.data ?? {}) as { scope?: string; allow?: string[]; deny?: string[] }
+    if (d.scope === 'global' || d.scope === 'project') {
+      out = {
+        scope: d.scope,
+        allow: Array.isArray(d.allow) ? d.allow : [],
+        deny: Array.isArray(d.deny) ? d.deny : [],
+      }
+    }
+  })
+  return out
+}
+
+/** 覆寫單一 scope 的 policy(整批替換,非 patch)。 */
+export async function setPermissions(
+  scope: PermissionScope,
+  allow: string[],
+  deny: string[],
+  workspaceDir?: string | null,
+): Promise<void> {
+  const params: Record<string, unknown> = { scope, allow, deny }
+  if (workspaceDir) params.workspace_dir = workspaceDir
+  await window.agent.call('permissions.set', params, () => {})
+}
+
 export type ModelCatalog = {
   providers: Array<{
     id: string

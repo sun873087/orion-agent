@@ -6,7 +6,7 @@
  * 其他三個 reuse user-level sections,prop projectId 切目錄。
  */
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Brain, Folder, type LucideIcon, Plug, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, Brain, Folder, type LucideIcon, Plug, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 
 import {
   deleteProject,
@@ -20,6 +20,7 @@ import { useSettingsStore } from '../store/settings'
 
 import { McpSection } from './settings/McpSection'
 import { MemorySection } from './settings/MemorySection'
+import { PermissionsSection } from './settings/PermissionsSection'
 import { SkillsSection } from './settings/SkillsSection'
 
 type SectionDef = {
@@ -33,6 +34,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'skills', labelKey: 'projectSettings.section.skills', icon: Sparkles },
   { id: 'memory', labelKey: 'projectSettings.section.memory', icon: Brain },
   { id: 'mcp', labelKey: 'projectSettings.section.mcp', icon: Plug },
+  { id: 'permissions', labelKey: 'projectSettings.section.permissions', icon: ShieldCheck },
 ]
 
 export function ProjectSettingsPage() {
@@ -129,6 +131,12 @@ export function ProjectSettingsPage() {
               <>
                 <h2 className="mb-4 text-lg font-semibold">{t('projectSettings.section.mcp')}</h2>
                 <McpSection projectId={project.id} />
+              </>
+            )}
+            {active === 'permissions' && (
+              <>
+                <h2 className="mb-4 text-lg font-semibold">{t('projectSettings.section.permissions')}</h2>
+                <PermissionsSection projectId={project.id} />
               </>
             )}
           </div>
