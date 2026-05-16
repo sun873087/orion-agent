@@ -96,6 +96,8 @@ export default {
   'general.instructionsPlaceholder': '告訴 Orion 你想要它怎麼回答…',
   'general.save': '儲存',
   'general.discard': '放棄',
+  'general.appearance': '外觀',
+  'general.revealInFinder': '在 Finder 開啟',
   'general.defaultWorkspaceHint': '每個沒指定專案的對話會繼承這個資料夾,讓 model 看到 git 狀態 / 該目錄檔案 / `<目錄>/.orion/instructions.md`。',
   'general.pickFolder': '選擇資料夾⋯',
   'general.change': '變更',

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Folder, User, X } from 'lucide-react'
+import { Folder, Moon, Sun, User, X } from 'lucide-react'
 
 import { getPrefs, setPref } from '../../api/agent'
 import { useTranslation } from '../../i18n'
@@ -58,6 +58,7 @@ export function GeneralSection() {
   return (
     <div className="flex flex-col gap-6">
       <AvatarPicker />
+      <ThemeToggle />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">
           {t('general.instructions')}
@@ -104,8 +105,17 @@ export function GeneralSection() {
           <div className="text-sm text-fg-muted">{t('settings.mcp.loading')}</div>
         ) : defaultWorkspace ? (
           <div className="mt-2 flex w-fit items-center gap-2 rounded-md border border-bg-hover bg-bg-panel px-3 py-1.5">
-            <Folder size={14} className="text-fg-muted" />
-            <span className="font-mono text-xs text-fg-base">{defaultWorkspace}</span>
+            <button
+              type="button"
+              onClick={() => window.shellApi.revealInFinder(defaultWorkspace)}
+              title={t('general.revealInFinder')}
+              className="flex items-center gap-2 rounded hover:text-accent"
+            >
+              <Folder size={14} className="text-fg-muted" />
+              <span className="font-mono text-xs text-fg-base underline-offset-4 hover:underline">
+                {defaultWorkspace}
+              </span>
+            </button>
             <button
               type="button"
               onClick={pick}
@@ -212,6 +222,29 @@ function AvatarPicker() {
           }}
         />
       </div>
+    </div>
+  )
+}
+
+/** 主題切換 — 原本獨立的 Appearance section,併進 General 簡化導覽。 */
+function ThemeToggle() {
+  const { t } = useTranslation()
+  const theme = useSettingsStore((s) => s.theme)
+  const toggleTheme = useSettingsStore((s) => s.toggleTheme)
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-fg-muted">
+        {t('general.appearance')}
+      </label>
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="mt-2 flex w-fit items-center gap-3 rounded-lg border border-bg-hover bg-bg-panel px-4 py-2 text-sm hover:bg-bg-hover"
+      >
+        {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+        <span>{theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light')}</span>
+        <span className="text-xs text-fg-subtle">{t('settings.theme.toggleHint')}</span>
+      </button>
     </div>
   )
 }

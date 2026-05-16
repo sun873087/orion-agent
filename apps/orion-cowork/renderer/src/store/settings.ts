@@ -104,7 +104,7 @@ export const useSettingsStore = create<SettingsState>()(
       providers: [],
       catalogLoaded: false,
       settingsOpen: false,
-      activeSettingsSection: 'appearance',
+      activeSettingsSection: 'general',
       sidebarCollapsed: false,
       sidebarSearchOpen: false,
       sidebarSearchQuery: '',

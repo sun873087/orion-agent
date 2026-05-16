@@ -90,6 +90,8 @@ export default {
   'general.instructionsPlaceholder': 'Orion にどう応答してほしいか伝える…',
   'general.save': '保存',
   'general.discard': '破棄',
+  'general.appearance': '外観',
+  'general.revealInFinder': 'Finder で開く',
   'general.defaultWorkspaceHint': 'プロジェクトに属さない会話はこのフォルダを継承し、モデルは git 状態 / ファイル / `<フォルダ>/.orion/instructions.md` を参照可能。',
   'general.pickFolder': 'フォルダを選択⋯',
   'general.change': '変更',

@@ -90,6 +90,8 @@ export default {
   'general.instructionsPlaceholder': 'Tell Orion how you want it to respond…',
   'general.save': 'Save',
   'general.discard': 'Discard',
+  'general.appearance': 'Appearance',
+  'general.revealInFinder': 'Reveal in Finder',
   'general.defaultWorkspaceHint': 'Every chat without a project inherits this folder, so the model sees git status / files / `<folder>/.orion/instructions.md`.',
   'general.pickFolder': 'Choose folder…',
   'general.change': 'Change',

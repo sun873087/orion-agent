@@ -9,13 +9,12 @@
  * 也可以 openSettings('language') 直接跳到 Language section。
  */
 import type { ComponentType } from 'react'
-import { ArrowLeft, Brain, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, Sun } from 'lucide-react'
+import { ArrowLeft, Brain, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles } from 'lucide-react'
 
 import { useTranslation } from '../i18n'
 import { useSettingsStore } from '../store/settings'
 
 import { AboutSection } from './settings/AboutSection'
-import { AppearanceSection } from './settings/AppearanceSection'
 import { GeneralSection } from './settings/GeneralSection'
 import { McpSection } from './settings/McpSection'
 import { MemorySection } from './settings/MemorySection'
@@ -41,13 +40,6 @@ const SECTIONS: SectionDef[] = [
     groupKey: 'settings.group.general',
     icon: Folder,
     render: GeneralSection,
-  },
-  {
-    id: 'appearance',
-    labelKey: 'settings.section.appearance',
-    groupKey: 'settings.group.general',
-    icon: Sun,
-    render: AppearanceSection,
   },
   // 語言不放這 — 走 Sidebar popup 的 Language submenu(快捷且不重複)
   {

@@ -90,6 +90,8 @@ export default {
   'general.instructionsPlaceholder': '告诉 Orion 你想要它怎么回答…',
   'general.save': '保存',
   'general.discard': '放弃',
+  'general.appearance': '外观',
+  'general.revealInFinder': '在 Finder 中打开',
   'general.defaultWorkspaceHint': '每个不属于项目的对话都会继承这个目录,让 model 看到 git 状态 / 文件 / `<目录>/.orion/instructions.md`。',
   'general.pickFolder': '选择文件夹⋯',
   'general.change': '变更',
