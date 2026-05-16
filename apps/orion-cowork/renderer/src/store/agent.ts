@@ -17,6 +17,8 @@ export type ToolCallState = {
   text: string
   /** 中間 progress events(可顯示 / 摺疊)。 */
   progress: string[]
+  /** raw tool input(從 tool_start frame 拿到,給 UI 顯示「在跑什麼」)。 */
+  input?: Record<string, unknown>
 }
 
 /** 歷史 hydrate 出來的 lazy attachment:沒有 previewUrl,要靠 ref lazy 拿。 */
@@ -36,13 +38,22 @@ export type AttachmentPreview = {
   ref?: AttachmentRef
 }
 
+/** 按 LLM emit 順序的 inline block — 讓 ToolCallGroup 出現在文字流的對位置。
+ *  歷史 hydrate 出來的 message 沒這個欄位,UI fallback 純 text + toolCalls 渲染。
+ */
+export type AssistantBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tools'; toolUseIds: string[] }
+
 export type Message = {
   id: string
   role: MessageRole
-  /** Plain text(user / assistant)。tool message 用 toolCalls 顯示。 */
+  /** Plain text(user / assistant 全段彙整;歷史 hydrate 也用這個)。 */
   text: string
   /** assistant 訊息內附的工具呼叫(0..N)。 */
   toolCalls?: ToolCallState[]
+  /** Streaming 時的 inline 順序;hydrate 歷史時不設,UI 走 fallback 舊式 layout。 */
+  blocks?: AssistantBlock[]
   /** user message 上傳的附件(只用來 UI 顯示;base64 上傳已送 sidecar)。 */
   attachments?: AttachmentPreview[]
   /** 若 streaming 還沒結束就 true,UI 用來顯示 cursor。 */
@@ -150,6 +161,7 @@ export const useAgentStore = create<AgentState>((set) => ({
           role: 'assistant',
           text: '',
           toolCalls: [],
+          blocks: [],
           streaming: true,
           createdAt: Date.now(),
         },
@@ -160,9 +172,19 @@ export const useAgentStore = create<AgentState>((set) => ({
 
   appendAssistantText: (id, delta) =>
     set((s) => ({
-      messages: s.messages.map((m) =>
-        m.id === id ? { ...m, text: m.text + delta } : m,
-      ),
+      messages: s.messages.map((m) => {
+        if (m.id !== id) return m
+        // text 仍 append 到 m.text(向後相容);同時 maintain blocks 順序
+        const newText = m.text + delta
+        const blocks = m.blocks ? [...m.blocks] : []
+        const last = blocks[blocks.length - 1]
+        if (last && last.type === 'text') {
+          blocks[blocks.length - 1] = { type: 'text', text: last.text + delta }
+        } else {
+          blocks.push({ type: 'text', text: delta })
+        }
+        return { ...m, text: newText, blocks }
+      }),
     })),
 
   endAssistantMessage: (id) =>
@@ -182,7 +204,22 @@ export const useAgentStore = create<AgentState>((set) => ({
           text: '',
           progress: [],
         }
-        return { ...m, toolCalls: [...(m.toolCalls ?? []), next] }
+        // 維持 blocks 順序:碰到新 tool 且最後 block 不是 tools → 新開一個 tools block
+        const blocks = m.blocks ? [...m.blocks] : []
+        const last = blocks[blocks.length - 1]
+        if (last && last.type === 'tools') {
+          blocks[blocks.length - 1] = {
+            type: 'tools',
+            toolUseIds: [...last.toolUseIds, next.toolUseId],
+          }
+        } else {
+          blocks.push({ type: 'tools', toolUseIds: [next.toolUseId] })
+        }
+        return {
+          ...m,
+          toolCalls: [...(m.toolCalls ?? []), next],
+          blocks,
+        }
       }),
     })),
 

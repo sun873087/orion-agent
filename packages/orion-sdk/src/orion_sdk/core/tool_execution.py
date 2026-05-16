@@ -36,6 +36,19 @@ from orion_sdk.storage.tool_result import maybe_persist_large_tool_result
 
 
 @dataclass
+class ToolUseStartUpdate:
+    """工具開始執行時 emit 一次 — 帶 raw_input,給 UI 顯示「我在跑什麼」。
+
+    對應 query_loop emit 順序:ToolUseStartUpdate → 0..N ToolProgressUpdate →
+    ToolResultUpdate(每個 tool_use_id 一組)。
+    """
+
+    tool_use_id: str
+    tool_name: str
+    input: dict[str, Any]
+
+
+@dataclass
 class ToolProgressUpdate:
     """工具執行中的中間事件(TextEvent / ProgressEvent / ErrorEvent)。
     main loop 可印給 user 看,**不**累積到 state_messages。
@@ -61,7 +74,7 @@ class ToolResultUpdate:
     """例如 deny 原因、parse error 詳情等。"""
 
 
-ToolUpdate = ToolProgressUpdate | ToolResultUpdate
+ToolUpdate = ToolUseStartUpdate | ToolProgressUpdate | ToolResultUpdate
 
 
 def _make_result_message(
@@ -121,6 +134,10 @@ async def run_one_tool(
     _start_t = time.monotonic()
     _had_error = False
     try:
+        # UI 顯示「在跑什麼」用的 start event(含 raw_input)。
+        yield ToolUseStartUpdate(
+            tool_use_id=tool_use_id, tool_name=tool_name, input=dict(raw_input),
+        )
         async for upd in _run_one_tool_inner(
             tool_use_id, tool_name, raw_input,
             tools_by_name=tools_by_name,

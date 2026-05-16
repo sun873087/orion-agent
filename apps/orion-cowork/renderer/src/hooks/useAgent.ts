@@ -223,6 +223,23 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
       // 暫不渲染 thinking(可加 dimmer 區塊)
       break
     }
+    case 'tool_start': {
+      const data = ev.data as {
+        tool_name: string
+        tool_use_id: string
+        input?: Record<string, unknown>
+      }
+      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
+      if (!existing) {
+        s.beginToolCall(assistantId, {
+          toolUseId: data.tool_use_id,
+          toolName: data.tool_name,
+          input: data.input,
+        })
+      }
+      break
+    }
     case 'tool_progress': {
       const data = ev.data as {
         tool_name: string

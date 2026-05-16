@@ -80,7 +80,8 @@ async def test_unknown_tool_returns_synthetic_error() -> None:
             ctx=AgentContext(),
         )
     ]
-    assert len(updates) == 1
+    # 1 ToolUseStartUpdate + 1 ToolResultUpdate
+    assert len(updates) == 2
     final = updates[-1]
     assert isinstance(final, ToolResultUpdate)
     assert final.is_error

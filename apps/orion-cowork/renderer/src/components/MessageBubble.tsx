@@ -7,7 +7,7 @@ import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
-import { ToolCallPanel } from './ToolCallPanel'
+import { ToolCallGroup } from './ToolCallGroup'
 
 /**
  * 訊息泡泡。user 右側、assistant / system 左側。
@@ -44,33 +44,63 @@ export function MessageBubble({
             ))}
           </div>
         )}
-        {message.text && (
-          <div
-            className={`rounded-2xl px-4 py-2 ${
-              isUser
-                ? 'rounded-tr-sm bg-accent text-white'
-                : 'rounded-tl-sm bg-bg-panel text-fg-base'
-            }`}
-          >
-            {isUser ? (
-              <span className="whitespace-pre-wrap">{message.text}</span>
-            ) : (
-              <div className="prose-orion">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.text + (message.streaming ? '​' : '')}
-                </ReactMarkdown>
-                {message.streaming && <span className="cursor-blink" />}
+        {isUser
+          ? message.text && (
+              <div className="rounded-2xl rounded-tr-sm bg-accent px-4 py-2 text-white">
+                <span className="whitespace-pre-wrap">{message.text}</span>
               </div>
-            )}
-          </div>
-        )}
-        {!!message.toolCalls?.length && (
-          <div className="mt-2 flex w-full flex-col gap-1">
-            {message.toolCalls.map((tc) => (
-              <ToolCallPanel key={tc.toolUseId} toolCall={tc} />
-            ))}
-          </div>
-        )}
+            )
+          : message.blocks && message.blocks.length > 0
+            ? // 新版:依 LLM emit 順序 inline render text + tool groups
+              message.blocks.map((b, i) => {
+                if (b.type === 'text') {
+                  if (!b.text) return null
+                  const isLast = i === message.blocks!.length - 1
+                  return (
+                    <div
+                      key={i}
+                      className={`rounded-2xl rounded-tl-sm bg-bg-panel px-4 py-2 text-fg-base ${
+                        i === 0 ? '' : 'mt-2'
+                      }`}
+                    >
+                      <div className="prose-orion">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {b.text + (message.streaming && isLast ? '​' : '')}
+                        </ReactMarkdown>
+                        {message.streaming && isLast && <span className="cursor-blink" />}
+                      </div>
+                    </div>
+                  )
+                }
+                // tools block:從 toolCalls 撈對應的
+                const calls = (message.toolCalls ?? []).filter((t) =>
+                  b.toolUseIds.includes(t.toolUseId),
+                )
+                if (!calls.length) return null
+                return (
+                  <div key={i} className={`w-full ${i === 0 ? '' : 'mt-2'}`}>
+                    <ToolCallGroup toolCalls={calls} />
+                  </div>
+                )
+              })
+            : // 舊版 fallback(歷史 hydrate / 沒 blocks):text + 底部 tools group
+              <>
+                {message.text && (
+                  <div className="rounded-2xl rounded-tl-sm bg-bg-panel px-4 py-2 text-fg-base">
+                    <div className="prose-orion">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.text + (message.streaming ? '​' : '')}
+                      </ReactMarkdown>
+                      {message.streaming && <span className="cursor-blink" />}
+                    </div>
+                  </div>
+                )}
+                {!!message.toolCalls?.length && (
+                  <div className="mt-2 w-full">
+                    <ToolCallGroup toolCalls={message.toolCalls} />
+                  </div>
+                )}
+              </>}
         {/* Regenerate(只最後一個 assistant message 顯示)*/}
         {!isUser && isLastAssistant && !message.streaming && <RegenerateButton />}
       </div>

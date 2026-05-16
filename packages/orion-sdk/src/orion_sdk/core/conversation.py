@@ -337,15 +337,17 @@ class Conversation:
                 include_env_info=self.include_env_info,
             )
             effective_system_prompt = build_system_prompt_list(parts)
-            # caller-supplied static prefix(self.system_prompt)併到組好的 list
-            # 最前面;不再 short-circuit 跳過 fetch — Cowork 同時要 system_prompt
-            # 跟 memory / env_info 兩條路才能並存。
+            # caller-supplied static prefix(self.system_prompt)併進 list[0]
+            # (static block) — 兩者都是 session-stable,共用同一個 cache
+            # breakpoint。 不開新 element,避免超出 Anthropic 4-bp 上限
+            # (system list 每段都會被 _build_system_param 加 cache_control)。
             if self.system_prompt:
-                if isinstance(effective_system_prompt, list):
-                    effective_system_prompt = [self.system_prompt, *effective_system_prompt]
+                if isinstance(effective_system_prompt, list) and effective_system_prompt:
+                    head = self.system_prompt + "\n\n" + effective_system_prompt[0]
+                    effective_system_prompt = [head, *effective_system_prompt[1:]]
                 else:
                     effective_system_prompt = (
-                        self.system_prompt + "\n\n" + effective_system_prompt
+                        self.system_prompt + "\n\n" + str(effective_system_prompt)
                     )
 
             # per-turn 注入:只在 messages_for_loop 末尾換成 rendered 版,

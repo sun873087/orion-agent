@@ -15,7 +15,11 @@ from orion_sdk.core.query_loop import (
     LoopTerminated,
 )
 from orion_sdk.core.tool import ErrorEvent, ProgressEvent, TextEvent
-from orion_sdk.core.tool_execution import ToolProgressUpdate, ToolResultUpdate
+from orion_sdk.core.tool_execution import (
+    ToolProgressUpdate,
+    ToolResultUpdate,
+    ToolUseStartUpdate,
+)
 
 
 def to_rpc_frame(ev: Any) -> dict[str, Any] | None:
@@ -28,6 +32,16 @@ def to_rpc_frame(ev: Any) -> dict[str, Any] | None:
 
     if isinstance(ev, AssistantTurnComplete):
         return {"event": "turn_complete", "data": {}}
+
+    if isinstance(ev, ToolUseStartUpdate):
+        return {
+            "event": "tool_start",
+            "data": {
+                "tool_name": ev.tool_name,
+                "tool_use_id": ev.tool_use_id,
+                "input": ev.input,
+            },
+        }
 
     if isinstance(ev, ToolProgressUpdate):
         inner = ev.event
