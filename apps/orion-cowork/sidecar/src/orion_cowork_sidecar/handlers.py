@@ -25,7 +25,7 @@ from orion_sdk.permissions.decisions import (
 from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
-from orion_cowork_sidecar import memory_handlers, skill_handlers, storage
+from orion_cowork_sidecar import memory_handlers, permissions as perm_mod, skill_handlers, storage
 from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.streaming import to_rpc_frame
@@ -247,6 +247,8 @@ class Handlers:
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
+            "permissions.get": self.permissions_get,
+            "permissions.set": self.permissions_set,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "mcp.config_list": self.mcp_config_list,
@@ -432,7 +434,13 @@ class Handlers:
         # frame。改把 approval-request frame 推 queue,outer loop multiplex
         # 從 queue + conv.send 兩邊收 frame。
         out_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-        conv.can_use_tool = self._build_can_use_tool(sid, out_queue)
+        # Permission policy:turn-start 載入一次(global + 對應 project),
+        # can_use_tool 內 deny/allow check 用這份。後續 user 改 policy 要等
+        # 下一個 turn 才生效 — 簡化,不做 live reload。
+        from pathlib import Path as _P
+        ws_for_policy = _P(ctx_cwd) if ctx_cwd else None
+        active_policy = perm_mod.load_policy(ws_for_policy)
+        conv.can_use_tool = self._build_can_use_tool(sid, out_queue, active_policy)
 
         # ─── AskUserQuestion + system prompt wiring per mode ───────────
         # Ask 模式:綁 asker + system prompt 加 _ASK_MODE_NOTE 鼓勵互動
@@ -517,21 +525,36 @@ class Handlers:
         self,
         sid: str,
         out_queue: asyncio.Queue[dict[str, Any] | None],
+        policy: "perm_mod.Policy",
     ) -> Any:
-        """組 can_use_tool callback,每次 invocation 讀 latest session mode。
+        """組 can_use_tool callback。決策順序:
+
+        1. policy deny match → DENY(全 mode 適用,即 Act 也擋)
+        2. policy allow match → ALLOW(直接放行,不顯 banner)
+        3. AskUserQuestion → ALLOW(自身就是問 user)
+        4. session mode == 'ask' → 推 banner 等 approval
+        5. session mode == 'act' → ALLOW
 
         Live mode → user 中途切 Ask/Act 立刻生效,不必等下一個 turn。
-        - Ask 模式:推 frame 到 renderer 等 approval future。
-        - Act 模式:always_allow。
-        - AskUserQuestion 永遠 allow(它自身就是問 user,雙重確認沒意義)。
+        Policy 在 turn-start capture,turn 內固定;改設定要等下一個 turn。
         """
         AUTO_ALLOW_TOOLS = {"AskUserQuestion"}
 
         async def _gate(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
+            tool_name = getattr(tool, "name", type(tool).__name__)
+            # ① Policy deny / allow 全 mode 通用
+            pdec = perm_mod.decide(policy, tool_name, tool_input)
+            if pdec == "deny":
+                return PermissionResult(
+                    decision=PermissionDecision.DENY,
+                    reason="denied by permission policy",
+                )
+            if pdec == "allow":
+                return PermissionResult(decision=PermissionDecision.ALLOW)
+            # ② Mode-based
             mode = self._session_modes.get(sid, "act")
             if mode != "ask":
                 return PermissionResult(decision=PermissionDecision.ALLOW)
-            tool_name = getattr(tool, "name", type(tool).__name__)
             if tool_name in AUTO_ALLOW_TOOLS:
                 return PermissionResult(decision=PermissionDecision.ALLOW)
             tool_use_id = current_tool_use_id.get()
@@ -586,6 +609,79 @@ class Handlers:
                 self._ask_pending.pop(request_id, None)
 
         return asker
+
+    async def permissions_get(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀單一 scope 的 policy。
+
+        params: { scope: 'global' | 'project', workspace_dir?: str }
+        回:    { scope, allow: [...], deny: [...] }
+        """
+        from pathlib import Path as _P
+
+        scope = params.get("scope")
+        if scope not in ("global", "project"):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "scope must be 'global' | 'project'"},
+                "final": True,
+            }
+            return
+        ws_raw = params.get("workspace_dir")
+        ws = _P(ws_raw) if isinstance(ws_raw, str) and ws_raw else None
+        try:
+            pol = perm_mod.load_scope(scope, ws)
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "LOAD_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "permissions",
+            "data": {"scope": scope, "allow": pol.allow, "deny": pol.deny},
+            "final": True,
+        }
+
+    async def permissions_set(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """覆寫單一 scope 的 policy。
+
+        params: { scope, allow: [...], deny: [...], workspace_dir? }
+        """
+        from pathlib import Path as _P
+
+        scope = params.get("scope")
+        if scope not in ("global", "project"):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "scope must be 'global' | 'project'"},
+                "final": True,
+            }
+            return
+        allow_raw = params.get("allow")
+        deny_raw = params.get("deny")
+        allow = [s for s in allow_raw if isinstance(s, str)] if isinstance(allow_raw, list) else []
+        deny = [s for s in deny_raw if isinstance(s, str)] if isinstance(deny_raw, list) else []
+        ws_raw = params.get("workspace_dir")
+        ws = _P(ws_raw) if isinstance(ws_raw, str) and ws_raw else None
+        try:
+            perm_mod.save_policy(perm_mod.Policy(allow=allow, deny=deny), scope=scope, workspace_dir=ws)
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "SAVE_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "permissions_saved",
+            "data": {"scope": scope},
+            "final": True,
+        }
 
     async def conversation_set_permission_mode(
         self, params: dict[str, Any]
