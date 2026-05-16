@@ -202,10 +202,13 @@ class OpenAIProvider:
                         if output_details
                         else 0
                     )
+                    # OpenAI 的 input_tokens 含 cached(Anthropic 是 disjoint)—
+                    # 統一語義扣掉,讓累積 stats / cache_hit_rate 公式跨 provider 一致。
+                    fresh_input = max(0, usage.input_tokens - cached)
                     yield MessageStopEvent(
                         stop_reason=cast(Any, stop_reason),
                         usage=NormalizedUsage(
-                            input_tokens=usage.input_tokens,
+                            input_tokens=fresh_input,
                             output_tokens=usage.output_tokens,
                             cache_read_tokens=cached,
                             cache_creation_tokens=0,

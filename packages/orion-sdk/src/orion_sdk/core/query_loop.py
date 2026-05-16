@@ -101,6 +101,9 @@ class AssistantTurnComplete:
     stop_reason: str
     input_tokens: int
     output_tokens: int
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_tokens: int = 0
 
 
 @dataclass
@@ -161,6 +164,9 @@ async def _run_one_turn(
     stop_reason = "end_turn"
     input_tokens = 0
     output_tokens = 0
+    cache_read_tokens = 0
+    cache_creation_tokens = 0
+    reasoning_tokens = 0
 
     from orion_sdk.telemetry.instrumentation import record_usage, trace_api_call
 
@@ -204,6 +210,9 @@ async def _run_one_turn(
                         stop_reason = ev.stop_reason
                         input_tokens = ev.usage.input_tokens
                         output_tokens = ev.usage.output_tokens
+                        cache_read_tokens = ev.usage.cache_read_tokens
+                        cache_creation_tokens = ev.usage.cache_creation_tokens
+                        reasoning_tokens = ev.usage.reasoning_tokens
 
             # Phase 9:把 token usage 寫進 cost tracker + OTel counter
             record_usage(
@@ -238,6 +247,9 @@ async def _run_one_turn(
                 stop_reason=stop_reason,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                reasoning_tokens=reasoning_tokens,
             )
 
             # ─── 4. drain — 工具結果按 add 順序 yield ──────────────────────

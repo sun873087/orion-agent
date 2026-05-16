@@ -263,6 +263,7 @@ class Handlers:
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
+            "conversation.stats": self.conversation_stats,
             "permissions.get": self.permissions_get,
             "permissions.set": self.permissions_set,
             "stt.transcribe": stt_handlers.stt_transcribe,
@@ -728,6 +729,117 @@ class Handlers:
         yield {
             "event": "permissions_saved",
             "data": {"scope": scope},
+            "final": True,
+        }
+
+    async def conversation_stats(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """回 session 的 usage / cost / context-window stats。
+
+        - cumulative:整個 session 累積到現在
+        - last_turn:上一次 LLM 回覆的用量(讓 UI 顯「本次對話」)
+        - cost_usd:用 orion_model.pricing × tokens 算 USD
+        - context_used / context_max:上次 send 看到的 prompt size vs model 上限
+        - cache_hit_rate:cache_read / (cache_read + input)
+        """
+        from orion_model.catalog import get_max_context_tokens
+        from orion_model.pricing import get_pricing
+
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        conv = self._conversations.get(sid)
+        if conv is None:
+            # Session 沒在 memory 但 DB 可能有 → 嘗試 resume(只為了拿 provider/model)
+            engine = await self.ensure_engine()
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        s = conv.stats
+        provider = conv.provider.name
+        model = conv.provider.model
+
+        # Pricing(USD per 1M tokens)
+        pricing = get_pricing(provider, model)
+        input_price = pricing.get("input", 0.0)
+        output_price = pricing.get("output", 0.0)
+        cache_read_price = pricing.get("cache_read", input_price)  # fallback to input
+        cache_creation_price = pricing.get("cache_creation", input_price)
+
+        def _cost(input_t: int, output_t: int, c_read: int, c_creation: int) -> float:
+            return round(
+                (
+                    input_t * input_price
+                    + output_t * output_price
+                    + c_read * cache_read_price
+                    + c_creation * cache_creation_price
+                )
+                / 1_000_000,
+                6,
+            )
+
+        cumulative_cost = _cost(
+            s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens
+        )
+        last_cost = _cost(
+            s.last_input_tokens,
+            s.last_output_tokens,
+            s.last_cache_read_tokens,
+            s.last_cache_creation_tokens,
+        )
+
+        # Context window 用量 = 上次送 LLM 的 prompt size(input + cache_read)
+        context_used = s.last_input_tokens + s.last_cache_read_tokens
+        context_max = get_max_context_tokens(provider, model) or 0
+
+        # Cache hit rate:cache_read 佔整個 prompt(read + 寫入 + 未命中)的比例。
+        # 把 cache_creation 也算成「miss」— 第一次寫入時還沒享受到 cache,所以
+        # cache_read / (cache_read + input + cache_creation) 更精準反映「省到錢」的占比。
+        denom = s.cache_read_tokens + s.input_tokens + s.cache_creation_tokens
+        cache_hit_rate = (s.cache_read_tokens / denom) if denom > 0 else 0.0
+
+        yield {
+            "event": "stats",
+            "data": {
+                "session_id": sid,
+                "provider": provider,
+                "model": model,
+                "turns": s.turns,
+                "tool_calls": s.tool_calls,
+                "tool_errors": s.tool_errors,
+                "cumulative": {
+                    "input_tokens": s.input_tokens,
+                    "output_tokens": s.output_tokens,
+                    "cache_read_tokens": s.cache_read_tokens,
+                    "cache_creation_tokens": s.cache_creation_tokens,
+                    "reasoning_tokens": s.reasoning_tokens,
+                    "cost_usd": cumulative_cost,
+                },
+                "last_turn": {
+                    "input_tokens": s.last_input_tokens,
+                    "output_tokens": s.last_output_tokens,
+                    "cache_read_tokens": s.last_cache_read_tokens,
+                    "cache_creation_tokens": s.last_cache_creation_tokens,
+                    "reasoning_tokens": s.last_reasoning_tokens,
+                    "cost_usd": last_cost,
+                },
+                "context_used": context_used,
+                "context_max": context_max,
+                "cache_hit_rate": round(cache_hit_rate, 4),
+            },
             "final": True,
         }
 

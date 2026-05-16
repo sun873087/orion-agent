@@ -7,10 +7,11 @@
  *
  * 所有資料源都從 useAgentStore.messages 內的 toolCalls 抽取。
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CheckCircle2,
   Circle,
+  Coins,
   ExternalLink,
   FileText,
   Folder,
@@ -18,6 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 
+import { getConversationStats, type ConversationStats } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 
@@ -209,6 +211,8 @@ export function RightSidebar() {
         'lg:relative lg:top-auto lg:bottom-auto lg:z-auto lg:shadow-none'
       }
     >
+      <UsageSection />
+
       <Section title={t('rightSidebar.progress')}>
         {todos.length === 0 ? (
           <Empty>{t('rightSidebar.noProgress')}</Empty>
@@ -302,6 +306,188 @@ export function RightSidebar() {
       </Section>
     </aside>
   )
+}
+
+/**
+ * Cost / context / cache 使用量區塊。
+ *
+ * 拉 sidecar `conversation.stats` RPC,在以下時機 refresh:
+ *   - sessionId 變更(切對話)
+ *   - busy 轉 false(turn 剛結束,stats 才會更新)
+ *
+ * 顯三層:
+ *   - 本次對話(last turn)— input / output / cache_read / cost
+ *   - 整個 session 累積 — tokens + cost
+ *   - Context window — used / max + cache hit rate
+ */
+function UsageSection() {
+  const { t } = useTranslation()
+  const sessionId = useAgentStore((s) => s.sessionId)
+  const busy = useAgentStore((s) => s.busy)
+  const [stats, setStats] = useState<ConversationStats | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // 換 session 馬上清舊資料,避免閃前面 session 的數字
+  useEffect(() => {
+    setStats(null)
+  }, [sessionId])
+
+  // sessionId 有 + busy 轉 false(turn 結束)時 refetch
+  useEffect(() => {
+    if (!sessionId || busy) return
+    let cancelled = false
+    setLoading(true)
+    getConversationStats(sessionId)
+      .then((s) => {
+        if (!cancelled) setStats(s)
+      })
+      .catch(() => {
+        if (!cancelled) setStats(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, busy])
+
+  if (!sessionId) {
+    return (
+      <Section title={t('rightSidebar.usage')}>
+        <Empty>{t('rightSidebar.noUsage')}</Empty>
+      </Section>
+    )
+  }
+
+  if (!stats || stats.turns === 0) {
+    return (
+      <Section title={t('rightSidebar.usage')}>
+        <Empty>
+          {loading ? t('rightSidebar.loadingUsage') : t('rightSidebar.noUsage')}
+        </Empty>
+      </Section>
+    )
+  }
+
+  const contextPct = stats.contextMax > 0 ? (stats.contextUsed / stats.contextMax) * 100 : 0
+  const cacheHitPct = stats.cacheHitRate * 100
+
+  return (
+    <Section title={t('rightSidebar.usage')}>
+      <div className="flex flex-col gap-3 text-xs">
+        {/* 本次對話 (last turn) */}
+        <div>
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-fg-subtle">
+            <span>{t('rightSidebar.lastTurn')}</span>
+          </div>
+          <UsageRow
+            label={t('rightSidebar.cost')}
+            value={`$${stats.lastTurn.costUsd.toFixed(4)}`}
+            highlight
+          />
+          <UsageRow label="input" value={fmt(stats.lastTurn.inputTokens)} />
+          <UsageRow label="output" value={fmt(stats.lastTurn.outputTokens)} />
+          {stats.lastTurn.cacheReadTokens > 0 && (
+            <UsageRow label="cache hit" value={fmt(stats.lastTurn.cacheReadTokens)} success />
+          )}
+          {stats.lastTurn.cacheCreationTokens > 0 && (
+            <UsageRow label="cache write" value={fmt(stats.lastTurn.cacheCreationTokens)} />
+          )}
+          {stats.lastTurn.reasoningTokens > 0 && (
+            <UsageRow label="reasoning" value={fmt(stats.lastTurn.reasoningTokens)} />
+          )}
+        </div>
+
+        {/* Session 累積 */}
+        <div>
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-fg-subtle">
+            <span>{t('rightSidebar.session')}</span>
+            <span className="font-mono text-fg-subtle">· {stats.turns} turns</span>
+          </div>
+          <UsageRow
+            label={t('rightSidebar.cost')}
+            value={`$${stats.cumulative.costUsd.toFixed(4)}`}
+            highlight
+          />
+          <UsageRow
+            label={t('rightSidebar.totalTokens')}
+            value={fmt(
+              stats.cumulative.inputTokens +
+                stats.cumulative.outputTokens +
+                stats.cumulative.cacheReadTokens +
+                stats.cumulative.cacheCreationTokens,
+            )}
+          />
+          {stats.cumulative.cacheReadTokens > 0 && (
+            <UsageRow
+              label={t('rightSidebar.cacheHitRate')}
+              value={`${cacheHitPct.toFixed(1)}%`}
+              success
+            />
+          )}
+        </div>
+
+        {/* Context window — bar */}
+        {stats.contextMax > 0 && (
+          <div>
+            <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-fg-subtle">
+              <span>{t('rightSidebar.contextWindow')}</span>
+              <span className="font-mono">
+                {fmt(stats.contextUsed)} / {fmt(stats.contextMax)}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-hover">
+              <div
+                className={`h-full transition-all ${
+                  contextPct > 80
+                    ? 'bg-error'
+                    : contextPct > 50
+                      ? 'bg-warning'
+                      : 'bg-accent'
+                }`}
+                style={{ width: `${Math.min(100, contextPct).toFixed(1)}%` }}
+              />
+            </div>
+            <div className="mt-0.5 text-right font-mono text-[10px] text-fg-subtle">
+              {contextPct.toFixed(1)}%
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+function UsageRow({
+  label,
+  value,
+  highlight,
+  success,
+}: {
+  label: string
+  value: string
+  highlight?: boolean
+  success?: boolean
+}) {
+  return (
+    <div className="flex items-baseline justify-between py-0.5">
+      <span className="text-fg-muted">{label}</span>
+      <span
+        className={`font-mono ${
+          highlight ? 'text-fg-base' : success ? 'text-success' : 'text-fg-muted'
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toString()
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

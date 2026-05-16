@@ -383,6 +383,72 @@ export async function sendAskUserReply(
   )
 }
 
+export type ConversationStats = {
+  sessionId: string
+  provider: string
+  model: string
+  turns: number
+  toolCalls: number
+  toolErrors: number
+  cumulative: TokenBucket
+  lastTurn: TokenBucket
+  contextUsed: number
+  contextMax: number
+  cacheHitRate: number
+}
+
+export type TokenBucket = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  reasoningTokens: number
+  costUsd: number
+}
+
+function _readBucket(d: Record<string, unknown> | undefined): TokenBucket {
+  const o = (d ?? {}) as Record<string, unknown>
+  const n = (k: string): number => (typeof o[k] === 'number' ? (o[k] as number) : 0)
+  return {
+    inputTokens: n('input_tokens'),
+    outputTokens: n('output_tokens'),
+    cacheReadTokens: n('cache_read_tokens'),
+    cacheCreationTokens: n('cache_creation_tokens'),
+    reasoningTokens: n('reasoning_tokens'),
+    costUsd: n('cost_usd'),
+  }
+}
+
+/** 拉 session 的 cost / context / cache stats(每次 turn 結束後 refresh 一次)。 */
+export async function getConversationStats(
+  sessionId: string,
+): Promise<ConversationStats | null> {
+  let out: ConversationStats | null = null
+  await window.agent.call(
+    'conversation.stats',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event !== 'stats' || !f.data) return
+      const d = f.data
+      out = {
+        sessionId: String(d.session_id ?? sessionId),
+        provider: String(d.provider ?? ''),
+        model: String(d.model ?? ''),
+        turns: typeof d.turns === 'number' ? d.turns : 0,
+        toolCalls: typeof d.tool_calls === 'number' ? d.tool_calls : 0,
+        toolErrors: typeof d.tool_errors === 'number' ? d.tool_errors : 0,
+        cumulative: _readBucket(d.cumulative as Record<string, unknown> | undefined),
+        lastTurn: _readBucket(d.last_turn as Record<string, unknown> | undefined),
+        contextUsed: typeof d.context_used === 'number' ? d.context_used : 0,
+        contextMax: typeof d.context_max === 'number' ? d.context_max : 0,
+        cacheHitRate: typeof d.cache_hit_rate === 'number' ? d.cache_hit_rate : 0,
+      }
+    },
+  )
+  return out
+}
+
 /**
  * 中途切 Ask / Act mode — sidecar 立刻把 in-flight turn 的 can_use_tool gate
  * 切過去;若切到 'act' 還會 auto-resolve 所有等中的 approval / ask futures。

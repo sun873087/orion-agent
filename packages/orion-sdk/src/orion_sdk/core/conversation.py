@@ -111,6 +111,15 @@ class ConversationStats:
     permission_denials: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_tokens: int = 0
+    # Last turn 用量(讓 UI 顯「本次對話」vs「session 累積」)
+    last_input_tokens: int = 0
+    last_output_tokens: int = 0
+    last_cache_read_tokens: int = 0
+    last_cache_creation_tokens: int = 0
+    last_reasoning_tokens: int = 0
 
 
 @dataclass
@@ -409,6 +418,15 @@ class Conversation:
                 if isinstance(ev, AssistantTurnComplete):
                     self.stats.input_tokens += ev.input_tokens
                     self.stats.output_tokens += ev.output_tokens
+                    self.stats.cache_read_tokens += ev.cache_read_tokens
+                    self.stats.cache_creation_tokens += ev.cache_creation_tokens
+                    self.stats.reasoning_tokens += ev.reasoning_tokens
+                    # last turn — 覆蓋
+                    self.stats.last_input_tokens = ev.input_tokens
+                    self.stats.last_output_tokens = ev.output_tokens
+                    self.stats.last_cache_read_tokens = ev.cache_read_tokens
+                    self.stats.last_cache_creation_tokens = ev.cache_creation_tokens
+                    self.stats.last_reasoning_tokens = ev.reasoning_tokens
                     if store is not None:
                         await store.record_message(ev.message)
                 elif isinstance(ev, ToolResultUpdate):
