@@ -1,4 +1,4 @@
-.PHONY: help install test test-model test-sdk test-cli test-chat-api test-sidecar test-all lint typecheck \
+.PHONY: help install test test-model test-sdk test-cli test-chat-api test-e2e-chat-api test-sidecar test-all lint typecheck \
         gen-types \
         dev-cli dev-api dev-web dev-cowork \
         demo-anthropic demo-openai \
@@ -16,7 +16,8 @@ help:
 	@echo "  test-model      orion-model (LLM 抽象層)"
 	@echo "  test-sdk        orion-sdk (agent runtime)"
 	@echo "  test-cli        orion-cli (CLI 殼)"
-	@echo "  test-chat-api   orion-chat-api (FastAPI + WS)"
+	@echo "  test-chat-api   orion-chat-api (FastAPI + WS unit tests)"
+	@echo "  test-e2e-chat-api  chat-api full-stack e2e (uvicorn + SQLite + WS)"
 	@echo "  test-sidecar    orion-cowork-sidecar (stdio RPC)"
 	@echo "  lint            uv run ruff check ."
 	@echo "  typecheck       uv run mypy packages apps"
@@ -60,12 +61,16 @@ test-cli:
 test-chat-api:
 	cd apps/orion-chat/api && uv run pytest -q
 
+# Phase 31-E:chat-api full-stack e2e (uvicorn + SQLite + WS) — 顯式 opt-in。
+test-e2e-chat-api:
+	cd apps/orion-chat/api && uv run pytest tests/e2e -v -m e2e
+
 test-sidecar:
 	cd apps/orion-cowork/sidecar && uv run pytest -q
 
-test-all: test
+test-all: test test-e2e-chat-api
 	@echo "(integration tests need API keys; cd packages/orion-sdk && uv run pytest -m integration)"
-	@echo "(e2e tests not implemented — see apps/orion-chat/tests/e2e/README.md + apps/orion-cowork/tests/e2e/README.md)"
+	@echo "(cowork e2e not implemented — see apps/orion-cowork/tests/e2e/README.md)"
 
 # ───── Quality ─────
 lint:

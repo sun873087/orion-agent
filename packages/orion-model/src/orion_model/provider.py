@@ -84,6 +84,22 @@ class LLMProvider(Protocol):
         ...
 
 
+_TEST_PROVIDER_FACTORY: "callable | None" = None
+
+
+def set_test_provider_factory(factory: "callable | None") -> None:
+    """Phase 31-E e2e:測試環境注入 fake provider。
+
+    使用方式(只在 test fixture 用,production 永遠 None):
+        from orion_sdk._testing import MockProvider
+        set_test_provider_factory(lambda name, model: MockProvider(...))
+
+    呼叫 `set_test_provider_factory(None)` 清除。
+    """
+    global _TEST_PROVIDER_FACTORY
+    _TEST_PROVIDER_FACTORY = factory
+
+
 def get_provider(provider_name: str, model: str) -> LLMProvider:
     """工廠函式。
 
@@ -93,7 +109,11 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
 
     Returns:
         對應的 LLMProvider 實例。
+
+    Phase 31-E:`set_test_provider_factory` 設定後,所有 get_provider 都走 fake。
     """
+    if _TEST_PROVIDER_FACTORY is not None:
+        return _TEST_PROVIDER_FACTORY(provider_name, model)
     if provider_name == "anthropic":
         from orion_model.anthropic_provider import AnthropicProvider
 
