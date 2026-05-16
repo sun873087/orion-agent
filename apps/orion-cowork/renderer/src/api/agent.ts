@@ -218,6 +218,62 @@ export async function deleteMemory(filename: string): Promise<void> {
   await window.agent.call('memory.delete', { filename }, () => {})
 }
 
+export type SkillSource = 'bundled' | 'system' | 'user' | 'other' | 'unknown'
+
+export type SkillListItem = {
+  name: string
+  description: string
+  filename: string
+  source: SkillSource
+  editable: boolean
+  source_path: string | null
+}
+
+export type Skill = SkillListItem & {
+  body: string
+}
+
+export async function listSkills(): Promise<{
+  user_skills_dir: string
+  skills: SkillListItem[]
+}> {
+  let out: { user_skills_dir: string; skills: SkillListItem[] } = {
+    user_skills_dir: '',
+    skills: [],
+  }
+  await window.agent.call('skill.list', {}, (frame) => {
+    if (frame.event === 'skill_list' && frame.data) {
+      out = frame.data as { user_skills_dir: string; skills: SkillListItem[] }
+    }
+  })
+  return out
+}
+
+export async function getSkill(name: string): Promise<Skill | null> {
+  let s: Skill | null = null
+  await window.agent.call('skill.get', { name }, (frame) => {
+    if (frame.event === 'skill' && frame.data) {
+      const d = frame.data as { skill: Skill }
+      s = d.skill
+    }
+  })
+  return s
+}
+
+export async function writeSkill(input: {
+  filename?: string | null
+  name: string
+  description: string
+  body: string
+  rename_from?: string | null
+}): Promise<void> {
+  await window.agent.call('skill.write', input as Record<string, unknown>, () => {})
+}
+
+export async function deleteSkill(filename: string): Promise<void> {
+  await window.agent.call('skill.delete', { filename }, () => {})
+}
+
 export type Attachment = {
   media_type: string  // "image/png" / "image/jpeg" / ...
   data: string        // base64-encoded(no data: prefix)

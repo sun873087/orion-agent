@@ -79,6 +79,21 @@ export default {
   'settings.section.model': '模型',
   'settings.section.mcp': 'MCP 伺服器',
   'settings.section.memory': '記憶',
+  'settings.section.skills': '技能',
+
+  // Skills
+  'skill.userDirLabel': '使用者技能目錄:',
+  'skill.new': '新增技能',
+  'skill.delete': '刪除',
+  'skill.deleteConfirm': '確定刪除技能 {name}?',
+  'skill.empty': '沒有技能。SDK 已附 11 個 bundled 技能,看不到就是 sidecar 異常。',
+  'skill.readonly': '此技能來自 {source},唯讀。要客製複製內容後在 user 級新增同名技能即可覆蓋。',
+  'skill.field.name': '技能名',
+  'skill.field.namePlaceholder': '英數和 hyphen,例:my-review',
+  'skill.field.description': '描述(model 看這句決定何時呼叫)',
+  'skill.field.descriptionPlaceholder': '寫具體,例:對改動的 React 元件做 accessibility review',
+  'skill.field.body': '步驟內容(Markdown)',
+  'skill.field.bodyHint': '完整指引,SkillTool 呼叫時把這段 inject 到 prompt',
   'settings.section.about': '關於',
 
   // Memory
