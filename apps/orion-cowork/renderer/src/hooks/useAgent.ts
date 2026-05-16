@@ -15,16 +15,19 @@ import {
   type SidecarEvent,
 } from '../api/agent'
 import { useAgentStore } from '../store/agent'
+import { useSettingsStore } from '../store/settings'
 
 export function useInitConversation() {
   const sessionId = useAgentStore((s) => s.sessionId)
   const setSessionId = useAgentStore((s) => s.setSessionId)
   const setInitError = useAgentStore((s) => s.setInitError)
+  const provider = useSettingsStore((s) => s.selectedProvider)
+  const model = useSettingsStore((s) => s.selectedModel)
 
   useEffect(() => {
     if (sessionId) return
     let cancelled = false
-    createConversation()
+    createConversation(provider, model)
       .then((sid) => {
         if (!cancelled) setSessionId(sid)
       })
@@ -34,7 +37,7 @@ export function useInitConversation() {
     return () => {
       cancelled = true
     }
-  }, [sessionId, setSessionId, setInitError])
+  }, [sessionId, setSessionId, setInitError, provider, model])
 }
 
 export function useSendPrompt() {

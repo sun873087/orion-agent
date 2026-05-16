@@ -56,3 +56,29 @@ export async function sendPrompt(
 export async function abort(sessionId: string): Promise<void> {
   await window.agent.call('conversation.abort', { session_id: sessionId }, () => {})
 }
+
+export type ModelCatalog = {
+  providers: Array<{
+    id: string
+    label: string
+    models: Array<{
+      id: string
+      label: string
+      max_context_tokens?: number
+      supports_reasoning?: boolean
+      pricing?: Record<string, number>
+    }>
+    api_key_configured: boolean
+  }>
+}
+
+export async function fetchModels(): Promise<ModelCatalog> {
+  let result: ModelCatalog | null = null
+  await window.agent.call('models.list', {}, (frame) => {
+    if (frame.event === 'models' && frame.data) {
+      result = frame.data as ModelCatalog
+    }
+  })
+  if (!result) throw new Error('models.list returned no data')
+  return result
+}

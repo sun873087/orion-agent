@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
-    "dev:electron": "wait-on tcp:5174 && cross-env NODE_ENV=development electron-vite-runner",
+    "dev:electron": "wait-on tcp:5174 && tsc -p electron/tsconfig.json && cross-env NODE_ENV=development electron .",
     "build:renderer": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:renderer && npm run build:electron",

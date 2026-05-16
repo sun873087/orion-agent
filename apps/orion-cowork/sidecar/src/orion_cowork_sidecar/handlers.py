@@ -44,6 +44,7 @@ class Handlers:
     def methods(self) -> dict[str, Any]:
         return {
             "ping": self.ping,
+            "models.list": self.models_list,
             "conversation.create": self.conversation_create,
             "conversation.send": self.conversation_send,
             "conversation.abort": self.conversation_abort,
@@ -52,6 +53,34 @@ class Handlers:
     # ─── Methods ────────────────────────────────────────────────────────
     async def ping(self, _params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         yield {"event": "pong", "final": True}
+
+    async def models_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """回 catalog 內所有 provider × model + per-provider API key 是否設定。"""
+        import os
+
+        from orion_model.catalog import list_catalog
+
+        catalog = list_catalog()
+        # Per-provider API key status — 不外洩 key,只報 "configured" / not。
+        env_map = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+        }
+        # list_catalog() 回 {"providers": [{"id", "label", "models": [...]}, ...]}
+        providers = catalog.get("providers", [])
+        if isinstance(providers, list):
+            for p in providers:
+                if not isinstance(p, dict):
+                    continue
+                env_name = env_map.get(p.get("id", ""))
+                p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
+        yield {
+            "event": "models",
+            "data": catalog,
+            "final": True,
+        }
 
     async def conversation_create(
         self, params: dict[str, Any]
