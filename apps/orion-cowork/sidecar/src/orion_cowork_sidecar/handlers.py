@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from orion_model.provider import get_provider
 from orion_sdk.core.conversation import Conversation
 from orion_sdk.core.state import AgentContext
+from orion_sdk.permissions.decisions import (
+    PermissionDecision,
+    PermissionResult,
+    always_allow,
+    current_tool_use_id,
+)
 from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
@@ -55,7 +61,16 @@ _COWORK_PROMPT_BASE = (
     "with the full plan, then update items as you progress "
     "(pending → in_progress → completed). This shows the user a live progress "
     "timeline. Skip TodoWrite only for genuinely one-step trivia (single read, "
-    "single open_url, answering a question without tool use)."
+    "single open_url, answering a question without tool use).\n"
+    "\n"
+    "# Use AskUserQuestion for interactive Q&A\n"
+    "When the user asks you to interview them, quiz them, gather requirements, "
+    "let them pick between options, or otherwise needs to choose / answer in a "
+    "structured way — call the `AskUserQuestion` tool instead of writing the "
+    "question in plain text. The Cowork UI renders it as clickable option "
+    "buttons + free-text input, which is much friendlier than scrolling chat. "
+    "One question per call (the schema lets you batch up to 4, but single is "
+    "almost always better). After the user answers, continue naturally."
 )
 
 
@@ -115,6 +130,14 @@ class Handlers:
         self._mcp = CoworkMcpManager()
         self._mcp_started = False
         self._mcp_lock = asyncio.Lock()
+        # Pending tool-approval futures — Ask 模式下,can_use_tool 把 future
+        # 註冊到這,等 renderer 透過 conversation.tool_approval RPC resolve。
+        # Key 是 tool_use_id(每個 LLM tool call 一個唯一 id)。
+        self._approvals: dict[str, asyncio.Future[PermissionResult]] = {}
+        # Pending AskUserQuestion futures — asker 推 frame 後 await 這 future
+        # 等 renderer 透過 conversation.ask_user_reply RPC resolve。
+        # Key 是 sidecar-generated request_id。
+        self._ask_pending: dict[str, asyncio.Future[dict[str, str]]] = {}
 
     async def ensure_engine(self) -> AsyncEngine:
         # 加 lock 避免兩個 concurrent task 都跑 init_db → "table already exists"
@@ -206,6 +229,8 @@ class Handlers:
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
+            "conversation.tool_approval": self.conversation_tool_approval,
+            "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "mcp.config_list": self.mcp_config_list,
@@ -381,12 +406,68 @@ class Handlers:
             ctx_kwargs["cwd"] = ctx_cwd
         ctx = AgentContext(**ctx_kwargs)
         self._aborts[sid] = ctx
+
+        # ─── permission_mode wiring(Ask vs Act)────────────────────────
+        permission_mode = params.get("permission_mode", "act")
+        # Frame queue:can_use_tool 在 conv.send 內 await,沒法自己 yield
+        # frame。改把 approval-request frame 推 queue,outer loop multiplex
+        # 從 queue + conv.send 兩邊收 frame。
+        out_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        conv.can_use_tool = self._build_can_use_tool(permission_mode, out_queue)
+
+        # ─── AskUserQuestion asker wiring ──────────────────────────────
+        # 把 AskUserQuestionTool 的 asker 綁到本 turn 的 out_queue,讓 LLM
+        # 呼叫此 tool 時推 ask_user_question frame 到 renderer 渲互動按鈕。
+        # 同時把 should_defer 拿掉,LLM 才看得到 schema 主動使用。
+        for tool in conv.tools:
+            if getattr(tool, "name", None) == "AskUserQuestion":
+                tool.asker = self._build_asker(out_queue)
+                # 讓 schema 直接放 system prompt,不用 ToolSearch 才能看到
+                tool.should_defer = False
+                break
+
+        async def _producer() -> None:
+            try:
+                async for ev in conv.send(prompt, ctx=ctx, images=images or None):
+                    f = to_rpc_frame(ev)
+                    if f is not None:
+                        await out_queue.put(f)
+            except Exception as e:  # noqa: BLE001
+                await out_queue.put({
+                    "event": "error",
+                    "data": {"code": "SEND_FAILED", "message": str(e)},
+                })
+            finally:
+                await out_queue.put(None)  # sentinel:producer done
+
+        prod_task = asyncio.create_task(_producer())
         try:
-            async for ev in conv.send(prompt, ctx=ctx, images=images or None):
-                frame = to_rpc_frame(ev)
-                if frame is not None:
-                    yield frame
+            while True:
+                frame = await out_queue.get()
+                if frame is None:
+                    break
+                yield frame
         finally:
+            # 等 producer 收尾(若 caller 提前中斷,giveup 也 OK)
+            if not prod_task.done():
+                prod_task.cancel()
+                try:
+                    await prod_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+            # Ask 模式中途斷線 → 把 pending future 全 deny,避免懸吊
+            for fut in list(self._approvals.values()):
+                if not fut.done():
+                    fut.set_result(PermissionResult(
+                        decision=PermissionDecision.DENY,
+                        reason="conversation interrupted before approval",
+                    ))
+            self._approvals.clear()
+            # AskUserQuestion pending 全 resolve 空 dict(tool 會回 "timed out")
+            for fut in list(self._ask_pending.values()):
+                if not fut.done():
+                    fut.set_result({})
+            self._ask_pending.clear()
             self._aborts.pop(sid, None)
             # Persist new messages(只 append 這 turn 增加的)
             new_msgs = conv.state_messages[before_count:]
@@ -396,6 +477,142 @@ class Handlers:
                 except Exception:  # noqa: BLE001
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
+
+    def _build_can_use_tool(
+        self,
+        permission_mode: str,
+        out_queue: asyncio.Queue[dict[str, Any] | None],
+    ) -> Any:
+        """依 permission_mode 組 can_use_tool callback。
+
+        'ask':每個 tool call 前推 frame 到 renderer,await 對應 future。
+        其他(預設 'act'):always_allow,不擋。
+        """
+        if permission_mode != "ask":
+            return always_allow
+
+        # AskUserQuestion 本身就是問 user — Ask 模式還要 user 先 approve 才能問
+        # 問題,是雙重確認,UX 沒意義。一律放行。
+        AUTO_ALLOW_TOOLS = {"AskUserQuestion"}
+
+        async def _ask(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
+            tool_name = getattr(tool, "name", type(tool).__name__)
+            if tool_name in AUTO_ALLOW_TOOLS:
+                return PermissionResult(decision=PermissionDecision.ALLOW)
+            tool_use_id = current_tool_use_id.get()
+            if not tool_use_id:
+                # 沒拿到 id 就不擋 — 保守起見走 allow,避免卡 loop
+                return PermissionResult(decision=PermissionDecision.ALLOW)
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[PermissionResult] = loop.create_future()
+            self._approvals[tool_use_id] = future
+            await out_queue.put({
+                "event": "tool_approval_request",
+                "data": {
+                    "tool_use_id": tool_use_id,
+                    "tool_name": getattr(tool, "name", type(tool).__name__),
+                    "input": dict(tool_input),
+                },
+            })
+            try:
+                return await future
+            finally:
+                self._approvals.pop(tool_use_id, None)
+
+        return _ask
+
+    def _build_asker(
+        self,
+        out_queue: asyncio.Queue[dict[str, Any] | None],
+    ) -> Any:
+        """AskUserQuestionTool 的 asker callback。
+
+        推 ask_user_question frame 到 renderer,等對應 reply RPC resolve future。
+        """
+        from uuid import uuid4
+
+        async def asker(questions: list[dict[str, Any]]) -> dict[str, str]:
+            request_id = uuid4().hex[:16]
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[dict[str, str]] = loop.create_future()
+            self._ask_pending[request_id] = future
+            await out_queue.put({
+                "event": "ask_user_question",
+                "data": {
+                    "request_id": request_id,
+                    "questions": questions,
+                },
+            })
+            try:
+                return await asyncio.wait_for(future, timeout=300.0)
+            except TimeoutError:
+                return {}
+            finally:
+                self._ask_pending.pop(request_id, None)
+
+        return asker
+
+    async def conversation_ask_user_reply(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Renderer 把 user 答案 post 回來。answers: {question_text -> chosen_label}。"""
+        request_id = params.get("request_id")
+        answers = params.get("answers")
+        if not isinstance(request_id, str) or not isinstance(answers, dict):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "request_id + answers required"},
+                "final": True,
+            }
+            return
+        fut = self._ask_pending.get(request_id)
+        if fut is None or fut.done():
+            yield {
+                "event": "ask_ack",
+                "data": {"request_id": request_id, "status": "stale"},
+                "final": True,
+            }
+            return
+        # 強制 cast 成 dict[str, str](renderer 已負責序列化)
+        normalized = {str(k): str(v) for k, v in answers.items()}
+        fut.set_result(normalized)
+        yield {
+            "event": "ask_ack",
+            "data": {"request_id": request_id, "status": "applied"},
+            "final": True,
+        }
+
+    async def conversation_tool_approval(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Renderer 回 tool approval 決定(decision='allow' | 'deny')。"""
+        tool_use_id = params.get("tool_use_id")
+        decision = params.get("decision")
+        reason = params.get("reason") or ""
+        if not isinstance(tool_use_id, str) or decision not in ("allow", "deny"):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "tool_use_id + decision required"},
+                "final": True,
+            }
+            return
+        fut = self._approvals.get(tool_use_id)
+        if fut is None or fut.done():
+            yield {
+                "event": "approval_ack",
+                "data": {"tool_use_id": tool_use_id, "status": "stale"},
+                "final": True,
+            }
+            return
+        fut.set_result(PermissionResult(
+            decision=PermissionDecision(decision),
+            reason=reason or ("user denied" if decision == "deny" else ""),
+        ))
+        yield {
+            "event": "approval_ack",
+            "data": {"tool_use_id": tool_use_id, "status": "applied"},
+            "final": True,
+        }
 
     async def _sync_mcp_for_session(
         self, sid: str, engine: AsyncEngine

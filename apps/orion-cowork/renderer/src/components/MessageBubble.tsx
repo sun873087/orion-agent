@@ -7,6 +7,7 @@ import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
+import { AskUserQuestionInline } from './AskUserQuestionInline'
 import { InlineFileCards } from './RightSidebar'
 import { ToolCallGroup } from './ToolCallGroup'
 
@@ -102,6 +103,8 @@ export function MessageBubble({
                   </div>
                 )}
               </>}
+        {/* Inline AskUserQuestion — 顯選項按鈕 / 開放題,user 答完 reply RPC。 */}
+        {!isUser && <AskUserQuestionInline assistantId={message.id} />}
         {/* Inline file cards — assistant message 結尾若有 FileWrite/Edit,
             顯卡片讓 user 一鍵 open 生成的檔案。 */}
         {!isUser && !message.streaming && (

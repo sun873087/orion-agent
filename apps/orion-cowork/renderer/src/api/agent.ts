@@ -24,7 +24,25 @@ export type SidecarEvent =
       data: { tool_name: string; tool_use_id: string; is_error: boolean; text: string }
     }
   | { event: 'loop_terminated'; data: { reason: string; total_turns: number } }
+  | {
+      event: 'tool_approval_request'
+      data: { tool_use_id: string; tool_name: string; input: Record<string, unknown> }
+    }
+  | {
+      event: 'ask_user_question'
+      data: { request_id: string; questions: AskQuestion[] }
+    }
   | { event: string; data?: unknown; final?: boolean }
+
+export type AskOption = { label: string; description?: string }
+export type AskQuestion = {
+  question: string
+  header?: string
+  options: AskOption[]
+  multi_select: boolean
+}
+
+export type PermissionMode = 'ask' | 'act'
 
 export async function createConversation(
   provider = 'anthropic',
@@ -317,12 +335,14 @@ export async function sendPrompt(
   prompt: string,
   onEvent: (ev: SidecarEvent) => void,
   attachments?: Attachment[],
+  permissionMode?: PermissionMode,
 ): Promise<void> {
   await window.agent.call(
     'conversation.send',
     {
       session_id: sessionId,
       prompt,
+      permission_mode: permissionMode ?? 'act',
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,
@@ -336,6 +356,31 @@ export async function sendPrompt(
 
 export async function abort(sessionId: string): Promise<void> {
   await window.agent.call('conversation.abort', { session_id: sessionId }, () => {})
+}
+
+/** Ask 模式下:回 tool approval 決定。decision='allow' 或 'deny'。 */
+export async function sendToolApproval(
+  toolUseId: string,
+  decision: 'allow' | 'deny',
+  reason?: string,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.tool_approval',
+    { tool_use_id: toolUseId, decision, reason: reason ?? '' },
+    () => {},
+  )
+}
+
+/** 回 AskUserQuestion 答案 — answers map question text → chosen label / free text。 */
+export async function sendAskUserReply(
+  requestId: string,
+  answers: Record<string, string>,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.ask_user_reply',
+    { request_id: requestId, answers },
+    () => {},
+  )
 }
 
 export type ModelCatalog = {

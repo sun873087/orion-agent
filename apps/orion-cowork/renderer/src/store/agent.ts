@@ -7,12 +7,23 @@
 
 import { create } from 'zustand'
 
+import type { AskQuestion } from '../api/agent'
+
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
+
+/** Backend 推來的 AskUserQuestion 請求 — 等 user 在 inline UI 答完才 resolve。 */
+export type PendingQuestion = {
+  /** 對應 sidecar 給的 request_id,reply RPC 用這個。 */
+  requestId: string
+  /** 出現在哪個 assistant message 內(inline render 在這 message 下方)。 */
+  assistantId: string
+  questions: AskQuestion[]
+}
 
 export type ToolCallState = {
   toolUseId: string
   toolName: string
-  status: 'running' | 'success' | 'error'
+  status: 'running' | 'success' | 'error' | 'awaiting_approval'
   /** Final result text (only set when status != 'running')。 */
   text: string
   /** 中間 progress events(可顯示 / 摺疊)。 */
@@ -83,6 +94,8 @@ type AgentState = {
   lastLoopStatus: LoopStatus
   initError: string | null
   sessions: SessionSummary[]
+  /** 當前等使用者回答的 AskUserQuestion(同時間只會有一個)。 */
+  pendingQuestion: PendingQuestion | null
 
   // mutators
   setSessionId: (sid: string) => void
@@ -102,6 +115,10 @@ type AgentState = {
   beginToolCall: (assistantId: string, call: Omit<ToolCallState, 'progress' | 'status' | 'text'>) => void
   appendToolProgress: (toolUseId: string, line: string) => void
   endToolCall: (toolUseId: string, payload: { isError: boolean; text: string }) => void
+  /** Ask 模式 — 標記 toolCall 在等使用者 approval(顯 banner)。 */
+  markToolAwaitingApproval: (toolUseId: string) => void
+
+  setPendingQuestion: (q: PendingQuestion | null) => void
 
   finishLoop: (status: LoopStatus) => void
   reset: () => void
@@ -120,6 +137,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   lastLoopStatus: null,
   initError: null,
   sessions: [],
+  pendingQuestion: null,
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -247,6 +265,20 @@ export const useAgentStore = create<AgentState>((set) => ({
       })),
     })),
 
+  markToolAwaitingApproval: (toolUseId) =>
+    set((s) => ({
+      messages: s.messages.map((m) => ({
+        ...m,
+        toolCalls: (m.toolCalls ?? []).map((t) =>
+          t.toolUseId === toolUseId && t.status === 'running'
+            ? { ...t, status: 'awaiting_approval' }
+            : t,
+        ),
+      })),
+    })),
+
+  setPendingQuestion: (q) => set({ pendingQuestion: q }),
+
   finishLoop: (status) => set({ lastLoopStatus: status }),
 
   reset: () =>
@@ -255,5 +287,6 @@ export const useAgentStore = create<AgentState>((set) => ({
       busy: false,
       error: null,
       lastLoopStatus: null,
+      pendingQuestion: null,
     }),
 }))

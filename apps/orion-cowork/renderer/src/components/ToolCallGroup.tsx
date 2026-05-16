@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import {
   Brain,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -19,6 +20,7 @@ import {
   FileText,
   Folder,
   Globe,
+  Hand,
   ListChecks,
   Loader2,
   type LucideIcon,
@@ -26,8 +28,11 @@ import {
   Search,
   Sparkles,
   Terminal,
+  X,
 } from 'lucide-react'
 
+import { sendToolApproval } from '../api/agent'
+import { useTranslation } from '../i18n'
 import type { ToolCallState } from '../store/agent'
 
 type Display = {
@@ -173,12 +178,127 @@ function summarize(tools: ToolCallState[]): string {
   return parts.join(' · ')
 }
 
+/**
+ * 對重點 tool 給「人話」摘要(banner 上方一行讓 user 一眼看懂在做什麼)。
+ * 不在這 switch 內的 tool fallback 顯 describe() title。
+ */
+function humanSummary(toolName: string, input: Record<string, unknown> | undefined): string | null {
+  const i = (input ?? {}) as Record<string, unknown>
+  const s = (k: string): string => (typeof i[k] === 'string' ? (i[k] as string) : '')
+  switch (toolName) {
+    case 'Bash':
+      return s('command') || null
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      return s('path') || null
+    case 'NotebookEdit':
+      return s('notebook_path') || s('path') || null
+    case 'Glob':
+    case 'Grep':
+      return s('pattern') || null
+    case 'WebFetch':
+    case 'open_url':
+      return s('url') || null
+    case 'WebSearch':
+      return s('query') || null
+    case 'open_path':
+      return s('path') || null
+    default:
+      return null
+  }
+}
+
+/** Ask 模式下 — 工具在等使用者按 Approve / Deny。 */
+function ToolApprovalBanner({
+  toolUseId,
+  toolName,
+  input,
+}: {
+  toolUseId: string
+  toolName: string
+  input: Record<string, unknown> | undefined
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
+  const d = describe(toolName, input)
+  const summary = humanSummary(toolName, input)
+  const rawJson =
+    input && Object.keys(input).length > 0
+      ? JSON.stringify(input, null, 2)
+      : ''
+
+  async function decide(decision: 'allow' | 'deny') {
+    if (busy) return
+    setBusy(true)
+    try {
+      await sendToolApproval(toolUseId, decision)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-y border-warning/30 bg-warning/5 px-4 py-3">
+      <div className="mb-2 flex items-center gap-2 text-xs text-warning">
+        <Hand size={12} />
+        <span>{t('approval.banner.title', { tool: d.title })}</span>
+      </div>
+      {summary && (
+        <pre className="scrollbar-thin mb-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-bg-base/60 px-2 py-1.5 font-mono text-[11px] text-fg-base">
+          {summary}
+        </pre>
+      )}
+      {rawJson && (
+        <div className="mb-2">
+          <button
+            type="button"
+            onClick={() => setShowRaw((v) => !v)}
+            className="text-[10px] text-fg-subtle hover:text-fg-muted"
+          >
+            {showRaw ? t('approval.banner.hideRaw') : t('approval.banner.viewRaw')}
+          </button>
+          {showRaw && (
+            <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-bg-base/60 px-2 py-1.5 font-mono text-[10px] text-fg-muted">
+              {rawJson}
+            </pre>
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => decide('allow')}
+          disabled={busy}
+          className="flex items-center gap-1 rounded-md bg-success/20 px-3 py-1 text-xs font-medium text-success hover:bg-success/30 disabled:opacity-40"
+        >
+          <Check size={12} />
+          <span>{t('approval.allow')}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => decide('deny')}
+          disabled={busy}
+          className="flex items-center gap-1 rounded-md bg-error/20 px-3 py-1 text-xs font-medium text-error hover:bg-error/30 disabled:opacity-40"
+        >
+          <X size={12} />
+          <span>{t('approval.deny')}</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
   const [open, setOpen] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
-  // 任一個 tool running → group 預設展開讓 user 看到即時 progress
-  const anyRunning = toolCalls.some((t) => t.status === 'running')
+  // 任一個 tool running 或 awaiting_approval → group 預設展開,讓 user 看
+  // 到即時 progress / approval banner。
+  const anyRunning = toolCalls.some(
+    (t) => t.status === 'running' || t.status === 'awaiting_approval',
+  )
   const effectiveOpen = open || anyRunning
   // 中間錯誤常見(model 試錯再 fix-forward),不該污染整個 group。
   // 只看最後一個 tool 的狀態 = turn 的 final outcome。
@@ -225,12 +345,13 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
             const rowOpen = expandedIds.has(t.toolUseId)
             const isRunning = t.status === 'running'
             const isError = t.status === 'error'
+            const isAwaiting = t.status === 'awaiting_approval'
             const detailText = t.text || t.progress.join('\n')
             return (
               <li
                 key={t.toolUseId}
                 className={`border-b border-bg-hover/60 last:border-b-0 ${
-                  isError ? 'bg-error/5' : ''
+                  isError ? 'bg-error/5' : isAwaiting ? 'bg-warning/5' : ''
                 }`}
               >
                 <button
@@ -239,7 +360,9 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-bg-hover"
                 >
                   {rowOpen ? <ChevronDown size={11} className="opacity-60" /> : <ChevronRight size={11} className="opacity-60" />}
-                  {isRunning ? (
+                  {isAwaiting ? (
+                    <Hand size={11} className="text-warning" />
+                  ) : isRunning ? (
                     <Loader2 size={11} className="animate-spin text-fg-muted" />
                   ) : isError ? (
                     <CircleX size={11} className="text-error" />
@@ -249,6 +372,13 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
                   <Icon size={12} className="shrink-0 text-fg-muted" />
                   <span className="flex-1 truncate font-mono text-fg-base">{d.title}</span>
                 </button>
+                {isAwaiting && (
+                  <ToolApprovalBanner
+                    toolUseId={t.toolUseId}
+                    toolName={t.toolName}
+                    input={t.input}
+                  />
+                )}
                 {rowOpen && (
                   <div className="bg-bg-input px-4 py-2">
                     {t.input && Object.keys(t.input).length > 0 && (

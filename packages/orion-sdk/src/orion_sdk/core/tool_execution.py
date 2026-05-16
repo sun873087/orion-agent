@@ -238,7 +238,14 @@ async def _run_one_tool_inner(
             return
 
     # ─── 4. CanUseToolFn permission ─────────────────────────────────────────
-    perm = await can_use_tool(tool, raw_input, ctx)
+    # 把 tool_use_id 暫時掛到 contextvar,讓 can_use_tool 內 await UI approval
+    # 時可以拿來 reply 對應(Protocol 沒這 arg,改 signature 影響太大)。
+    from orion_sdk.permissions.decisions import current_tool_use_id as _cur_tuid
+    _tuid_tok = _cur_tuid.set(tool_use_id)
+    try:
+        perm = await can_use_tool(tool, raw_input, ctx)
+    finally:
+        _cur_tuid.reset(_tuid_tok)
     if perm.decision != PermissionDecision.ALLOW:
         reason = perm.reason or f"permission decision: {perm.decision.value}"
         msg = _make_result_message(

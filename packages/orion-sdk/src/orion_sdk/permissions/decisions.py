@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
@@ -13,6 +14,16 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from orion_sdk.core.state import AgentContext
     from orion_sdk.core.tool import Tool
+
+
+# Tool execution 在 call can_use_tool 前 set 這個 var,讓 callback 取得
+# 對應的 tool_use_id(否則 Protocol 簽名沒有,沒辦法把 approval reply 對回去)。
+# 用 contextvar 而非加 Protocol arg,避免散布 signature change 到所有
+# CanUseToolFn 實作 / 測試。Default None — sync caller / 不在 tool exec 內讀
+# 都安全。
+current_tool_use_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "orion_sdk_current_tool_use_id", default=None,
+)
 
 
 class PermissionDecision(StrEnum):

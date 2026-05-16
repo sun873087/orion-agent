@@ -171,6 +171,7 @@ export function useSendPrompt() {
   const provider = useSettingsStore((s) => s.selectedProvider)
   const model = useSettingsStore((s) => s.selectedModel)
   const activeProjectId = useSettingsStore((s) => s.activeProjectId)
+  const permissionMode = useSettingsStore((s) => s.permissionMode)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
@@ -206,6 +207,7 @@ export function useSendPrompt() {
         text,
         (ev: SidecarEvent) => applyEvent(assistantId, ev),
         attachments,
+        permissionMode,
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -215,7 +217,7 @@ export function useSendPrompt() {
       useAgentStore.getState().setBusy(false)
       refreshSessions()
     }
-  }, [provider, model, activeProjectId])
+  }, [provider, model, activeProjectId, permissionMode])
 }
 
 export function useAbort() {
@@ -257,6 +259,37 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
           input: data.input,
         })
       }
+      break
+    }
+    case 'ask_user_question': {
+      const data = ev.data as {
+        request_id: string
+        questions: import('../api/agent').AskQuestion[]
+      }
+      s.setPendingQuestion({
+        requestId: data.request_id,
+        assistantId,
+        questions: data.questions,
+      })
+      break
+    }
+    case 'tool_approval_request': {
+      const data = ev.data as {
+        tool_use_id: string
+        tool_name: string
+        input?: Record<string, unknown>
+      }
+      // tool_start 一定先到,所以 toolCall 已存在;改 status 等 user 決定
+      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
+      if (!existing) {
+        s.beginToolCall(assistantId, {
+          toolUseId: data.tool_use_id,
+          toolName: data.tool_name,
+          input: data.input,
+        })
+      }
+      s.markToolAwaitingApproval(data.tool_use_id)
       break
     }
     case 'tool_progress': {
