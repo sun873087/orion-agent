@@ -109,8 +109,15 @@ class RpcServer:
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
-        # Graceful shutdown: cancel in-flight tasks
-        for t in list(self._tasks):
-            t.cancel()
+        # Graceful shutdown:先等 in-flight tasks 完成(最多 5 秒),才強制 cancel。
+        # 避免 stdin EOF 立刻打斷 DB write 等不可中斷的工作。
         if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+            except asyncio.TimeoutError:
+                for t in list(self._tasks):
+                    t.cancel()
+                await asyncio.gather(*self._tasks, return_exceptions=True)

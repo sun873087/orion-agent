@@ -1,12 +1,7 @@
 """RPC method handlers — 連 orion-sdk Conversation。
 
-Phase E PoC scope:
-  - ping
-  - conversation.create
-  - conversation.send
-  - conversation.abort
-
-之後加 resume / list / memory / settings 等。
+Phase 31-D 後:對話跨 app restart 保留(本機 SQLite)。
+~/.orion-cowork/sessions.db 由 storage.py 管理。
 """
 
 from __future__ import annotations
@@ -17,31 +12,41 @@ from typing import Any
 from uuid import UUID
 
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_model.provider import get_provider
 from orion_sdk.core.conversation import Conversation
-from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.core.state import AgentContext
+from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
+from orion_cowork_sidecar import storage
 from orion_cowork_sidecar.streaming import to_rpc_frame
 
 load_dotenv()
 
 
 class Handlers:
-    """In-memory store of active Conversations,keyed by session_id (str UUID)。
+    """Active Conversation in-memory cache + SQLite persistence。
 
-    Cowork single-user 本機 app — 不需要 per-user isolation。
-    Process restart 等於丟 state(state 之後存 ~/.orion/sessions/...,Phase E+1)。
+    Cowork single-user — 用 storage.LOCAL_USER_ID 作 user_id。
+    重啟 app 後從 DB resume,跨 restart 對話保留。
     """
 
     def __init__(self) -> None:
         self._conversations: dict[str, Conversation] = {}
         self._aborts: dict[str, AgentContext] = {}
-        # Phase 31-C iter 3:metadata for UI sidebar
-        # sid → {provider, model, title (first user msg snippet), created_at, n_messages}
-        self._meta: dict[str, dict[str, Any]] = {}
+        self._engine: AsyncEngine | None = None
+        self._engine_lock = asyncio.Lock()
+        # in-mem cache for fast title-on-first-prompt(避免每 turn 都打 DB select)
+        self._title_done: set[str] = set()
+
+    async def ensure_engine(self) -> AsyncEngine:
+        # 加 lock 避免兩個 concurrent task 都跑 init_db → "table already exists"
+        async with self._engine_lock:
+            if self._engine is None:
+                self._engine = await storage.init_storage()
+            return self._engine
 
     # ─── Dispatch table ─────────────────────────────────────────────────
     def methods(self) -> dict[str, Any]:
@@ -103,15 +108,11 @@ class Handlers:
         )
         sid = str(conv.session_id)
         self._conversations[sid] = conv
-        import time
-        self._meta[sid] = {
-            "session_id": sid,
-            "provider": provider_name,
-            "model": model,
-            "title": None,  # set on first user message
-            "created_at": time.time(),
-            "n_messages": 0,
-        }
+
+        engine = await self.ensure_engine()
+        await storage.save_session_metadata(
+            engine, sid, provider=provider_name, model=model,
+        )
         yield {
             "event": "conversation_created",
             "data": {"session_id": sid, "provider": provider_name, "model": model},
@@ -123,15 +124,14 @@ class Handlers:
     ) -> AsyncIterator[dict[str, Any]]:
         sid = params.get("session_id")
         prompt = params.get("prompt", "")
-        if sid is None or sid not in self._conversations:
+        if sid is None:
             yield {
                 "event": "error",
-                "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                "data": {"code": "BAD_SESSION_ID", "message": "session_id required"},
                 "final": True,
             }
             return
 
-        # 驗 UUID 格式
         try:
             UUID(sid)
         except (ValueError, TypeError):
@@ -142,11 +142,29 @@ class Handlers:
             }
             return
 
-        conv = self._conversations[sid]
-        meta = self._meta.get(sid)
-        # 首次 user prompt → 設 title(取前 60 字)
-        if meta is not None and meta.get("title") is None:
-            meta["title"] = prompt[:60].strip()
+        engine = await self.ensure_engine()
+
+        # Lazy resume:若 in-memory cache 沒這 session,從 DB 載入
+        conv = self._conversations.get(sid)
+        if conv is None:
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        # 首次 prompt → 設 title
+        if sid not in self._title_done:
+            await storage.update_title_if_empty(engine, sid, prompt)
+            self._title_done.add(sid)
+
+        # 記下 turn 開始時的 message 數,結束後 diff append 新訊息進 DB
+        before_count = len(conv.state_messages)
+
         ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
         self._aborts[sid] = ctx
         try:
@@ -156,9 +174,41 @@ class Handlers:
                     yield frame
         finally:
             self._aborts.pop(sid, None)
-            # 同步 n_messages(粗略)
-            if meta is not None:
-                meta["n_messages"] = len(conv.state_messages)
+            # Persist new messages(只 append 這 turn 增加的)
+            new_msgs = conv.state_messages[before_count:]
+            if new_msgs:
+                try:
+                    await storage.append_messages(engine, sid, new_msgs)
+                except Exception:  # noqa: BLE001
+                    # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
+                    pass
+
+    async def _resume_from_db(
+        self, sid: str, engine: AsyncEngine
+    ) -> Conversation | None:
+        """從 DB 載入既有對話,重建 Conversation in-memory。"""
+        # 先確認 session 存在(避免幫不存在的 session 建空白 conv)
+        sessions = await storage.list_sessions(engine)
+        match = next((s for s in sessions if s.session_id == sid), None)
+        if match is None:
+            return None
+
+        provider = get_provider(match.provider, match.model)
+        tools = build_default_tool_set(asker=None)
+        from uuid import UUID as _UUID
+        conv = Conversation(
+            provider=provider,
+            tools=tools,
+            persistence_enabled=False,
+            memory_enabled=False,
+            auto_extract_memories=False,
+            session_id=_UUID(sid),
+        )
+        conv.state_messages = await storage.load_messages(engine, sid)
+        # 若已有 messages,title 應已設過,記下避免重複 update
+        if conv.state_messages:
+            self._title_done.add(sid)
+        return conv
 
     async def conversation_abort(
         self, params: dict[str, Any]
@@ -180,15 +230,24 @@ class Handlers:
     async def conversation_list(
         self, _params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
-        """列當前 sidecar 內所有 conversation metadata,by created_at desc。"""
-        items = sorted(
-            self._meta.values(),
-            key=lambda m: m.get("created_at", 0),
-            reverse=True,
-        )
+        """從 DB 列當前 user 所有對話(by created_at desc)。"""
+        engine = await self.ensure_engine()
+        rows = await storage.list_sessions(engine)
         yield {
             "event": "conversation_list",
-            "data": {"sessions": items},
+            "data": {
+                "sessions": [
+                    {
+                        "session_id": r.session_id,
+                        "provider": r.provider,
+                        "model": r.model,
+                        "title": r.title,
+                        "created_at": r.created_at,
+                        "n_messages": r.n_messages,
+                    }
+                    for r in rows
+                ],
+            },
             "final": True,
         }
 
@@ -196,20 +255,32 @@ class Handlers:
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
         sid = params.get("session_id")
-        if sid is None or sid not in self._conversations:
+        if sid is None:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": "session_id required"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+
+        # 中止 in-flight turn(若有)
+        ctx = self._aborts.get(sid)
+        if ctx is not None:
+            ctx.abort_event.set()
+        self._conversations.pop(sid, None)
+        self._aborts.pop(sid, None)
+        self._title_done.discard(sid)
+
+        ok = await storage.delete_session(engine, sid)
+        if not ok:
             yield {
                 "event": "error",
                 "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
                 "final": True,
             }
             return
-        # 中止 in-flight turn(若有)
-        ctx = self._aborts.get(sid)
-        if ctx is not None:
-            ctx.abort_event.set()
-        self._conversations.pop(sid, None)
-        self._meta.pop(sid, None)
-        self._aborts.pop(sid, None)
         yield {
             "event": "conversation_deleted",
             "data": {"session_id": sid},
