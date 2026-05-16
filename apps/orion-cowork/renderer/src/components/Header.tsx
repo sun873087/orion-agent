@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles, X } from 'lucide-react'
+import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles } from 'lucide-react'
 
-import { getSessionWorkspace, setSessionWorkspace } from '../api/agent'
+import { getPrefs, getProject, getSessionWorkspace } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
+
+type WorkspaceState = {
+  dir: string
+  source: 'session' | 'project' | 'default'
+} | null
 
 export function Header() {
   const { t } = useTranslation()
@@ -16,37 +21,47 @@ export function Header() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const toggleSidebarSearch = useSettingsStore((s) => s.toggleSidebarSearch)
-  const [workspaceDir, setWorkspaceDir] = useState<string | null>(null)
+  const [workspace, setWorkspace] = useState<WorkspaceState>(null)
 
-  // session 變動就重 fetch workspace
+  // session 變動 → 解析來源:session-level > project > default
   useEffect(() => {
-    if (!sessionId) {
-      setWorkspaceDir(null)
-      return
-    }
     let cancelled = false
-    getSessionWorkspace(sessionId)
-      .then((ext) => {
-        if (!cancelled) setWorkspaceDir(ext.workspace_dir)
-      })
-      .catch(() => {})
+    async function resolve() {
+      if (!sessionId) {
+        // 沒 session 也顯 default workspace(若有)
+        const prefs = await getPrefs().catch(() => ({} as Record<string, string>))
+        if (cancelled) return
+        const d = prefs.default_workspace_dir
+        setWorkspace(d ? { dir: d, source: 'default' } : null)
+        return
+      }
+      const ext = await getSessionWorkspace(sessionId).catch(() => null)
+      if (cancelled) return
+      if (ext?.workspace_dir) {
+        setWorkspace({ dir: ext.workspace_dir, source: 'session' })
+        return
+      }
+      if (ext?.project_id) {
+        const p = await getProject(ext.project_id).catch(() => null)
+        if (cancelled) return
+        if (p?.project.workspace_dir) {
+          setWorkspace({ dir: p.project.workspace_dir, source: 'project' })
+          return
+        }
+      }
+      const prefs = await getPrefs().catch(() => ({} as Record<string, string>))
+      if (cancelled) return
+      const d = prefs.default_workspace_dir
+      setWorkspace(d ? { dir: d, source: 'default' } : null)
+    }
+    resolve()
     return () => {
       cancelled = true
     }
   }, [sessionId])
 
-  async function handleSetWorkspace() {
-    if (!sessionId) return
-    const dir = await window.dialog.selectFolder()
-    if (!dir) return
-    await setSessionWorkspace(sessionId, dir)
-    setWorkspaceDir(dir)
-  }
-
-  async function handleClearWorkspace() {
-    if (!sessionId) return
-    await setSessionWorkspace(sessionId, null)
-    setWorkspaceDir(null)
+  function shortName(dir: string): string {
+    return dir.split('/').filter(Boolean).pop() || dir
   }
 
   return (
@@ -75,37 +90,31 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Workspace badge — 只在有 session 時顯示 */}
-        {sessionId &&
-          (workspaceDir ? (
-            <div
-              className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs"
-              title={workspaceDir}
-            >
-              <Folder size={12} className="text-fg-muted" />
+        {/* Workspace badge — read-only,顯示來源;點跳 Settings → General */}
+        <button
+          type="button"
+          onClick={() => openSettings('general')}
+          title={
+            workspace
+              ? `${workspace.dir}\n${t(`header.workspace.from.${workspace.source}`)}`
+              : t('header.workspace.setInSettings')
+          }
+          className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs hover:bg-bg-hover"
+        >
+          <Folder size={12} className="text-fg-muted" />
+          {workspace ? (
+            <>
               <span className="max-w-[160px] truncate font-mono text-fg-muted">
-                {workspaceDir.split('/').pop() || workspaceDir}
+                {shortName(workspace.dir)}
               </span>
-              <button
-                type="button"
-                onClick={handleClearWorkspace}
-                title={t('header.workspace.clear')}
-                className="rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-base"
-              >
-                <X size={10} />
-              </button>
-            </div>
+              <span className="rounded bg-bg-hover px-1 text-[10px] text-fg-subtle">
+                {t(`header.workspace.source.${workspace.source}`)}
+              </span>
+            </>
           ) : (
-            <button
-              type="button"
-              onClick={handleSetWorkspace}
-              title={t('header.workspace.set')}
-              className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
-            >
-              <Folder size={12} />
-              <span>{t('header.workspace.none')}</span>
-            </button>
-          ))}
+            <span className="text-fg-muted">{t('header.workspace.none')}</span>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => openSettings('models')}

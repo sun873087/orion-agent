@@ -97,19 +97,34 @@ async def memory_section(
     conversation_messages: list[NormalizedMessage],
     provider: LLMProvider | None = None,
     max_results: int = 10,
+    extra_memory_dirs: list[Path] | None = None,
 ) -> str:
     """挑相關 memory 並 render 成 system prompt 區塊。
 
     包 Phase 3 機制:scan + rank + render。沒 memory / 載入失敗 → 回空字串。
+
+    extra_memory_dirs:除了 user-level memory 外,額外讀的 memory 目錄(例如
+    Cowork project 的 `<workspace>/.orion-cowork/memory/`)。 union 後一起 rank。
     """
+    from orion_sdk.memory.paths import MemoryPaths as _MP
+
     try:
         paths = user_memory_paths(user_id)
         # prompt 注入路徑明確排除已過期 memory(Layer 2 TTL)— UI / extract 仍看全部
         index = scan_memory_dir(paths, exclude_expired=True)
-        if not index.memories:
+        all_memories = list(index.memories)
+        if extra_memory_dirs:
+            for d in extra_memory_dirs:
+                # 把 dir 包成 MemoryPaths(root=d.parent, dir_name=d.name 假設叫 memory)
+                fake = _MP(user_id="_extra_", root=d.parent)
+                if fake.memory_dir != d:
+                    continue  # extra dir 不叫 memory,略過(預期一律叫 memory)
+                ex = scan_memory_dir(fake, exclude_expired=True)
+                all_memories.extend(ex.memories)
+        if not all_memories:
             return ""
         relevant = await rank_memories(
-            index.memories,
+            all_memories,
             conversation_messages,
             provider=provider,
             max_results=max_results,

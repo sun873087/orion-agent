@@ -96,16 +96,21 @@ class CoworkMcpManager:
         self._supervisor: McpSupervisor | None = None
         self._supervisor_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        # 當前 active extra configs(project layer)— 用來判斷要不要 reload
+        self._active_extra: dict[str, McpServerConfig] = {}
 
-    async def start(self) -> None:
+    async def start(self, extra_configs: dict[str, McpServerConfig] | None = None) -> None:
+        """extra_configs 是 project-level merge — 跟 global mcp.json union,後勝同名。"""
         async with self._lock:
             if self._manager is not None:
                 return
             configs = _load_cowork_configs()
+            if extra_configs:
+                configs = {**configs, **extra_configs}
+            self._active_extra = extra_configs or {}
             self._stack = AsyncExitStack()
             mgr = McpManager(configs=configs)
             self._manager = await self._stack.enter_async_context(mgr)
-            # 起 supervisor
             self._supervisor = McpSupervisor(self._manager)
             self._supervisor_task = asyncio.create_task(self._supervisor.run())
 
@@ -182,10 +187,41 @@ class CoworkMcpManager:
             self._supervisor.reset_attempts(name)
         return await self._manager.reconnect(name)
 
-    async def reload(self) -> None:
-        """完整 shutdown + restart,讓 mcp.json 變更生效。"""
+    async def reload(self, extra_configs: dict[str, McpServerConfig] | None = None) -> None:
+        """完整 shutdown + restart,可附帶 project layer 的 extra configs。"""
         await self.shutdown()
-        await self.start()
+        await self.start(extra_configs=extra_configs)
+
+    @property
+    def active_extra(self) -> dict[str, McpServerConfig]:
+        return self._active_extra
+
+
+def load_project_mcp_configs(workspace_dir: Path) -> dict[str, McpServerConfig]:
+    """讀 <workspace>/.orion-cowork/mcp.json,parse 成 McpServerConfig dict。"""
+    path = workspace_dir / ".orion-cowork" / "mcp.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return {}
+    parsed: dict[str, McpServerConfig] = {}
+    for name, raw in servers.items():
+        if not isinstance(raw, dict):
+            continue
+        try:
+            t = raw.get("type", "stdio")
+            if t == "stdio":
+                parsed[name] = StdioMcpConfig.model_validate(raw)
+            elif t == "http":
+                parsed[name] = HttpMcpConfig.model_validate(raw)
+        except Exception:  # noqa: BLE001
+            continue
+    return parsed
 
 
 def read_mcp_config_raw() -> dict[str, dict[str, Any]]:

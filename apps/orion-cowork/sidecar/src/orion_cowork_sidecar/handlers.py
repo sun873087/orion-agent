@@ -152,6 +152,8 @@ class Handlers:
             "skill.get": skill_handlers.skill_get,
             "skill.write": skill_handlers.skill_write,
             "skill.delete": skill_handlers.skill_delete,
+            "prefs.get_all": self.prefs_get_all,
+            "prefs.set": self.prefs_set,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
@@ -320,6 +322,8 @@ class Handlers:
         # 跑 cwd-derived sections。沒設用 process cwd 但 include_workspace_context=False
         # 仍會被 SDK 忽略。
         ctx_cwd = await self._resolve_session_cwd(sid, engine)
+        # B2:project 若有自己的 mcp.json,reload manager 拿到 project servers
+        await self._sync_mcp_for_session(sid, engine)
         ctx_kwargs: dict[str, Any] = dict(
             feature_flags=load_feature_flags(),
             user_id=storage.LOCAL_USER_ID,
@@ -344,10 +348,45 @@ class Handlers:
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
 
+    async def _sync_mcp_for_session(
+        self, sid: str, engine: AsyncEngine
+    ) -> None:
+        """B2:依 chat 的 project workspace 決定要不要 reload MCP manager。
+
+        只在 active extra(project layer)跟 chat 需要的 extra **不同**時 reload —
+        避免每 turn 都 kill 重連。
+        """
+        from pathlib import Path
+        from orion_cowork_sidecar.mcp_integration import load_project_mcp_configs
+
+        ext = await storage.get_session_ext(engine, sid)
+        wanted: dict[str, Any] = {}
+        if ext["project_id"]:
+            proj = await storage.get_project(engine, ext["project_id"])
+            if proj is not None and proj.workspace_dir:
+                wanted = load_project_mcp_configs(Path(proj.workspace_dir))
+        # 比對:active extra 跟 wanted 一不一樣(by name set + by config dump)
+        current_names = set(self._mcp.active_extra.keys())
+        wanted_names = set(wanted.keys())
+        if current_names == wanted_names and not wanted:
+            return  # 兩邊都 empty,無事可做
+        if current_names == wanted_names:
+            # 同 names,內容可能不同 — 比 dump
+            cur_dump = {k: v.model_dump() for k, v in self._mcp.active_extra.items()}
+            new_dump = {k: v.model_dump() for k, v in wanted.items()}
+            if cur_dump == new_dump:
+                return
+        # 不同 → reload
+        await self._mcp.reload(extra_configs=wanted)
+        self._mcp_started = True
+
     async def _resolve_session_cwd(
         self, sid: str, engine: AsyncEngine
     ) -> "Path | None":
-        """Session 的 effective workspace_dir(session > project > None)→ Path 或 None。"""
+        """Session 的 effective workspace_dir。
+
+        優先序:session-level override > project > app-level default(prefs)→ None
+        """
         from pathlib import Path
         ext = await storage.get_session_ext(engine, sid)
         ws = ext["workspace_dir"]
@@ -355,7 +394,35 @@ class Handlers:
             proj = await storage.get_project(engine, ext["project_id"])
             if proj is not None:
                 ws = proj.workspace_dir
+        if not ws:
+            ws = await storage.get_pref(engine, "default_workspace_dir")
         return Path(ws) if ws else None
+
+    async def prefs_get_all(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        engine = await self.ensure_engine()
+        prefs = await storage.list_prefs(engine)
+        yield {"event": "prefs", "data": {"prefs": prefs}, "final": True}
+
+    async def prefs_set(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """params: {key, value}。value=None 刪除該 key。"""
+        key = params.get("key")
+        value = params.get("value")
+        if not isinstance(key, str) or not key:
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        if value is not None and not isinstance(value, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        await storage.set_pref(engine, key, value)
+        # default_workspace_dir 變更 → 既有 cached conv 失效(下次 send 用新值)
+        if key == "default_workspace_dir":
+            self._conversations.clear()
+        yield {"event": "prefs_set", "data": {"key": key}, "final": True}
 
     async def _build_conversation(
         self,
@@ -386,8 +453,9 @@ class Handlers:
         )
 
         # Resolve workspace_dir + custom_instructions:
-        # session-level workspace > project-level workspace > None
+        # session > project > app-level default(prefs)→ None
         # project-level custom_instructions 注入 system_prompt 後
+
         effective_workspace: str | None = workspace_dir
         project_custom_instructions: str | None = None
         if project_id:
@@ -396,6 +464,20 @@ class Handlers:
                 if not effective_workspace and proj.workspace_dir:
                     effective_workspace = proj.workspace_dir
                 project_custom_instructions = proj.custom_instructions
+        # B4:project instructions file 優先 — user 直接編 `<ws>/.orion-cowork/
+        # instructions.md` 不用過 RPC,read 時拿 file content。
+        if effective_workspace:
+            from pathlib import Path as _Path
+            inst_file = _Path(effective_workspace) / ".orion-cowork" / "instructions.md"
+            if inst_file.is_file():
+                try:
+                    project_custom_instructions = inst_file.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+        if not effective_workspace:
+            effective_workspace = await storage.get_pref(
+                engine, "default_workspace_dir",
+            )
 
         system_prompt = COWORK_SYSTEM_PROMPT
         if project_custom_instructions:
@@ -623,16 +705,22 @@ class Handlers:
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
         name = params.get("name")
+        workspace_dir = params.get("workspace_dir")
         if not isinstance(name, str) or not name.strip():
             yield {"event": "error", "data": {"code": "BAD_PARAMS",
                    "message": "name required"}, "final": True}
+            return
+        if not isinstance(workspace_dir, str) or not workspace_dir.strip():
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "workspace_dir required (B0: project must have a workspace)"},
+                   "final": True}
             return
         engine = await self.ensure_engine()
         proj = await storage.create_project(
             engine,
             name=name.strip(),
+            workspace_dir=workspace_dir.strip(),
             description=params.get("description") or None,
-            workspace_dir=params.get("workspace_dir") or None,
             custom_instructions=params.get("custom_instructions") or None,
         )
         yield {

@@ -217,6 +217,7 @@ function ProjectsSection() {
   const activeProjectId = useSettingsStore((s) => s.activeProjectId)
   const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
   const openNewProject = useSettingsStore((s) => s.openNewProject)
+  const openEditProject = useSettingsStore((s) => s.openEditProject)
 
   return (
     <div className="mt-3 px-2">
@@ -250,19 +251,34 @@ function ProjectsSection() {
         </li>
         {projects.map((p) => (
           <li key={p.id}>
-            <button
-              type="button"
-              onClick={() => setActiveProjectId(p.id)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+            <div
+              className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
                 activeProjectId === p.id
                   ? 'bg-bg-hover text-fg-base'
                   : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
               }`}
               title={p.workspace_dir ?? undefined}
             >
-              <Folder size={13} className="shrink-0" />
-              <span className="flex-1 truncate text-left">{p.name}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveProjectId(p.id)}
+                className="flex flex-1 items-center gap-2 text-left"
+              >
+                <Folder size={13} className="shrink-0" />
+                <span className="flex-1 truncate">{p.name}</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openEditProject(p.id)
+                }}
+                className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-base"
+                title={t('projectSettings.openSettings')}
+              >
+                <SettingsIcon size={11} />
+              </button>
+            </div>
           </li>
         ))}
       </ul>

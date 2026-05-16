@@ -65,10 +65,14 @@ type SettingsState = {
   activeProjectId: string | null
   /** New Project modal 開關。 */
   newProjectOpen: boolean
+  /** 編輯 project 的 id;null = 沒在編。 */
+  editingProjectId: string | null
 
   setActiveProjectId: (id: string | null) => void
   openNewProject: () => void
   closeNewProject: () => void
+  openEditProject: (id: string) => void
+  closeEditProject: () => void
 }
 
 const STORAGE_KEY = 'orion-cowork-settings/v1'
@@ -89,6 +93,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarSearchQuery: '',
       activeProjectId: null,
       newProjectOpen: false,
+      editingProjectId: null,
 
       setTheme: (t) => {
         set({ theme: t })
@@ -129,6 +134,8 @@ export const useSettingsStore = create<SettingsState>()(
       setActiveProjectId: (id) => set({ activeProjectId: id }),
       openNewProject: () => set({ newProjectOpen: true }),
       closeNewProject: () => set({ newProjectOpen: false }),
+      openEditProject: (id) => set({ editingProjectId: id }),
+      closeEditProject: () => set({ editingProjectId: null }),
     }),
     {
       name: STORAGE_KEY,

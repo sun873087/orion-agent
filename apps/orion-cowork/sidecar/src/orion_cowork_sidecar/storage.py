@@ -140,8 +140,9 @@ async def init_storage() -> AsyncEngine:
 
 async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
     """Cowork 專屬擴充表(不動 SDK schema):
-       - cowork_session_ext:per-session workspace_dir + project_id(A2/A3)
-       - cowork_projects:Project 定義(A3)
+       - cowork_session_ext:per-session workspace_dir(override) + project_id
+       - cowork_projects:Project 定義
+       - cowork_prefs:KV(default_workspace_dir 等 app 級偏好)
     """
     async with engine.connect() as conn:
         await conn.exec_driver_sql(
@@ -165,7 +166,48 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             )
             """
         )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_prefs (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
         await conn.commit()
+
+
+async def get_pref(engine: AsyncEngine, key: str) -> str | None:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT value FROM cowork_prefs WHERE key = ?", (key,),
+        )
+        row = result.first()
+    return row[0] if row else None
+
+
+async def set_pref(engine: AsyncEngine, key: str, value: str | None) -> None:
+    """value=None → 刪除該 key。"""
+    async with engine.connect() as conn:
+        if value is None:
+            await conn.exec_driver_sql(
+                "DELETE FROM cowork_prefs WHERE key = ?", (key,),
+            )
+        else:
+            await conn.exec_driver_sql(
+                """
+                INSERT INTO cowork_prefs (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+        await conn.commit()
+
+
+async def list_prefs(engine: AsyncEngine) -> dict[str, str]:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql("SELECT key, value FROM cowork_prefs")
+        return {row[0]: row[1] for row in result.all()}
 
 
 async def _upsert_local_user(engine: AsyncEngine) -> None:
@@ -532,13 +574,24 @@ async def create_project(
     engine: AsyncEngine,
     *,
     name: str,
+    workspace_dir: str,
     description: str | None = None,
-    workspace_dir: str | None = None,
     custom_instructions: str | None = None,
 ) -> Project:
+    """Workspace 為必填(B0)。建立後在 <workspace>/.orion-cowork/ 建子目錄,
+    custom_instructions 同時寫到 <workspace>/.orion-cowork/instructions.md。
+    """
     from uuid import uuid4
     pid = str(uuid4())
     now = time.time()
+    # 建 co-located 結構
+    ws_path = Path(workspace_dir).expanduser()
+    cowork_dir = ws_path / ".orion-cowork"
+    cowork_dir.mkdir(parents=True, exist_ok=True)
+    (cowork_dir / "skills").mkdir(exist_ok=True)
+    (cowork_dir / "memory").mkdir(exist_ok=True)
+    if custom_instructions and custom_instructions.strip():
+        (cowork_dir / "instructions.md").write_text(custom_instructions, encoding="utf-8")
     async with engine.connect() as conn:
         await conn.exec_driver_sql(
             "INSERT INTO cowork_projects (id, name, description, workspace_dir, "
@@ -561,7 +614,10 @@ async def update_project(
     workspace_dir: str | None = None,
     custom_instructions: str | None = None,
 ) -> bool:
-    """部分更新;None 表示「不動」,要清空傳空字串。回 True 若有 row 被改。"""
+    """部分更新;None 表示「不動」,要清空傳空字串。回 True 若有 row 被改。
+
+    custom_instructions 變更時同步寫到 `<workspace>/.orion-cowork/instructions.md`(B4)。
+    """
     fields: list[tuple[str, Any]] = []
     if name is not None:
         fields.append(("name", name))
@@ -581,7 +637,22 @@ async def update_project(
             tuple(params),
         )
         await conn.commit()
-        return (result.rowcount or 0) > 0
+        changed = (result.rowcount or 0) > 0
+    # 同步 instructions file(B4)
+    if changed and custom_instructions is not None:
+        proj = await get_project(engine, project_id)
+        if proj is not None and proj.workspace_dir:
+            try:
+                cowork_dir = Path(proj.workspace_dir) / ".orion-cowork"
+                cowork_dir.mkdir(parents=True, exist_ok=True)
+                inst = cowork_dir / "instructions.md"
+                if custom_instructions:
+                    inst.write_text(custom_instructions, encoding="utf-8")
+                elif inst.exists():
+                    inst.unlink()
+            except OSError:
+                pass
+    return changed
 
 
 async def delete_project(engine: AsyncEngine, project_id: str) -> bool:

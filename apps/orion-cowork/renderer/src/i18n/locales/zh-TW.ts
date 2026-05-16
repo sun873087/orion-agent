@@ -39,9 +39,35 @@ export default {
   'project.create': '建立',
   'project.cancel': '取消',
 
+  // Project settings modal (B5)
+  'projectSettings.title': '{name} 設定',
+  'projectSettings.openSettings': '專案設定',
+  'projectSettings.delete': '刪除專案',
+  'projectSettings.deleteConfirm': '確定刪除專案 {name}?(資料夾跟 .orion-cowork 子目錄不會刪)',
+  'projectSettings.workspaceHint': '建立後 workspace 無法變更;要改就建新專案',
+  'projectSettings.instructionsHint': '同步寫入 {path},可以 git track / 跨機器分享',
+  'projectSettings.resourcesTitle': '專案資源(co-located)',
+  'projectSettings.skillsPath': '技能',
+  'projectSettings.memoryPath': '記憶',
+  'projectSettings.mcpPath': 'MCP 設定',
+  'projectSettings.resourcesHint': '直接編 workspace 內的 .orion-cowork/ 子目錄。下次該專案對話開始時自動載入。',
+
   'header.workspace.none': '無 workspace',
-  'header.workspace.set': '設定 workspace',
-  'header.workspace.clear': '清除 workspace',
+  'header.workspace.setInSettings': '在「設定 → 一般」設定預設工作目錄',
+  'header.workspace.from.session': '此對話獨立設定',
+  'header.workspace.from.project': '繼承自當前專案',
+  'header.workspace.from.default': '使用預設工作目錄',
+  'header.workspace.source.session': '對話',
+  'header.workspace.source.project': '專案',
+  'header.workspace.source.default': '預設',
+
+  // Settings General
+  'settings.section.general': '一般',
+  'general.defaultWorkspace': '預設工作目錄',
+  'general.defaultWorkspaceHint': '每個沒指定專案的對話會繼承這個資料夾,讓 model 看到 git 狀態 / 該目錄檔案 / `<目錄>/.orion/instructions.md`。',
+  'general.pickFolder': '選擇資料夾⋯',
+  'general.change': '變更',
+  'general.clear': '清除',
 
   // User menu
   'menu.settings': '設定',

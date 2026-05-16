@@ -2,6 +2,7 @@ import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
 import { MessageList } from './components/MessageList'
 import { NewProjectModal } from './components/NewProjectModal'
+import { ProjectSettingsModal } from './components/ProjectSettingsModal'
 import { SettingsPage } from './components/SettingsPage'
 import { Sidebar } from './components/Sidebar'
 import { useAbort, useInitConversation, useSendPrompt } from './hooks/useAgent'
@@ -28,6 +29,7 @@ export function App() {
         <InputBox onSend={sendPrompt} onAbort={abort} />
       </div>
       <NewProjectModal />
+      <ProjectSettingsModal />
     </div>
   )
 }

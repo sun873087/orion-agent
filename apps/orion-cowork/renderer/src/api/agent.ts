@@ -274,6 +274,21 @@ export async function deleteSkill(filename: string): Promise<void> {
   await window.agent.call('skill.delete', { filename }, () => {})
 }
 
+export async function getPrefs(): Promise<Record<string, string>> {
+  let out: Record<string, string> = {}
+  await window.agent.call('prefs.get_all', {}, (frame) => {
+    if (frame.event === 'prefs' && frame.data) {
+      const d = frame.data as { prefs: Record<string, string> }
+      out = d.prefs ?? {}
+    }
+  })
+  return out
+}
+
+export async function setPref(key: string, value: string | null): Promise<void> {
+  await window.agent.call('prefs.set', { key, value }, () => {})
+}
+
 export type Attachment = {
   media_type: string  // "image/png" / "image/jpeg" / ...
   data: string        // base64-encoded(no data: prefix)

@@ -32,7 +32,7 @@ export function NewProjectModal() {
   }
 
   async function submit() {
-    if (!name.trim() || busy) return
+    if (!name.trim() || !workspaceDir || busy) return
     setBusy(true)
     try {
       await createProject({
@@ -48,6 +48,8 @@ export function NewProjectModal() {
       setBusy(false)
     }
   }
+
+  const canSubmit = !!name.trim() && !!workspaceDir && !busy
 
   return (
     <div
@@ -87,7 +89,7 @@ export function NewProjectModal() {
             />
           </Field>
           <Field
-            label={t('project.field.workspace')}
+            label={`${t('project.field.workspace')} *`}
             hint={t('project.field.workspaceHint')}
           >
             <button
@@ -130,7 +132,7 @@ export function NewProjectModal() {
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !name.trim()}
+            disabled={!canSubmit}
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t('project.create')}

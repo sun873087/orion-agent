@@ -9,13 +9,14 @@
  * 也可以 openSettings('language') 直接跳到 Language section。
  */
 import type { ComponentType } from 'react'
-import { ArrowLeft, Brain, Info, type LucideIcon, Plug, Settings as SettingsIcon, Sparkles, Sun } from 'lucide-react'
+import { ArrowLeft, Brain, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, Sparkles, Sun } from 'lucide-react'
 
 import { useTranslation } from '../i18n'
 import { useSettingsStore } from '../store/settings'
 
 import { AboutSection } from './settings/AboutSection'
 import { AppearanceSection } from './settings/AppearanceSection'
+import { GeneralSection } from './settings/GeneralSection'
 import { McpSection } from './settings/McpSection'
 import { MemorySection } from './settings/MemorySection'
 import { ModelsSection } from './settings/ModelsSection'
@@ -33,6 +34,13 @@ type SectionDef = {
 
 // 新增 section 只在這多一筆 — page layout、切換邏輯都自動處理。
 const SECTIONS: SectionDef[] = [
+  {
+    id: 'general',
+    labelKey: 'settings.section.general',
+    groupKey: 'settings.group.general',
+    icon: Folder,
+    render: GeneralSection,
+  },
   {
     id: 'appearance',
     labelKey: 'settings.section.appearance',

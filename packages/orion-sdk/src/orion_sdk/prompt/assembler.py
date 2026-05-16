@@ -117,10 +117,17 @@ async def fetch_system_prompt_parts(
         git_text = await git_status_section(cwd)
     else:
         git_text = ""
+    # 自動偵測 project memory dir(<cwd>/.orion-cowork/memory)— 若有就 union
+    extra_dirs: list[Path] = []
+    if cwd is not None and include_workspace_context:
+        cand = cwd / ".orion-cowork" / "memory"
+        if cand.is_dir():
+            extra_dirs.append(cand)
     memory_text = await memory_section(
         user_id=user_id,
         conversation_messages=msgs,
         provider=provider,
+        extra_memory_dirs=extra_dirs or None,
     )
 
     # ─── session-stable 動態段(同步,無 I/O)── 進 system,享 cache ──
