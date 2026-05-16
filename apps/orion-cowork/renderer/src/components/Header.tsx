@@ -74,9 +74,17 @@ export function Header() {
     return dir.split('/').filter(Boolean).pop() || dir
   }
 
+  // macOS 紅綠燈位置 reserve(trafficLightPosition x=14)— 大致 80px width
+  const isMac =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)
+
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-bg-hover bg-bg-panel px-3">
-      <div className="flex items-center gap-1">
+    <header
+      className={`app-drag flex h-11 shrink-0 items-center justify-between border-b border-bg-hover bg-bg-panel ${
+        isMac ? 'pl-20 pr-3' : 'px-3'
+      }`}
+    >
+      <div className="app-no-drag flex items-center gap-1">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -117,7 +125,7 @@ export function Header() {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="app-no-drag flex items-center gap-3">
         {/* Workspace badge — read-only,顯示來源;點跳 Settings → General */}
         <button
           type="button"

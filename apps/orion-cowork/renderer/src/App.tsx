@@ -22,15 +22,18 @@ export function App() {
   if (settingsOpen) return <SettingsPage />
   if (editingProjectId) return <ProjectSettingsPage />
 
+  // 頂端 toolbar 跨整個 window(macOS 嵌入紅綠燈),底下 content row
   return (
-    <div className="flex h-full w-full">
-      {!sidebarCollapsed && <Sidebar />}
-      <div className="flex flex-1 flex-col">
-        <Header />
-        <MessageList />
-        <InputBox onSend={sendPrompt} onAbort={abort} />
+    <div className="flex h-full w-full flex-col">
+      <Header />
+      <div className="flex flex-1 overflow-hidden">
+        {!sidebarCollapsed && <Sidebar />}
+        <div className="flex flex-1 flex-col">
+          <MessageList />
+          <InputBox onSend={sendPrompt} onAbort={abort} />
+        </div>
+        {rightSidebarOpen && <RightSidebar />}
       </div>
-      {rightSidebarOpen && <RightSidebar />}
       <NewProjectModal />
     </div>
   )

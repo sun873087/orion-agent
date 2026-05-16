@@ -201,11 +201,12 @@ export function RightSidebar() {
   return (
     <aside
       className={
-        // 小視窗:fixed overlay 從右側滑入(z-30 浮在 chat area 上,陰影區隔)
+        // 小視窗:fixed overlay,從 Header 底下(top-11 = h-11)拉到視窗底,
+        // 避免蓋到 toolbar。 z-30 浮在 chat area 上,陰影區隔
         // ≥lg(1024px):relative 變 flex item,跟 chat area 並排
         'scrollbar-thin flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-bg-hover bg-bg-panel px-3 py-3 ' +
-        'fixed inset-y-0 right-0 z-30 shadow-2xl ' +
-        'lg:relative lg:inset-auto lg:z-auto lg:shadow-none'
+        'fixed bottom-0 right-0 top-11 z-30 shadow-2xl ' +
+        'lg:relative lg:top-auto lg:bottom-auto lg:z-auto lg:shadow-none'
       }
     >
       <Section title={t('rightSidebar.progress')}>

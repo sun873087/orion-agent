@@ -28,9 +28,13 @@ function packagedSidecarPath(): string | null {
 }
 
 async function createWindow(): Promise<void> {
+  const isMac = process.platform === 'darwin'
   const win = new BrowserWindow({
     width: 1100,
     height: 800,
+    // macOS:嵌入式紅綠燈,React 自畫整個頂端 toolbar,跟 Claude.ai 風格一致
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       preload: resolve(__dirname, 'preload.js'),
       contextIsolation: true,

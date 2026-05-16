@@ -116,3 +116,13 @@
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: var(--fg-subtle);
 }
+
+/* Frameless window:Electron BrowserWindow titleBarStyle=hiddenInset 後,
+ * React 自畫 toolbar。 `.app-drag` 區域可拖視窗;按鈕加 `.app-no-drag`
+ * 才能被點到(否則被 drag region 攔截)。 */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
