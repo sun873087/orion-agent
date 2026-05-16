@@ -77,20 +77,45 @@ _COWORK_PROMPT_BASE = (
 )
 
 
-# Per-turn permission_mode prefix — 注入「最後 user message」開頭(而非 system),
-# 讓 system_prompt 跨 mode 切換 byte-identical → cache prefix 不被破壞。
-# 短一點、directive 一點,因為現在跟 user 訊息混在一起,別占太多 tokens。
-_ASK_MODE_USER_PREFIX = (
-    "[Ask mode is active — pause for user approval before each side-effecting "
-    "tool call (UI handles the approval banner). Use the AskUserQuestion tool "
-    "when you genuinely need structured input from the user; do not use it "
-    "for greetings, small talk, or when you can pick a reasonable default.]"
+# Permission mode 指引 — 由 SDK 的 custom_instructions_conversation 欄位帶進
+# system Element 1(BP 2),mode 固定 → session 內 BP 2 byte-identical 享 cache。
+# 切 mode 才會讓 BP 2 重寫一次(~5k tokens × 1.25),通常仍比每 turn 在
+# BP 4 重複帶 mode prefix(每 turn 250 tokens × 1.25)更省。
+_ASK_MODE_INSTRUCTIONS = (
+    "## Permission mode: Ask\n"
+    "\n"
+    "Two strict rules that override your default behavior:\n"
+    "\n"
+    "1. **Tool approval** — before each side-effecting tool call (Bash, "
+    "Write, Edit, web fetch, MCP actions, etc.), the UI shows the user an "
+    "approval banner. You just call the tool as usual; the platform pauses "
+    "and resumes for you. Do not type 'I'm about to run X, ok?' first — "
+    "just call the tool and the banner appears.\n"
+    "\n"
+    "2. **Clarifying questions MUST use the AskUserQuestion tool, NOT plain "
+    "text.** If you need to confirm parameters, ask the user to pick "
+    "between options, or gather multiple inputs before executing a task — "
+    "you MUST call `AskUserQuestion` with one question per call (max 4 in "
+    "a batch). The UI renders clickable option buttons + free-text input, "
+    "which is the entire point of Ask mode. Writing a numbered list of "
+    "questions in plain text bypasses this UI and is incorrect behavior.\n"
+    "\n"
+    "Examples of when to use AskUserQuestion:\n"
+    "- 'Which format do you want?' with options [PDF, DOCX, Markdown]\n"
+    "- 'What should the filename be?' (open-ended, no options)\n"
+    "- 'Should I open the file after creating it?' with options [Yes, No]\n"
+    "\n"
+    "Do NOT use AskUserQuestion for: greetings, small talk, or when a "
+    "reasonable default exists and the user hasn't expressed a preference."
 )
-_ACT_MODE_USER_PREFIX = (
-    "[Act mode is active — proceed autonomously, do NOT ask clarifying "
-    "questions (neither via any tool nor in plain text). Pick a reasonable "
-    "default if uncertain, mention your choice briefly, and continue. Only "
-    "stop on hard blockers that genuinely require user input.]"
+_ACT_MODE_INSTRUCTIONS = (
+    "## Permission mode: Act\n"
+    "\n"
+    "Proceed autonomously. Do NOT ask clarifying questions — neither via "
+    "the AskUserQuestion tool nor in plain text. If parameters are "
+    "uncertain, pick the most reasonable default, state your choice "
+    "briefly in your response, and continue executing. Only stop on hard "
+    "blockers that genuinely cannot be resolved without user input."
 )
 
 
@@ -453,30 +478,29 @@ class Handlers:
         conv.can_use_tool = self._build_can_use_tool(sid, out_queue, ws_for_policy)
 
         # ─── AskUserQuestion asker wiring(cache-friendly mode design)──
-        # Mode 切換不能破壞 cache prefix,所以:
-        # 1. system_prompt 跨 mode byte-identical(完全不動)
-        # 2. conv.tools 也 byte-identical — AskUserQuestion 永遠在 list
-        # 3. Mode 指引改成「最後 user msg 開頭注入」(在下面 producer 處理)
-        # 4. Mode 行為差異全部走 asker callback 動態 dispatch:
+        # Mode 指引走 SDK 的 custom_instructions_conversation → system Element 1 → BP 2
+        # 1. system Element 0 永遠 byte-identical(_COWORK_PROMPT_BASE 等)
+        # 2. system Element 1 含 mode 指引 — 同 mode 連續 turn 都 hit BP 2;
+        #    切 mode 那 turn BP 2 重寫,之後又穩定
+        # 3. conv.tools byte-identical(AskUserQuestion 永遠在)
+        # 4. Mode 行為差異走 asker callback 動態 dispatch:
         #    - Ask 模式 → 推 ask_user_question frame 等 user reply
         #    - Act 模式 → auto-decide asker 回個 hint 給 LLM 自己 decide
-        # tool object 本身的 schema 跨 mode 一樣,LLM API 看到的 tools array
-        # hash 不變 → cache 不破。
         for tool in conv.tools:
             if getattr(tool, "name", None) == "AskUserQuestion":
                 tool.asker = self._build_mode_aware_asker(sid, out_queue)
                 tool.should_defer = False
                 break
 
-        # 把 mode prefix 注入 prompt 開頭(不改 system_prompt 保 cache)
-        mode_prefix = (
-            _ASK_MODE_USER_PREFIX if permission_mode == "ask" else _ACT_MODE_USER_PREFIX
+        # 把 mode 指引塞 SDK 的 custom_instructions_conversation,assembler 會
+        # 把它包進 system Element 1(BP 2 cache zone)。下次 send 同 mode 仍命中。
+        conv.custom_instructions_conversation = (
+            _ASK_MODE_INSTRUCTIONS if permission_mode == "ask" else _ACT_MODE_INSTRUCTIONS
         )
-        effective_prompt = f"{mode_prefix}\n\n{prompt}" if prompt else mode_prefix
 
         async def _producer() -> None:
             try:
-                async for ev in conv.send(effective_prompt, ctx=ctx, images=images or None):
+                async for ev in conv.send(prompt, ctx=ctx, images=images or None):
                     f = to_rpc_frame(ev)
                     if f is not None:
                         await out_queue.put(f)
@@ -1914,34 +1938,6 @@ def _is_user_prompt_row(content_json: Any) -> bool:
     return has_non_tool_result
 
 
-def _strip_mode_prefix(text: str) -> str:
-    """剝掉 conversation_send 在 LLM 看的版本注入的 Ask/Act mode prefix。
-
-    Mode prefix 寫進 DB 是故意的(保 cache prefix byte-identical),但 user
-    重看歷史時不該看到自己根本沒打的東西。RPC 回 renderer 前 strip 一下。
-
-    Pattern:`[Ask mode is active — ...]\\n\\n<real user content>` 或
-            `[Act mode is active — ...]\\n\\n<real user content>`。
-    """
-    if not text:
-        return text
-    if not text.startswith("["):
-        return text
-    # 找第一個 `]\n\n`(prefix 結束標記)
-    for marker in ("Ask mode is active", "Act mode is active"):
-        if not text.startswith(f"[{marker}"):
-            continue
-        end = text.find("]\n\n")
-        if end < 0:
-            # Fallback: 只 `]` 沒換行 — 也 strip 到 `]` 為止
-            end = text.find("]")
-            if end < 0:
-                return text
-            return text[end + 1:].lstrip()
-        return text[end + 3:]
-    return text
-
-
 def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, Any]]:
     """Raw (role, content_json) → UI dict,不 hydrate image blob bytes。
 
@@ -2005,7 +2001,7 @@ def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, An
             if text or attachments:
                 out.append({
                     "role": "user",
-                    "text": _strip_mode_prefix(text),
+                    "text": text,
                     "attachments": attachments,
                     "tool_calls": [],
                     "blocks": [],
