@@ -31,7 +31,7 @@ load_dotenv()
 # Cowork 是 desktop 聊天 app — 不該帶 cwd / git_status / env_info(那是給
 # CLI 用的)。給個簡短 system prompt,SDK 看到 self.system_prompt 非空就會
 # 跳過 fetch_system_prompt_parts,user message 不被 per-turn 注入污染。
-COWORK_SYSTEM_PROMPT = (
+_COWORK_PROMPT_BASE = (
     "You are a helpful AI assistant inside Orion Cowork — a desktop chat app "
     "running locally on the user's own machine. You have full permission to act "
     "on the user's behalf for things they explicitly ask, including:\n"
@@ -41,25 +41,52 @@ COWORK_SYSTEM_PROMPT = (
     "- Reading / writing files in their workspace\n"
     "- Searching the web, fetching pages, analysing attached images\n"
     "\n"
-    "# Cowork data layout (this app's directories)\n"
     "Cowork stores everything under `~/.orion-cowork/`, **NOT** `~/.orion/` "
-    "(that one belongs to the CLI and chat-api). When the user asks for the "
-    "'personal' or 'app' skill / memory / mcp library, use these paths:\n"
-    "- Personal skills library: `~/.orion-cowork/users/cowork-local/skills/`\n"
-    "- Personal memory library:  `~/.orion-cowork/users/cowork-local/memory/`\n"
-    "- App-wide skills (shared with other Orion tools is NOT what we want for Cowork):\n"
-    "  `~/.orion-cowork/skills/` (system-level, still Cowork-only)\n"
-    "- Personal MCP config: `~/.orion-cowork/mcp.json`\n"
-    "- Default workspace dir: `~/.orion-cowork/users/cowork-local/workspace/`\n"
-    "Project-scoped resources live co-located in `<workspace>/.orion-cowork/`:\n"
-    "  `<workspace>/.orion-cowork/{skills,memory}/`, `<workspace>/.orion-cowork/mcp.json`,\n"
-    "  `<workspace>/.orion-cowork/instructions.md`.\n"
+    "(that one belongs to the CLI and chat-api).\n"
     "\n"
     "When the user attaches images, describe or analyze them as requested. "
     "Do not refuse desktop actions on grounds of 'I can't control your computer' — "
     "you can, that's what the tools above are for. Just do what they asked, then "
     "report what you did."
 )
+
+
+_SYSTEM_LEVEL_NOTE = (
+    "\n\n# System-level (Cowork-wide, not personal nor project)\n"
+    "`~/.orion-cowork/skills/` exists for skills that should outlast / cross "
+    "the personal vs project distinction. **Do not use this scope unless the "
+    "user explicitly says 'system level' / 'app-wide' / 'system 級'** — "
+    "default to personal or project."
+)
+
+
+def _paths_section(workspace_dir: str | None, in_project: bool) -> str:
+    """根據是否在 project 內,組 context-aware 的目錄表 — 讓 LLM 預設用對的 scope。"""
+    if in_project and workspace_dir:
+        ws = workspace_dir.rstrip("/")
+        return (
+            "\n\n# This chat is inside a project — workspace:\n"
+            f"  `{ws}`\n"
+            "When the user mentions 'skill / memory / mcp library' or 'this "
+            "project's …', use the **project-scoped** paths first:\n"
+            f"- Project skills:        `{ws}/.orion-cowork/skills/`\n"
+            f"- Project memory:        `{ws}/.orion-cowork/memory/`\n"
+            f"- Project MCP config:    `{ws}/.orion-cowork/mcp.json`\n"
+            f"- Project instructions:  `{ws}/.orion-cowork/instructions.md`\n"
+            "Personal libraries still exist at "
+            "`~/.orion-cowork/users/cowork-local/{skills,memory}/` and "
+            "`~/.orion-cowork/mcp.json`, but **only use them if the user "
+            "explicitly says 'personal' / 'app-level' / 'global'**."
+        ) + _SYSTEM_LEVEL_NOTE
+    return (
+        "\n\n# This is a personal chat (not in a project)\n"
+        "Use the personal libraries — that's the only scope here:\n"
+        "- Personal skills:  `~/.orion-cowork/users/cowork-local/skills/`\n"
+        "- Personal memory:  `~/.orion-cowork/users/cowork-local/memory/`\n"
+        "- Personal MCP:     `~/.orion-cowork/mcp.json`\n"
+        "- Default workspace `~/.orion-cowork/users/cowork-local/workspace/` "
+        "(this is the cwd for personal chats; files you create can live here)."
+    ) + _SYSTEM_LEVEL_NOTE
 
 
 class Handlers:
@@ -494,13 +521,15 @@ class Handlers:
                 engine, "default_workspace_dir",
             )
 
-        system_prompt = COWORK_SYSTEM_PROMPT
+        # Context-aware:project chat 內 prompt 內容指向 project paths,
+        # 個人 chat 指向 user-level paths — 避免 LLM 在 project 內把檔案下
+        # 到個人庫(反之亦然)。
+        system_prompt = _COWORK_PROMPT_BASE + _paths_section(
+            workspace_dir=effective_workspace,
+            in_project=bool(project_id),
+        )
         if project_custom_instructions:
-            system_prompt = (
-                COWORK_SYSTEM_PROMPT
-                + "\n\n# Project instructions\n\n"
-                + project_custom_instructions
-            )
+            system_prompt += "\n\n# Project instructions\n\n" + project_custom_instructions
 
         include_ws = bool(effective_workspace)
         # Project chat → auto-extract 寫 <workspace>/.orion-cowork/memory/
