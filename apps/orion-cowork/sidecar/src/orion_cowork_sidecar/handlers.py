@@ -41,6 +41,20 @@ COWORK_SYSTEM_PROMPT = (
     "- Reading / writing files in their workspace\n"
     "- Searching the web, fetching pages, analysing attached images\n"
     "\n"
+    "# Cowork data layout (this app's directories)\n"
+    "Cowork stores everything under `~/.orion-cowork/`, **NOT** `~/.orion/` "
+    "(that one belongs to the CLI and chat-api). When the user asks for the "
+    "'personal' or 'app' skill / memory / mcp library, use these paths:\n"
+    "- Personal skills library: `~/.orion-cowork/users/cowork-local/skills/`\n"
+    "- Personal memory library:  `~/.orion-cowork/users/cowork-local/memory/`\n"
+    "- App-wide skills (shared with other Orion tools is NOT what we want for Cowork):\n"
+    "  `~/.orion-cowork/skills/` (system-level, still Cowork-only)\n"
+    "- Personal MCP config: `~/.orion-cowork/mcp.json`\n"
+    "- Default workspace dir: `~/.orion-cowork/users/cowork-local/workspace/`\n"
+    "Project-scoped resources live co-located in `<workspace>/.orion-cowork/`:\n"
+    "  `<workspace>/.orion-cowork/{skills,memory}/`, `<workspace>/.orion-cowork/mcp.json`,\n"
+    "  `<workspace>/.orion-cowork/instructions.md`.\n"
+    "\n"
     "When the user attaches images, describe or analyze them as requested. "
     "Do not refuse desktop actions on grounds of 'I can't control your computer' — "
     "you can, that's what the tools above are for. Just do what they asked, then "
@@ -1179,11 +1193,25 @@ class Handlers:
                 return
             self._conversations[sid] = conv
 
-        # 找最後一個 user message
+        # 找最後一個「真 user prompt」message — 排除 tool_result message
+        # (Anthropic 內 tool_result 屬於 role=user 的 content,直接 by role 過濾
+        # 會切錯點,留下 dangling tool_use → OpenAI 拒「No tool output found」)
+        from orion_model.types import ToolResultBlock
+
+        def _is_user_prompt(m: Any) -> bool:
+            if m.role != "user":
+                return False
+            c = m.content
+            if isinstance(c, str):
+                return True
+            if isinstance(c, list):
+                return not any(isinstance(b, ToolResultBlock) for b in c)
+            return False
+
         msgs = conv.state_messages
         last_user_idx = -1
         for i in range(len(msgs) - 1, -1, -1):
-            if msgs[i].role == "user":
+            if _is_user_prompt(msgs[i]):
                 last_user_idx = i
                 break
         if last_user_idx < 0:
