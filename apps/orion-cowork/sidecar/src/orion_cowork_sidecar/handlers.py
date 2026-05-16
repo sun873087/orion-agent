@@ -77,28 +77,20 @@ _COWORK_PROMPT_BASE = (
 )
 
 
-# Per-turn permission_mode addendum — appended to system_prompt before send,
-# 之後 restore。'ask' 鼓勵用 AskUserQuestion;'act' 嚴禁反問,直接決定。
-_ASK_MODE_NOTE = (
-    "\n\n# Interactive Q&A is enabled (Ask mode)\n"
-    "The user has enabled 'Ask before acting' mode. When you genuinely need "
-    "structured input from them (interview / quiz / pick between distinct "
-    "options) — use the `AskUserQuestion` tool. The UI renders clickable "
-    "options + free-text input. One question per call is usually best.\n"
-    "Do NOT use this tool for greetings, small talk, or when you can already "
-    "pick a reasonable default. Default behavior is still: tool calls for "
-    "actual side-effecting work need user approval (handled by the UI banner)."
+# Per-turn permission_mode prefix — 注入「最後 user message」開頭(而非 system),
+# 讓 system_prompt 跨 mode 切換 byte-identical → cache prefix 不被破壞。
+# 短一點、directive 一點,因為現在跟 user 訊息混在一起,別占太多 tokens。
+_ASK_MODE_USER_PREFIX = (
+    "[Ask mode is active — pause for user approval before each side-effecting "
+    "tool call (UI handles the approval banner). Use the AskUserQuestion tool "
+    "when you genuinely need structured input from the user; do not use it "
+    "for greetings, small talk, or when you can pick a reasonable default.]"
 )
-_ACT_MODE_NOTE = (
-    "\n\n# Autonomous mode (Act without asking)\n"
-    "The user has enabled 'Act without asking' — they want you to proceed "
-    "autonomously without interrupting them. Do NOT ask clarifying questions, "
-    "neither via any tool nor in plain text. Make your best judgment from the "
-    "available information and execute. If you are uncertain between options, "
-    "pick the most reasonable default, mention your choice briefly, and "
-    "continue. Only stop if you hit a hard blocker that genuinely cannot be "
-    "resolved without user input — and even then, prefer to explain what's "
-    "blocked rather than asking a question."
+_ACT_MODE_USER_PREFIX = (
+    "[Act mode is active — proceed autonomously, do NOT ask clarifying "
+    "questions (neither via any tool nor in plain text). Pick a reasonable "
+    "default if uncertain, mention your choice briefly, and continue. Only "
+    "stop on hard blockers that genuinely require user input.]"
 )
 
 
@@ -460,33 +452,31 @@ class Handlers:
         ws_for_policy = _P(ctx_cwd) if ctx_cwd else None
         conv.can_use_tool = self._build_can_use_tool(sid, out_queue, ws_for_policy)
 
-        # ─── AskUserQuestion + system prompt wiring per mode ───────────
-        # Ask 模式:綁 asker + system prompt 加 _ASK_MODE_NOTE 鼓勵互動
-        # Act 模式(放手讓我做):從 conv.tools 把 AskUserQuestion 拿掉,system
-        #          prompt 加 _ACT_MODE_NOTE 嚴禁反問(包含純文字)— 否則 LLM
-        #          失去 tool 仍會 fallback 用文字列問題。
-        # 結束 finally restore tools + system_prompt。
-        #
-        # NOTE: SDK 的 `should_defer` 只影響 docstring,**不會** 真的把 tool
-        # 從 LLM API tools list 拿掉,所以必須直接從 conv.tools 移除。
-        original_tools = list(conv.tools)
-        original_system_prompt = conv.system_prompt
-        if permission_mode == "ask":
-            conv.system_prompt = original_system_prompt + _ASK_MODE_NOTE
-            for tool in conv.tools:
-                if getattr(tool, "name", None) == "AskUserQuestion":
-                    tool.asker = self._build_asker(out_queue)
-                    break
-        else:
-            conv.system_prompt = original_system_prompt + _ACT_MODE_NOTE
-            conv.tools = [
-                t for t in conv.tools
-                if getattr(t, "name", None) != "AskUserQuestion"
-            ]
+        # ─── AskUserQuestion asker wiring(cache-friendly mode design)──
+        # Mode 切換不能破壞 cache prefix,所以:
+        # 1. system_prompt 跨 mode byte-identical(完全不動)
+        # 2. conv.tools 也 byte-identical — AskUserQuestion 永遠在 list
+        # 3. Mode 指引改成「最後 user msg 開頭注入」(在下面 producer 處理)
+        # 4. Mode 行為差異全部走 asker callback 動態 dispatch:
+        #    - Ask 模式 → 推 ask_user_question frame 等 user reply
+        #    - Act 模式 → auto-decide asker 回個 hint 給 LLM 自己 decide
+        # tool object 本身的 schema 跨 mode 一樣,LLM API 看到的 tools array
+        # hash 不變 → cache 不破。
+        for tool in conv.tools:
+            if getattr(tool, "name", None) == "AskUserQuestion":
+                tool.asker = self._build_mode_aware_asker(sid, out_queue)
+                tool.should_defer = False
+                break
+
+        # 把 mode prefix 注入 prompt 開頭(不改 system_prompt 保 cache)
+        mode_prefix = (
+            _ASK_MODE_USER_PREFIX if permission_mode == "ask" else _ACT_MODE_USER_PREFIX
+        )
+        effective_prompt = f"{mode_prefix}\n\n{prompt}" if prompt else mode_prefix
 
         async def _producer() -> None:
             try:
-                async for ev in conv.send(prompt, ctx=ctx, images=images or None):
+                async for ev in conv.send(effective_prompt, ctx=ctx, images=images or None):
                     f = to_rpc_frame(ev)
                     if f is not None:
                         await out_queue.put(f)
@@ -526,9 +516,6 @@ class Handlers:
                 if not fut.done():
                     fut.set_result({})
             self._ask_pending.clear()
-            # Restore conv.tools + system_prompt(per-mode 變動只活到 turn 結束)
-            conv.tools = original_tools
-            conv.system_prompt = original_system_prompt
             self._aborts.pop(sid, None)
             # Persist new messages(只 append 這 turn 增加的)
             new_msgs = conv.state_messages[before_count:]
@@ -598,36 +585,63 @@ class Handlers:
 
         return _gate
 
-    def _build_asker(
+    def _build_mode_aware_asker(
         self,
+        sid: str,
         out_queue: asyncio.Queue[dict[str, Any] | None],
     ) -> Any:
-        """AskUserQuestionTool 的 asker callback。
+        """Mode-dispatch asker callback。每次 invocation 讀 _session_modes 決定:
 
-        推 ask_user_question frame 到 renderer,等對應 reply RPC resolve future。
+        - Ask 模式 → 推 ask_user_question frame、await renderer reply
+        - Act 模式 → auto-decide,直接回 LLM 一個 hint 訊息叫它自己拿主意,
+                    不打擾 user(對齊「放手讓我做」語意)
+
+        Mode 切換不需要改 tool object / tools array,cache 不被破壞。
         """
-        from uuid import uuid4
 
         async def asker(questions: list[dict[str, Any]]) -> dict[str, str]:
-            request_id = uuid4().hex[:16]
-            loop = asyncio.get_running_loop()
-            future: asyncio.Future[dict[str, str]] = loop.create_future()
-            self._ask_pending[request_id] = future
-            await out_queue.put({
-                "event": "ask_user_question",
-                "data": {
-                    "request_id": request_id,
-                    "questions": questions,
-                },
-            })
-            try:
-                return await asyncio.wait_for(future, timeout=300.0)
-            except TimeoutError:
-                return {}
-            finally:
-                self._ask_pending.pop(request_id, None)
+            mode = self._session_modes.get(sid, "act")
+            if mode != "ask":
+                # Act 模式:auto-decide 回 hint,讓 LLM 看到「Act mode active,
+                # 自己決定」訊息後不再嘗試問 user
+                return {
+                    str(q.get("question", "")): (
+                        "[Act mode is active — please pick the most reasonable "
+                        "default and proceed; do not ask the user. Continue "
+                        "the task autonomously.]"
+                    )
+                    for q in questions
+                }
+            # Ask 模式:正常推 frame、await reply
+            return await self._real_asker(out_queue, questions)
 
         return asker
+
+    async def _real_asker(
+        self,
+        out_queue: asyncio.Queue[dict[str, Any] | None],
+        questions: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        """實際把問題推到 renderer 並等回應。從 _build_mode_aware_asker 內部呼叫。"""
+        from uuid import uuid4
+
+        request_id = uuid4().hex[:16]
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, str]] = loop.create_future()
+        self._ask_pending[request_id] = future
+        await out_queue.put({
+            "event": "ask_user_question",
+            "data": {
+                "request_id": request_id,
+                "questions": questions,
+            },
+        })
+        try:
+            return await asyncio.wait_for(future, timeout=300.0)
+        except TimeoutError:
+            return {}
+        finally:
+            self._ask_pending.pop(request_id, None)
 
     async def stt_status(
         self, _params: dict[str, Any]
