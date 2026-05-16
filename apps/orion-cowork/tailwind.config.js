@@ -5,25 +5,25 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Cowork 預設 dark theme(桌機 app 慣例),lighter palette 可選
+        // 全部讀 CSS variable(in index.css)— light / dark 由 html.dark 切
         bg: {
-          base: '#0d1117',      // 主背景(GitHub dark)
-          panel: '#161b22',     // panel / card 背景
-          input: '#1c2128',     // input 背景
-          hover: '#21262d',
+          base: 'var(--bg-base)',
+          panel: 'var(--bg-panel)',
+          input: 'var(--bg-input)',
+          hover: 'var(--bg-hover)',
         },
         fg: {
-          base: '#e6edf3',      // 主文字
-          muted: '#7d8590',     // 次要文字
-          subtle: '#484f58',    // 提示
+          base: 'var(--fg-base)',
+          muted: 'var(--fg-muted)',
+          subtle: 'var(--fg-subtle)',
         },
         accent: {
-          DEFAULT: '#2f81f7',   // 強調色(send button、active state)
-          hover: '#388bfd',
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
         },
-        success: '#3fb950',
-        error: '#f85149',
-        warning: '#d29922',
+        success: 'var(--success)',
+        error: 'var(--error)',
+        warning: 'var(--warning)',
       },
       fontFamily: {
         sans: [

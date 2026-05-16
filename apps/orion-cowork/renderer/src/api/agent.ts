@@ -39,14 +39,31 @@ export async function createConversation(
   return sessionId
 }
 
+export type Attachment = {
+  media_type: string  // "image/png" / "image/jpeg" / ...
+  data: string        // base64-encoded(no data: prefix)
+  /** Frontend-only:給 UI 預覽用,sidecar 忽略。 */
+  preview_url?: string
+  /** Frontend-only:檔名,只顯示用。 */
+  filename?: string
+}
+
 export async function sendPrompt(
   sessionId: string,
   prompt: string,
   onEvent: (ev: SidecarEvent) => void,
+  attachments?: Attachment[],
 ): Promise<void> {
   await window.agent.call(
     'conversation.send',
-    { session_id: sessionId, prompt },
+    {
+      session_id: sessionId,
+      prompt,
+      attachments: (attachments ?? []).map((a) => ({
+        media_type: a.media_type,
+        data: a.data,
+      })),
+    },
     (frame) => {
       onEvent(frame as unknown as SidecarEvent)
     },

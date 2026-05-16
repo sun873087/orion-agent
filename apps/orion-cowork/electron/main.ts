@@ -69,13 +69,21 @@ app.whenReady().then(async () => {
   await createWindow()
 })
 
-app.on('window-all-closed', async () => {
-  await sidecar.dispose()
-  if (process.platform !== 'darwin') app.quit()
+// 全平台統一:關閉視窗 = 結束 app(macOS 不再保留 dock,user 預期行為)。
+app.on('window-all-closed', () => {
+  app.quit()
 })
 
-app.on('will-quit', async (e) => {
+// before-quit 階段先把 sidecar 收乾淨,避免 zombie 進程。
+let quitting = false
+app.on('before-quit', async (e) => {
+  if (quitting) return
   e.preventDefault()
-  await sidecar.dispose()
+  quitting = true
+  try {
+    await sidecar.dispose()
+  } catch (err) {
+    console.error('[main] sidecar dispose error:', err)
+  }
   app.exit(0)
 })

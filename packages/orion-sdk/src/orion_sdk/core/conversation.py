@@ -206,8 +206,16 @@ class Conversation:
         self,
         user_text: str,
         ctx: AgentContext | None = None,
+        *,
+        images: "list[Any] | None" = None,
     ) -> AsyncIterator[LoopEvent]:
-        """送一則 user 訊息,跑 query_loop 直到 terminate,yield events。"""
+        """送一則 user 訊息,跑 query_loop 直到 terminate,yield events。
+
+        `images`:可選,list of `orion_model.types.ImageBlock`。若有,user message
+        會用 list[ContentBlock] 形式儲存([TextBlock(user_text), *images]),支援
+        多模態(provider 需支援 image input,如 Anthropic / OpenAI vision)。
+        無 images 時行為跟原本一樣(content 為 str)。
+        """
         if ctx is None:
             ctx = AgentContext(session_id=self.session_id, user_id=self.user_id)
         else:
@@ -271,7 +279,16 @@ class Conversation:
             return
 
         # user 訊息進 state + 寫 transcript
-        user_msg = NormalizedMessage(role="user", content=user_text)
+        # 有 image attachments → 包成 list[ContentBlock];否則維持原 str 行為。
+        if images:
+            from orion_model.types import TextBlock
+            content_blocks: list[Any] = []
+            if user_text:
+                content_blocks.append(TextBlock(text=user_text))
+            content_blocks.extend(images)
+            user_msg = NormalizedMessage(role="user", content=content_blocks)
+        else:
+            user_msg = NormalizedMessage(role="user", content=user_text)
         self.state_messages.append(user_msg)
         if store is not None:
             await store.record_message(user_msg)

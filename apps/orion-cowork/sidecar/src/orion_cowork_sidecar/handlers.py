@@ -148,6 +148,7 @@ class Handlers:
     ) -> AsyncIterator[dict[str, Any]]:
         sid = params.get("session_id")
         prompt = params.get("prompt", "")
+        raw_attachments = params.get("attachments") or []
         if sid is None:
             yield {
                 "event": "error",
@@ -183,8 +184,27 @@ class Handlers:
 
         # 首次 prompt → 設 title
         if sid not in self._title_done:
-            await storage.update_title_if_empty(engine, sid, prompt)
-            self._title_done.add(sid)
+            # 用 prompt 文字當 title,empty 時退到「(attachment)」
+            title_seed = prompt.strip() or ("(attachment)" if raw_attachments else "")
+            if title_seed:
+                await storage.update_title_if_empty(engine, sid, title_seed)
+                self._title_done.add(sid)
+
+        # 把 attachments 轉成 ImageBlock(預期格式:[{media_type, data: base64}])
+        images = []
+        if raw_attachments:
+            from orion_model.types import ImageBlock
+            for a in raw_attachments:
+                if not isinstance(a, dict):
+                    continue
+                media_type = a.get("media_type") or "image/png"
+                data = a.get("data")
+                if not isinstance(data, str) or not data:
+                    continue
+                try:
+                    images.append(ImageBlock(media_type=media_type, data=data))
+                except Exception:  # noqa: BLE001
+                    continue
 
         # 記下 turn 開始時的 message 數,結束後 diff append 新訊息進 DB
         before_count = len(conv.state_messages)
@@ -192,7 +212,7 @@ class Handlers:
         ctx = AgentContext(feature_flags=load_feature_flags(), user_id="cowork-local")
         self._aborts[sid] = ctx
         try:
-            async for ev in conv.send(prompt, ctx=ctx):
+            async for ev in conv.send(prompt, ctx=ctx, images=images or None):
                 frame = to_rpc_frame(ev)
                 if frame is not None:
                     yield frame

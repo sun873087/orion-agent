@@ -19,6 +19,13 @@ export type ToolCallState = {
   progress: string[]
 }
 
+export type AttachmentPreview = {
+  /** data URL — 給 <img src> 直接用,避免 base64 重轉。 */
+  previewUrl: string
+  filename: string
+  media_type: string
+}
+
 export type Message = {
   id: string
   role: MessageRole
@@ -26,6 +33,8 @@ export type Message = {
   text: string
   /** assistant 訊息內附的工具呼叫(0..N)。 */
   toolCalls?: ToolCallState[]
+  /** user message 上傳的附件(只用來 UI 顯示;base64 上傳已送 sidecar)。 */
+  attachments?: AttachmentPreview[]
   /** 若 streaming 還沒結束就 true,UI 用來顯示 cursor。 */
   streaming?: boolean
   createdAt: number
@@ -62,7 +71,7 @@ type AgentState = {
   setSessions: (s: SessionSummary[]) => void
   switchToSession: (sid: string) => void
 
-  appendUserMessage: (text: string) => string
+  appendUserMessage: (text: string, attachments?: AttachmentPreview[]) => string
   /** 起 assistant 訊息槽位(streaming 即將開始),回傳 message id。 */
   beginAssistantMessage: () => string
   appendAssistantText: (id: string, delta: string) => void
@@ -104,12 +113,18 @@ export const useAgentStore = create<AgentState>((set) => ({
       lastLoopStatus: null,
     }),
 
-  appendUserMessage: (text) => {
+  appendUserMessage: (text, attachments) => {
     const id = newId()
     set((s) => ({
       messages: [
         ...s.messages,
-        { id, role: 'user', text, createdAt: Date.now() },
+        {
+          id,
+          role: 'user',
+          text,
+          attachments: attachments && attachments.length ? attachments : undefined,
+          createdAt: Date.now(),
+        },
       ],
     }))
     return id

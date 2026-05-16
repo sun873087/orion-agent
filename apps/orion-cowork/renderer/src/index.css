@@ -2,62 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 桌機 app 預設 dark,html.dark 由 main.tsx 加上 */
-html, body, #root {
-  @apply h-full w-full bg-bg-base text-fg-base font-sans antialiased;
+/*
+ * Theme palette via CSS variables。Tailwind 設 darkMode='class' 後,
+ * html.dark 切換 → 變數值切換 → 整個 UI 跟著。
+ */
+
+@layer base {
+  :root {
+    /* Light mode(GitHub light-ish)*/
+    --bg-base: #ffffff;
+    --bg-panel: #f6f8fa;
+    --bg-input: #f0f3f6;
+    --bg-hover: #e6e8eb;
+    --fg-base: #1f2328;
+    --fg-muted: #59636e;
+    --fg-subtle: #818b98;
+    --accent: #0969da;
+    --accent-hover: #218bff;
+    --success: #1a7f37;
+    --error: #d1242f;
+    --warning: #9a6700;
+  }
+
+  html.dark {
+    /* Dark mode(GitHub dark)*/
+    --bg-base: #0d1117;
+    --bg-panel: #161b22;
+    --bg-input: #1c2128;
+    --bg-hover: #21262d;
+    --fg-base: #e6edf3;
+    --fg-muted: #7d8590;
+    --fg-subtle: #484f58;
+    --accent: #2f81f7;
+    --accent-hover: #388bfd;
+    --success: #3fb950;
+    --error: #f85149;
+    --warning: #d29922;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    background-color: var(--bg-base);
+    color: var(--fg-base);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
 
-/* Markdown 區塊樣式(react-markdown 渲染後加上) */
+/* Markdown 區塊樣式 */
 .prose-orion {
-  @apply leading-relaxed text-fg-base;
+  line-height: 1.6;
+  color: var(--fg-base);
 }
 .prose-orion code:not(pre code) {
-  @apply rounded bg-bg-input px-1 py-0.5 font-mono text-sm text-fg-base;
+  background-color: var(--bg-input);
+  color: var(--fg-base);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.875em;
 }
 .prose-orion pre {
-  @apply my-2 overflow-x-auto rounded-lg bg-bg-panel p-3 font-mono text-sm;
+  background-color: var(--bg-panel);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.875em;
 }
 .prose-orion ul, .prose-orion ol {
-  @apply my-2 ml-5 list-outside;
+  margin: 0.5rem 0;
+  margin-left: 1.25rem;
 }
-.prose-orion ul { @apply list-disc; }
-.prose-orion ol { @apply list-decimal; }
-.prose-orion p {
-  @apply my-2;
-}
-.prose-orion p:first-child { @apply mt-0; }
-.prose-orion p:last-child  { @apply mb-0; }
+.prose-orion ul { list-style: disc outside; }
+.prose-orion ol { list-style: decimal outside; }
+.prose-orion p { margin: 0.5rem 0; }
+.prose-orion p:first-child { margin-top: 0; }
+.prose-orion p:last-child { margin-bottom: 0; }
 .prose-orion a {
-  @apply text-accent hover:text-accent-hover underline;
+  color: var(--accent);
+  text-decoration: underline;
 }
+.prose-orion a:hover { color: var(--accent-hover); }
 .prose-orion h1, .prose-orion h2, .prose-orion h3 {
-  @apply mt-3 mb-1 font-semibold;
+  margin: 0.75rem 0 0.25rem;
+  font-weight: 600;
 }
-.prose-orion h1 { @apply text-lg; }
-.prose-orion h2 { @apply text-base; }
-.prose-orion h3 { @apply text-sm; }
+.prose-orion h1 { font-size: 1.125rem; }
+.prose-orion h2 { font-size: 1rem; }
+.prose-orion h3 { font-size: 0.875rem; }
 
-/* Cursor 閃爍 — streaming text 結束處 */
+/* Streaming cursor */
 .cursor-blink::after {
   content: '▍';
   animation: blink 1s step-end infinite;
-  @apply text-fg-muted;
+  color: var(--fg-muted);
 }
-@keyframes blink {
-  50% { opacity: 0; }
-}
+@keyframes blink { 50% { opacity: 0; } }
 
-/* Scroll bar(消失感) */
+/* Scrollbar */
 .scrollbar-thin::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-.scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply rounded bg-bg-hover;
+  background: var(--bg-hover);
+  border-radius: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  @apply bg-fg-subtle;
+  background: var(--fg-subtle);
 }

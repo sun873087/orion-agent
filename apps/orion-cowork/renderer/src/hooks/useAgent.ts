@@ -14,6 +14,7 @@ import {
   deleteConversation as rpcDelete,
   listConversations,
   sendPrompt as rpcSendPrompt,
+  type Attachment,
   type SidecarEvent,
 } from '../api/agent'
 import { useAgentStore } from '../store/agent'
@@ -93,20 +94,30 @@ export function useDeleteConversation() {
 }
 
 export function useSendPrompt() {
-  return useCallback(async (text: string) => {
+  return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     const sid = store.sessionId
     if (!sid) return
 
-    store.appendUserMessage(text)
+    store.appendUserMessage(
+      text,
+      (attachments ?? []).map((a) => ({
+        previewUrl: a.preview_url || `data:${a.media_type};base64,${a.data}`,
+        filename: a.filename || 'image',
+        media_type: a.media_type,
+      })),
+    )
     const assistantId = store.beginAssistantMessage()
     store.setError(null)
     store.setBusy(true)
 
     try {
-      await rpcSendPrompt(sid, text, (ev: SidecarEvent) => {
-        applyEvent(assistantId, ev)
-      })
+      await rpcSendPrompt(
+        sid,
+        text,
+        (ev: SidecarEvent) => applyEvent(assistantId, ev),
+        attachments,
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(msg)

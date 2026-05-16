@@ -26,6 +26,26 @@ export function MessageBubble({ message }: { message: Message }) {
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <Avatar role={message.role} />
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+        {/* 附件圖(只 user 訊息會帶)*/}
+        {!!message.attachments?.length && (
+          <div className={`mb-2 flex flex-wrap gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            {message.attachments.map((att, i) => (
+              <a
+                key={i}
+                href={att.previewUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={att.filename}
+              >
+                <img
+                  src={att.previewUrl}
+                  alt={att.filename || 'attachment'}
+                  className="h-24 max-w-[160px] rounded-lg border border-bg-hover object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        )}
         {message.text && (
           <div
             className={`rounded-2xl px-4 py-2 ${
