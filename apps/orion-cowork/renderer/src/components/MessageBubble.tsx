@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm'
 import { User, Sparkles, Info, RefreshCw } from 'lucide-react'
 
 import { useRegenerate } from '../hooks/useAgent'
+import { useTranslation } from '../i18n'
 import { useAgentStore, type Message } from '../store/agent'
 import { ToolCallPanel } from './ToolCallPanel'
 
@@ -88,6 +89,7 @@ export function MessageBubble({
 }
 
 function RegenerateButton() {
+  const { t } = useTranslation()
   const regen = useRegenerate()
   const busy = useAgentStore((s) => s.busy)
   return (
@@ -95,11 +97,11 @@ function RegenerateButton() {
       type="button"
       onClick={regen}
       disabled={busy}
-      title="Regenerate response"
+      title={t('message.regenerate')}
       className="mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
     >
       <RefreshCw size={12} />
-      <span>Regenerate</span>
+      <span>{t('message.regenerate')}</span>
     </button>
   )
 }

@@ -1,7 +1,6 @@
-import { useState } from 'react'
-
 import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
+import { LanguagePanel } from './components/LanguagePanel'
 import { MessageList } from './components/MessageList'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
@@ -11,17 +10,17 @@ export function App() {
   useInitConversation()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div className="flex h-full w-full">
       <Sidebar />
       <div className="flex flex-1 flex-col">
-        <Header onOpenSettings={() => setSettingsOpen(true)} />
+        <Header />
         <MessageList />
         <InputBox onSend={sendPrompt} onAbort={abort} />
       </div>
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel />
+      <LanguagePanel />
     </div>
   )
 }

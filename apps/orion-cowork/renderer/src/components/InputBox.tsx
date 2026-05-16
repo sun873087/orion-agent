@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Paperclip, Send, Square, X } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
+import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 
 type Props = {
@@ -14,6 +15,7 @@ const MAX_BYTES = 20 * 1024 * 1024 // 20 MB / file(provider 多半 cap)
 
 /** 多行輸入 + paperclip 上傳 + send / abort 切換。Enter 送出,Shift+Enter 換行。 */
 export function InputBox({ onSend, onAbort }: Props) {
+  const { t } = useTranslation()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -52,11 +54,11 @@ export function InputBox({ onSend, onAbort }: Props) {
     const added: Attachment[] = []
     for (const f of Array.from(files)) {
       if (!SUPPORTED_MIME.includes(f.type)) {
-        setAttachError(`${f.name}: unsupported (only PNG / JPEG / GIF / WebP)`)
+        setAttachError(t('input.attach.unsupported', { name: f.name }))
         continue
       }
       if (f.size > MAX_BYTES) {
-        setAttachError(`${f.name}: file > 20 MB (provider limit)`)
+        setAttachError(t('input.attach.tooBig', { name: f.name }))
         continue
       }
       try {
@@ -68,7 +70,7 @@ export function InputBox({ onSend, onAbort }: Props) {
           filename: f.name,
         })
       } catch {
-        setAttachError(`${f.name}: failed to read`)
+        setAttachError(t('input.attach.readFail', { name: f.name }))
       }
     }
     if (added.length) setAttachments((prev) => [...prev, ...added])
@@ -129,7 +131,7 @@ export function InputBox({ onSend, onAbort }: Props) {
                   type="button"
                   onClick={() => removeAttachment(i)}
                   className="absolute right-0.5 top-0.5 rounded-full bg-bg-base/80 p-0.5 text-fg-base hover:bg-error/40 hover:text-error"
-                  title="Remove"
+                  title={t('input.attach.remove')}
                 >
                   <X size={12} />
                 </button>
@@ -156,7 +158,7 @@ export function InputBox({ onSend, onAbort }: Props) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!inputReady || busy}
-            title="Attach image (PNG/JPEG/GIF/WebP, max 20 MB each)"
+            title={t('input.attach')}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Paperclip size={16} />
@@ -203,10 +205,10 @@ export function InputBox({ onSend, onAbort }: Props) {
             disabled={!inputReady}
             placeholder={
               !inputReady
-                ? 'sidecar unavailable'
+                ? t('input.placeholder.disabled')
                 : busy
-                  ? 'agent thinking — press Stop to abort'
-                  : 'Send a message  (Enter to send · Shift+Enter for newline · paste / drop image to attach)'
+                  ? t('input.placeholder.busy')
+                  : t('input.placeholder.normal')
             }
             rows={1}
             className="scrollbar-thin max-h-[200px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
@@ -216,7 +218,7 @@ export function InputBox({ onSend, onAbort }: Props) {
             <button
               type="button"
               onClick={onAbort}
-              title="Stop (cancel current turn)"
+              title={t('input.stop')}
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-error/20 text-error hover:bg-error/30"
             >
               <Square size={14} fill="currentColor" />
@@ -226,7 +228,7 @@ export function InputBox({ onSend, onAbort }: Props) {
               type="button"
               onClick={handleSubmit}
               disabled={!canSend}
-              title={canSend ? 'Send (Enter)' : 'Type a message first'}
+              title={canSend ? t('input.send') : t('input.sendDisabled')}
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Send size={14} />
@@ -240,15 +242,17 @@ export function InputBox({ onSend, onAbort }: Props) {
 }
 
 function FooterHint() {
+  const { t } = useTranslation()
   const error = useAgentStore((s) => s.error)
   const status = useAgentStore((s) => s.lastLoopStatus)
   if (error) {
     return <p className="mt-1 px-2 text-xs text-error">⚠ {error}</p>
   }
   if (status) {
+    const key = status.turns === 1 ? 'input.lastTurn.singular' : 'input.lastTurn'
     return (
       <p className="mt-1 px-2 text-xs text-fg-subtle">
-        last: {status.reason} · {status.turns} {status.turns === 1 ? 'turn' : 'turns'}
+        {t(key, { reason: status.reason, turns: status.turns })}
       </p>
     )
   }

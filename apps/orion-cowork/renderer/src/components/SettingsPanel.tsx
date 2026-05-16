@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react'
 import { X, Check, AlertCircle, Sun, Moon, RotateCw, Plug, PlugZap } from 'lucide-react'
 
 import { fetchMcpStatus, fetchModels, reconnectMcp, type McpStatus } from '../api/agent'
+import { useTranslation } from '../i18n'
 import { useSettingsStore } from '../store/settings'
 
-type Props = {
-  open: boolean
-  onClose: () => void
-}
-
-/** Modal — model picker / theme / API key 狀態。 */
-export function SettingsPanel({ open, onClose }: Props) {
+/** Modal — model picker / theme / language / API key 狀態。 */
+export function SettingsPanel() {
+  const { t } = useTranslation()
+  const open = useSettingsStore((s) => s.settingsOpen)
+  const onClose = useSettingsStore((s) => s.closeSettings)
   const providers = useSettingsStore((s) => s.providers)
   const catalogLoaded = useSettingsStore((s) => s.catalogLoaded)
   const setCatalog = useSettingsStore((s) => s.setCatalog)
@@ -50,19 +49,20 @@ export function SettingsPanel({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-bg-hover px-5 py-3">
-          <h2 className="text-sm font-semibold">Settings</h2>
+          <h2 className="text-sm font-semibold">{t('settings.title')}</h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+            title={t('settings.close')}
           >
             <X size={16} />
           </button>
         </header>
 
         <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-4">
-          {/* Theme */}
-          <Section title="Appearance">
+          {/* Appearance */}
+          <Section title={t('settings.section.appearance')}>
             <button
               type="button"
               onClick={toggleTheme}
@@ -70,20 +70,18 @@ export function SettingsPanel({ open, onClose }: Props) {
             >
               {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
               <span>
-                {theme === 'dark' ? 'Dark' : 'Light'} mode
+                {theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light')}
               </span>
-              <span className="text-xs text-fg-subtle">— click to toggle</span>
+              <span className="text-xs text-fg-subtle">{t('settings.theme.toggleHint')}</span>
             </button>
           </Section>
 
           {/* Model picker */}
-          <Section title="Model">
+          <Section title={t('settings.section.model')}>
             {!catalogLoaded ? (
-              <div className="text-sm text-fg-muted">loading catalog…</div>
+              <div className="text-sm text-fg-muted">{t('settings.model.loading')}</div>
             ) : providers.length === 0 ? (
-              <div className="text-sm text-error">
-                Failed to load catalog. Check sidecar is running.
-              </div>
+              <div className="text-sm text-error">{t('settings.model.failed')}</div>
             ) : (
               <div className="flex flex-col gap-3">
                 {providers.map((p) => (
@@ -100,16 +98,13 @@ export function SettingsPanel({ open, onClose }: Props) {
           </Section>
 
           {/* MCP servers */}
-          <Section title="MCP Servers">
+          <Section title={t('settings.section.mcp')}>
             <McpSection open={open} />
           </Section>
 
           {/* About */}
-          <Section title="About">
-            <div className="text-xs text-fg-subtle">
-              Orion Cowork · Phase 31. Model + theme persist to localStorage.
-              MCP servers live in <code className="font-mono text-fg-muted">~/.orion-cowork/mcp.json</code>.
-            </div>
+          <Section title={t('settings.section.about')}>
+            <div className="text-xs text-fg-subtle">{t('settings.about.text')}</div>
           </Section>
         </div>
       </div>
@@ -144,17 +139,18 @@ function ProviderBlock({
   selectedModel: string
   onSelect: (modelId: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-lg border border-bg-hover bg-bg-panel">
       <div className="flex items-center justify-between border-b border-bg-hover px-3 py-2">
         <span className="text-sm font-medium">{provider.label}</span>
         {provider.api_key_configured ? (
           <span className="flex items-center gap-1 text-xs text-success">
-            <Check size={12} /> API key set
+            <Check size={12} /> {t('settings.model.apiKeySet')}
           </span>
         ) : (
           <span className="flex items-center gap-1 text-xs text-warning">
-            <AlertCircle size={12} /> no API key — set in .env
+            <AlertCircle size={12} /> {t('settings.model.apiKeyMissing')}
           </span>
         )}
       </div>
@@ -179,7 +175,7 @@ function ProviderBlock({
                 <span>{m.label}</span>
                 {m.supports_reasoning && (
                   <span className="rounded bg-bg-hover px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
-                    reasoning
+                    {t('settings.model.reasoning')}
                   </span>
                 )}
               </span>
@@ -193,6 +189,7 @@ function ProviderBlock({
 }
 
 function McpSection({ open }: { open: boolean }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<McpStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [reconnecting, setReconnecting] = useState<string | null>(null)
@@ -224,31 +221,29 @@ function McpSection({ open }: { open: boolean }) {
   }
 
   if (loading && !status) {
-    return <div className="text-sm text-fg-muted">loading…</div>
+    return <div className="text-sm text-fg-muted">{t('settings.mcp.loading')}</div>
   }
   if (!status) {
-    return <div className="text-sm text-error">Failed to load MCP status.</div>
+    return <div className="text-sm text-error">{t('settings.mcp.failed')}</div>
   }
 
   return (
     <div className="flex flex-col gap-2">
       <div className="text-xs text-fg-subtle">
-        Config: <code className="font-mono">{status.config_path}</code>
+        {t('settings.mcp.config')} <code className="font-mono">{status.config_path}</code>
         <button
           type="button"
           onClick={refresh}
           className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
-          title="Reload status"
+          title={t('settings.mcp.refreshTitle')}
         >
           <RotateCw size={11} />
-          <span>refresh</span>
+          <span>{t('settings.mcp.refresh')}</span>
         </button>
       </div>
       {status.servers.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-bg-hover p-3 text-center text-xs text-fg-subtle">
-          No MCP servers configured.
-          <br />
-          Add servers by editing <code className="font-mono">~/.orion-cowork/mcp.json</code> then refresh.
+        <div className="whitespace-pre-line rounded-lg border border-dashed border-bg-hover p-3 text-center text-xs text-fg-subtle">
+          {t('settings.mcp.none')}
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
@@ -262,7 +257,9 @@ function McpSection({ open }: { open: boolean }) {
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-sm text-fg-base">{s.name}</div>
                   {s.status === 'connected' && (
-                    <div className="text-xs text-fg-subtle">{s.tools.length} tools</div>
+                    <div className="text-xs text-fg-subtle">
+                      {t('settings.mcp.tools', { n: s.tools.length })}
+                    </div>
                   )}
                   {s.error && (
                     <div className="truncate text-xs text-error" title={s.error}>
@@ -277,7 +274,7 @@ function McpSection({ open }: { open: boolean }) {
                   onClick={() => handleReconnect(s.name)}
                   disabled={reconnecting === s.name}
                   className="rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:opacity-40"
-                  title="Reconnect"
+                  title={t('settings.mcp.reconnect')}
                 >
                   <RotateCw
                     size={14}
@@ -298,4 +295,3 @@ function StatusIcon({ status }: { status: McpStatus['servers'][number]['status']
   if (status === 'pending') return <Plug size={14} className="text-fg-muted" />
   return <AlertCircle size={14} className="text-warning" />
 }
-
