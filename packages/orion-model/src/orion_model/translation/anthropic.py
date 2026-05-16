@@ -119,9 +119,24 @@ def apply_cache_breakpoints(
         msg = messages[idx]
         content = msg.get("content")
         if isinstance(content, str):
+            if not content:
+                # 空字串升級成空 text block 後加 cache_control 會被 API 拒。
+                # 跳過這個 breakpoint。
+                continue
             msg["content"] = [
                 {"type": "text", "text": content, "cache_control": dict(cc)}
             ]
         elif isinstance(content, list) and content:
-            content[-1]["cache_control"] = dict(cc)
+            # 從尾向前找第一個可標 cache_control 的 block。
+            # 跳過 empty text block — Anthropic 拒「cache_control on empty text」。
+            target = None
+            for b in reversed(content):
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "text" and not b.get("text"):
+                    continue
+                target = b
+                break
+            if target is not None:
+                target["cache_control"] = dict(cc)
     return messages
