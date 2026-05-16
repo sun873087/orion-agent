@@ -510,12 +510,26 @@ export type LoadedAttachmentRef = {
   attachment_index: number
 }
 
+export type LoadedToolCall = {
+  tool_use_id: string
+  tool_name: string
+  input: Record<string, unknown>
+  status: 'success' | 'error'
+  text: string
+}
+
+export type LoadedBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tools'; tool_use_ids: string[] }
+
 export type LoadedMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool'
   text: string
   message_index: number
   /** Lazy:無 data_url。要 base64 走 loadAttachment(sessionId, ref)。 */
   attachments: Array<{ media_type: string; ref: LoadedAttachmentRef }>
+  tool_calls?: LoadedToolCall[]
+  blocks?: LoadedBlock[]
 }
 
 export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> {

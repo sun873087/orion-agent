@@ -66,6 +66,18 @@ export default {
   'header.workspace.from.project': '繼承自當前專案',
   'header.workspace.from.default': '使用預設工作目錄',
   'header.exitProject': '退出專案',
+
+  // Right sidebar
+  'rightSidebar.show': '顯示詳情面板',
+  'rightSidebar.hide': '隱藏詳情面板',
+  'rightSidebar.progress': '進度',
+  'rightSidebar.noProgress': '對話尚未產生 todo list',
+  'rightSidebar.workingFolder': '工作資料夾',
+  'rightSidebar.noFiles': '對話尚未產生 / 修改檔案',
+  'rightSidebar.revealInFinder': '在 Finder / 檔案總管中顯示',
+  'rightSidebar.context': '上下文',
+  'rightSidebar.skills': '技能',
+  'rightSidebar.noSkills': '對話尚未呼叫任何技能',
   'header.workspace.source.session': '對話',
   'header.workspace.source.project': '專案',
   'header.workspace.source.default': '預設',

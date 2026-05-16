@@ -15,6 +15,15 @@ const dialogApi = {
   },
 }
 
+const shellApi = {
+  openPath: async (path: string): Promise<string | null> => {
+    return ipcRenderer.invoke('shell:openPath', path)
+  },
+  revealInFinder: async (path: string): Promise<null> => {
+    return ipcRenderer.invoke('shell:revealInFinder', path)
+  },
+}
+
 const agentApi = {
   /**
    * 呼叫 sidecar RPC。`onFrame` 每個 streaming frame 觸發一次。
@@ -44,10 +53,12 @@ const agentApi = {
 
 contextBridge.exposeInMainWorld('agent', agentApi)
 contextBridge.exposeInMainWorld('dialog', dialogApi)
+contextBridge.exposeInMainWorld('shellApi', shellApi)
 
 declare global {
   interface Window {
     agent: typeof agentApi
     dialog: typeof dialogApi
+    shellApi: typeof shellApi
   }
 }

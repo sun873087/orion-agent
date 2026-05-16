@@ -23,10 +23,16 @@ interface OrionDialogApi {
   selectFolder: () => Promise<string | null>
 }
 
+interface OrionShellApi {
+  openPath: (path: string) => Promise<string | null>
+  revealInFinder: (path: string) => Promise<null>
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
     dialog: OrionDialogApi
+    shellApi: OrionShellApi
   }
 }
 

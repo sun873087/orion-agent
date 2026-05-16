@@ -1313,44 +1313,156 @@ class Handlers:
                     pass
 
 
+def _is_user_prompt_row(content_json: Any) -> bool:
+    """role=user 但 content 不全 tool_result(亦即真的 user prompt)。"""
+    if isinstance(content_json, str):
+        return True
+    if not isinstance(content_json, list):
+        return False
+    has_non_tool_result = False
+    for b in content_json:
+        if isinstance(b, dict) and b.get("type") != "tool_result":
+            has_non_tool_result = True
+            break
+    return has_non_tool_result
+
+
 def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, Any]]:
     """Raw (role, content_json) → UI dict,不 hydrate image blob bytes。
 
-    走這條 path 切歷史對話完全不打 file system,所有 image 都送 ref 給 renderer
-    讓它自己 lazy load。
+    把連續 assistant + tool_result(role=user)合併成單一 UI assistant turn —
+    跟 streaming 時 RightSidebar / ToolCallGroup 看到的形狀一致(整 turn 工具
+    收進同一個 group),歷史對話 reload 後不會散成多個小 group。
     """
-    out: list[dict[str, Any]] = []
-    for msg_idx, (role, content_json) in enumerate(rows):
-        text = ""
-        attachments: list[dict[str, Any]] = []
-        if isinstance(content_json, str):
-            text = content_json
-        elif isinstance(content_json, list):
-            att_idx = 0
-            for b in content_json:
-                if not isinstance(b, dict):
-                    continue
-                btype = b.get("type")
-                if btype == "text":
-                    text += b.get("text", "")
-                elif btype == "image":
-                    attachments.append({
-                        "media_type": b.get("media_type") or "image/png",
-                        "ref": {
-                            "message_index": msg_idx,
-                            "attachment_index": att_idx,
-                        },
-                    })
-                    att_idx += 1
-                # tool_use / tool_result / thinking / tombstone 不出現在 UI
-        if not text and not attachments:
+    # 第一 pass:tool_use_id → {text, is_error}
+    result_map: dict[str, dict[str, Any]] = {}
+    for _, content_json in rows:
+        if not isinstance(content_json, list):
             continue
-        out.append({
-            "role": role,
-            "text": text,
-            "attachments": attachments,
-            "message_index": msg_idx,
-        })
+        for b in content_json:
+            if not isinstance(b, dict) or b.get("type") != "tool_result":
+                continue
+            tuid = b.get("tool_use_id")
+            if not isinstance(tuid, str):
+                continue
+            content = b.get("content")
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                parts: list[str] = []
+                for inner in content:
+                    if isinstance(inner, dict) and inner.get("type") == "text":
+                        parts.append(str(inner.get("text", "")))
+                text = "\n".join(parts)
+            else:
+                text = ""
+            result_map[tuid] = {
+                "text": text,
+                "is_error": bool(b.get("is_error", False)),
+            }
+
+    out: list[dict[str, Any]] = []
+    i = 0
+    while i < len(rows):
+        role, content_json = rows[i]
+        # 純 user prompt → emit user message + 收 attachments(若有)
+        if role == "user" and _is_user_prompt_row(content_json):
+            text = ""
+            attachments: list[dict[str, Any]] = []
+            if isinstance(content_json, str):
+                text = content_json
+            elif isinstance(content_json, list):
+                att_idx = 0
+                for b in content_json:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "text":
+                        text += b.get("text", "")
+                    elif b.get("type") == "image":
+                        attachments.append({
+                            "media_type": b.get("media_type") or "image/png",
+                            "ref": {
+                                "message_index": i,
+                                "attachment_index": att_idx,
+                            },
+                        })
+                        att_idx += 1
+            if text or attachments:
+                out.append({
+                    "role": "user",
+                    "text": text,
+                    "attachments": attachments,
+                    "tool_calls": [],
+                    "blocks": [],
+                    "message_index": i,
+                })
+            i += 1
+            continue
+        # 從這裡到下一個 user prompt(或 EOF)合併成單一 assistant turn
+        merged_text = ""
+        merged_tool_calls: list[dict[str, Any]] = []
+        merged_blocks: list[dict[str, Any]] = []
+        merged_attachments: list[dict[str, Any]] = []
+        tools_buffer: list[str] = []
+        first_idx = i
+        while i < len(rows):
+            r2, cj2 = rows[i]
+            if r2 == "user" and _is_user_prompt_row(cj2):
+                break  # 進入下個 turn
+            if isinstance(cj2, list):
+                for b in cj2:
+                    if not isinstance(b, dict):
+                        continue
+                    btype = b.get("type")
+                    if btype == "text":
+                        if tools_buffer:
+                            merged_blocks.append({"type": "tools", "tool_use_ids": tools_buffer})
+                            tools_buffer = []
+                        t = b.get("text", "")
+                        merged_text += t
+                        if t:
+                            merged_blocks.append({"type": "text", "text": t})
+                    elif btype == "tool_use":
+                        tuid = b.get("id") or ""
+                        if isinstance(tuid, str) and tuid:
+                            r = result_map.get(tuid, {"text": "", "is_error": False})
+                            merged_tool_calls.append({
+                                "tool_use_id": tuid,
+                                "tool_name": b.get("name") or "",
+                                "input": b.get("input") or {},
+                                "status": "error" if r["is_error"] else "success",
+                                "text": r["text"],
+                            })
+                            tools_buffer.append(tuid)
+                    elif btype == "image":
+                        # assistant message 通常不含 image,但 defensive 處理
+                        merged_attachments.append({
+                            "media_type": b.get("media_type") or "image/png",
+                            "ref": {
+                                "message_index": i,
+                                "attachment_index": len(merged_attachments),
+                            },
+                        })
+                    # tool_result block:已被 result_map 收;此處不重複處理
+            elif isinstance(cj2, str):
+                if tools_buffer:
+                    merged_blocks.append({"type": "tools", "tool_use_ids": tools_buffer})
+                    tools_buffer = []
+                merged_text += cj2
+                if cj2:
+                    merged_blocks.append({"type": "text", "text": cj2})
+            i += 1
+        if tools_buffer:
+            merged_blocks.append({"type": "tools", "tool_use_ids": tools_buffer})
+        if merged_text or merged_tool_calls or merged_attachments:
+            out.append({
+                "role": "assistant",
+                "text": merged_text,
+                "attachments": merged_attachments,
+                "tool_calls": merged_tool_calls,
+                "blocks": merged_blocks,
+                "message_index": first_idx,
+            })
     return out
 
 

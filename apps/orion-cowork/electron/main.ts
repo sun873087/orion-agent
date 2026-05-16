@@ -6,7 +6,7 @@
  * - 註冊 IPC handler 把 renderer 的 call 路由到 sidecar
  */
 
-import { BrowserWindow, app, dialog, ipcMain } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -71,6 +71,16 @@ app.whenReady().then(async () => {
       const message = err instanceof Error ? err.message : String(err)
       event.sender.send(channel, { id: msg.callId, error: { code: 'IPC_ERROR', message }, final: true })
     }
+  })
+
+  // OS shell helpers — renderer 透過這些 IPC 開 / reveal 檔案。
+  ipcMain.handle('shell:openPath', async (_e, path: string) => {
+    const result = await shell.openPath(path)
+    return result === '' ? null : result  // '' = success
+  })
+  ipcMain.handle('shell:revealInFinder', async (_e, path: string) => {
+    shell.showItemInFolder(path)
+    return null
   })
 
   // Folder picker — renderer 走 dialog.showOpenDialog (沒 fs 權限自己叫不到)

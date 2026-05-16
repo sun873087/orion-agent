@@ -7,6 +7,7 @@ import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
+import { InlineFileCards } from './RightSidebar'
 import { ToolCallGroup } from './ToolCallGroup'
 
 /**
@@ -101,6 +102,18 @@ export function MessageBubble({
                   </div>
                 )}
               </>}
+        {/* Inline file cards — assistant message 結尾若有 FileWrite/Edit,
+            顯卡片讓 user 一鍵 open 生成的檔案。 */}
+        {!isUser && !message.streaming && message.toolCalls && (
+          <InlineFileCards
+            toolCalls={message.toolCalls.map((t) => ({
+              toolName: t.toolName,
+              input: t.input,
+              status: t.status,
+              text: t.text,
+            }))}
+          />
+        )}
         {/* Regenerate(只最後一個 assistant message 顯示)*/}
         {!isUser && isLastAssistant && !message.streaming && <RegenerateButton />}
       </div>

@@ -62,14 +62,18 @@ function describe(toolName: string, input: Record<string, unknown> | undefined):
   }
 
   switch (toolName) {
-    case 'FileRead':
-      return { icon: FileText, title: `Read ${short(s('file_path'))}`, bucket: 'read' }
-    case 'FileWrite':
-      return { icon: FileText, title: `Write ${short(s('file_path'))}`, bucket: 'write' }
-    case 'FileEdit':
-      return { icon: Edit3, title: `Edit ${short(s('file_path'))}`, bucket: 'edit' }
+    case 'Read':
+      return { icon: FileText, title: `Read ${short(s('path'))}`, bucket: 'read' }
+    case 'Write':
+      return { icon: FileText, title: `Write ${short(s('path'))}`, bucket: 'write' }
+    case 'Edit':
+      return { icon: Edit3, title: `Edit ${short(s('path'))}`, bucket: 'edit' }
     case 'NotebookEdit':
-      return { icon: Edit3, title: `Edit notebook ${short(s('notebook_path'))}`, bucket: 'edit' }
+      return {
+        icon: Edit3,
+        title: `Edit notebook ${short(s('notebook_path') ?? s('path'))}`,
+        bucket: 'edit',
+      }
     case 'Bash': {
       const cmd = s('command') ?? ''
       return { icon: Terminal, title: `$ ${cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd}`, bucket: 'bash' }

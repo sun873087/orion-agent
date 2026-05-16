@@ -3,6 +3,7 @@ import { InputBox } from './components/InputBox'
 import { MessageList } from './components/MessageList'
 import { NewProjectModal } from './components/NewProjectModal'
 import { ProjectSettingsPage } from './components/ProjectSettingsPage'
+import { RightSidebar } from './components/RightSidebar'
 import { SettingsPage } from './components/SettingsPage'
 import { Sidebar } from './components/Sidebar'
 import { useAbort, useInitConversation, useSendPrompt } from './hooks/useAgent'
@@ -15,6 +16,7 @@ export function App() {
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)
   const editingProjectId = useSettingsStore((s) => s.editingProjectId)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
+  const rightSidebarOpen = useSettingsStore((s) => s.rightSidebarOpen)
 
   // 全頁 views 優先(取代 chat layout)
   if (settingsOpen) return <SettingsPage />
@@ -28,6 +30,7 @@ export function App() {
         <MessageList />
         <InputBox onSend={sendPrompt} onAbort={abort} />
       </div>
+      {rightSidebarOpen && <RightSidebar />}
       <NewProjectModal />
     </div>
   )

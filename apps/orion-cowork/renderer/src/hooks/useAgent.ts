@@ -74,6 +74,8 @@ export function useSwitchConversation() {
 function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
   // Reset 後重 build store.messages — attachment 只帶 ref,base64 由
   // MessageBubble.LazyImage 之後 useEffect 拿,不擋切換 latency。
+  // Tool calls / blocks 也 hydrate,讓 RightSidebar 跟 inline file card
+  // 在歷史對話也能 work。
   let counter = 0
   const messages = loaded.map((m) => ({
     id: `hist-${Date.now()}-${counter++}`,
@@ -90,6 +92,23 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
             attachmentIndex: a.ref.attachment_index,
           },
         }))
+      : undefined,
+    toolCalls: m.tool_calls?.length
+      ? m.tool_calls.map((t) => ({
+          toolUseId: t.tool_use_id,
+          toolName: t.tool_name,
+          input: t.input,
+          status: t.status as 'success' | 'error',
+          text: t.text,
+          progress: [] as string[],
+        }))
+      : undefined,
+    blocks: m.blocks?.length
+      ? m.blocks.map((b) =>
+          b.type === 'text'
+            ? { type: 'text' as const, text: b.text }
+            : { type: 'tools' as const, toolUseIds: b.tool_use_ids },
+        )
       : undefined,
     createdAt: Date.now(),
   }))

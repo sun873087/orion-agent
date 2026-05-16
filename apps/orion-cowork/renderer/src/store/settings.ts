@@ -47,6 +47,8 @@ type SettingsState = {
   sidebarSearchOpen: boolean
   /** Sidebar 搜尋輸入內容(ephemeral)。 */
   sidebarSearchQuery: string
+  /** 右側 detail panel(Progress / Working folder / Skills) */
+  rightSidebarOpen: boolean
 
   setTheme: (t: Theme) => void
   toggleTheme: () => void
@@ -60,6 +62,7 @@ type SettingsState = {
   toggleSidebar: () => void
   toggleSidebarSearch: () => void
   setSidebarSearchQuery: (q: string) => void
+  toggleRightSidebar: () => void
 
   /** 當前選中的 project filter。null = 不 filter(顯所有 sessions)。 */
   activeProjectId: string | null
@@ -91,6 +94,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarCollapsed: false,
       sidebarSearchOpen: false,
       sidebarSearchQuery: '',
+      rightSidebarOpen: false,
       activeProjectId: null,
       newProjectOpen: false,
       editingProjectId: null,
@@ -130,6 +134,8 @@ export const useSettingsStore = create<SettingsState>()(
           sidebarSearchQuery: s.sidebarSearchOpen ? '' : s.sidebarSearchQuery,
         })),
       setSidebarSearchQuery: (q) => set({ sidebarSearchQuery: q }),
+      toggleRightSidebar: () =>
+        set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen })),
 
       setActiveProjectId: (id) => set({ activeProjectId: id }),
       openNewProject: () => set({ newProjectOpen: true }),
@@ -145,6 +151,7 @@ export const useSettingsStore = create<SettingsState>()(
         selectedProvider: s.selectedProvider,
         selectedModel: s.selectedModel,
         sidebarCollapsed: s.sidebarCollapsed,
+        rightSidebarOpen: s.rightSidebarOpen,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

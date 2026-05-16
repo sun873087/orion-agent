@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Folder, PanelLeft, PanelLeftClose, Search, Sparkles, X } from 'lucide-react'
+import { Folder, PanelLeft, PanelLeftClose, PanelRight, Search, Sparkles, X } from 'lucide-react'
 
 import { getPrefs, getProject, getSessionWorkspace } from '../api/agent'
 import { useTranslation } from '../i18n'
@@ -22,6 +22,8 @@ export function Header() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar)
   const toggleSidebarSearch = useSettingsStore((s) => s.toggleSidebarSearch)
+  const rightSidebarOpen = useSettingsStore((s) => s.rightSidebarOpen)
+  const toggleRightSidebar = useSettingsStore((s) => s.toggleRightSidebar)
   const activeProjectId = useSettingsStore((s) => s.activeProjectId)
   const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
   const projects = useProjects()
@@ -161,6 +163,16 @@ export function Header() {
             <span>{t('app.initializing')}</span>
           )}
         </span>
+        <button
+          type="button"
+          onClick={toggleRightSidebar}
+          title={t(rightSidebarOpen ? 'rightSidebar.hide' : 'rightSidebar.show')}
+          className={`flex h-8 w-8 items-center justify-center rounded-md hover:bg-bg-hover ${
+            rightSidebarOpen ? 'text-accent' : 'text-fg-muted hover:text-fg-base'
+          }`}
+        >
+          <PanelRight size={16} />
+        </button>
       </div>
     </header>
   )
