@@ -44,12 +44,9 @@ export function Sidebar() {
   const [sessionExt, setSessionExt] = useState<Map<string, { project_id: string | null }>>(
     new Map(),
   )
-  // Project filter:抓 sessions 對應 ext,依 activeProjectId filter
+  // 永遠 fetch ext — 個人 scope 需要過濾「不屬於任何 project」的 chat,
+  // project scope 需要過濾「屬於該 project」的 chat。兩種都要 ext。
   useEffect(() => {
-    if (!activeProjectId) {
-      setSessionExt(new Map())
-      return
-    }
     let cancelled = false
     Promise.all(
       sessions.map((s) =>
@@ -66,10 +63,11 @@ export function Sidebar() {
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, sessions])
-  const projectFilteredSessions = activeProjectId
-    ? sessions.filter((s) => sessionExt.get(s.session_id)?.project_id === activeProjectId)
-    : sessions
+  }, [sessions])
+  const projectFilteredSessions = sessions.filter((s) => {
+    const pid = sessionExt.get(s.session_id)?.project_id ?? null
+    return activeProjectId ? pid === activeProjectId : pid === null
+  })
 
   // Backend full-text search:有 query 時 debounce 300ms call sidecar;空就清空
   const baseSessions = projectFilteredSessions
