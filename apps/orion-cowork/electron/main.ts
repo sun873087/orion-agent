@@ -6,7 +6,7 @@
  * - 註冊 IPC handler 把 renderer 的 call 路由到 sidecar
  */
 
-import { BrowserWindow, app, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, nativeImage, session, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -75,6 +75,16 @@ async function createWindow(): Promise<void> {
       console.warn('[main] dock.setIcon failed:', err)
     }
   }
+
+  // Web Speech API / getUserMedia 需要 media 權限 — local app 一律放行,
+  // 否則 mic 按鈕按下後 webkitSpeechRecognition 直接 onerror。
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === 'media' || permission === 'mediaKeySystem') {
+      callback(true)
+      return
+    }
+    callback(false)
+  })
 
   // Drop 檔案到非 InputBox 區域時,Electron 預設行為是 navigate 到該檔(取代整個
   // renderer)。我們不要那個 — file:// navigation 一律擋掉,讓 renderer 自己的

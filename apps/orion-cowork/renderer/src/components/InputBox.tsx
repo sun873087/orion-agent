@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
-import { fetchModels, setPermissionMode as rpcSetPermissionMode } from '../api/agent'
+import { fetchModels, setPermissionMode as rpcSetPermissionMode, sttTranscribe } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore, type PermissionMode } from '../store/settings'
@@ -297,14 +297,24 @@ export function InputBox({ onSend, onAbort }: Props) {
 
             <ModelPill />
 
-            <button
-              type="button"
-              disabled
-              title={t('input.mic.unsupported')}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-subtle disabled:cursor-not-allowed"
-            >
-              <Mic size={16} />
-            </button>
+            <MicButton
+              onTranscript={(text) => {
+                setText((cur) => {
+                  const sep = cur && !/[\s]$/.test(cur) ? ' ' : ''
+                  return cur + sep + text
+                })
+                // 把 textarea 帶到輸入末端,讓使用者看到剛轉錄的文字
+                requestAnimationFrame(() => {
+                  const ta = textareaRef.current
+                  if (ta) {
+                    ta.focus()
+                    ta.setSelectionRange(ta.value.length, ta.value.length)
+                    autoResize()
+                  }
+                })
+              }}
+              disabled={!inputReady}
+            />
 
             {busy ? (
               <button
@@ -672,5 +682,172 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
       reject(new Error('image decode failed'))
     }
     img.src = url
+  })
+}
+
+// ─── STT via MediaRecorder + OpenAI Whisper / Google Cloud STT ──────────────
+//
+// 點麥克風 → getUserMedia + MediaRecorder 開始錄;再點 → 停止 + base64 audio
+// 送 sidecar(stt.transcribe)→ 回 transcript append 到 textarea。
+// Provider 從 settings.sttProvider 拿,sidecar 用對應 env API key。
+//
+// 為什麼不用 webkitSpeechRecognition:Electron 沒打包 Google API key,呼叫
+// 立刻 error 中止。MediaRecorder 走直連 OpenAI / Google REST 才實際能用。
+
+const MIC_MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',  // Safari / 部分 Chromium build
+]
+
+function pickMimeType(): string {
+  for (const m of MIC_MIME_CANDIDATES) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
+      return m
+    }
+  }
+  return 'audio/webm'
+}
+
+function MicButton({
+  onTranscript,
+  disabled,
+}: {
+  onTranscript: (text: string) => void
+  disabled: boolean
+}) {
+  const { t } = useTranslation()
+  const locale = useSettingsStore((s) => s.locale)
+  const provider = useSettingsStore((s) => s.sttProvider)
+  const openaiModel = useSettingsStore((s) => s.openaiSttModel)
+  const [phase, setPhase] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const recRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+
+  // unmount 時收乾淨
+  useEffect(() => {
+    return () => {
+      try {
+        recRef.current?.stop()
+      } catch { /* ignore */ }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+    }
+  }, [])
+
+  // 自動清掉錯誤訊息 — 3s 後消失
+  useEffect(() => {
+    if (!error) return
+    const id = setTimeout(() => setError(null), 3000)
+    return () => clearTimeout(id)
+  }, [error])
+
+  const sttOff = provider === 'off'
+
+  async function start() {
+    if (disabled || sttOff || phase !== 'idle') return
+    setError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const mime = pickMimeType()
+      const rec = new MediaRecorder(stream, { mimeType: mime })
+      chunksRef.current = []
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      rec.onstop = async () => {
+        // 釋放 mic
+        streamRef.current?.getTracks().forEach((t) => t.stop())
+        streamRef.current = null
+        const blob = new Blob(chunksRef.current, { type: mime })
+        chunksRef.current = []
+        if (blob.size < 1024) {
+          setPhase('idle')
+          setError(t('input.mic.tooShort'))
+          return
+        }
+        setPhase('transcribing')
+        try {
+          const b64 = await blobToBase64(blob)
+          const text = await sttTranscribe(
+            provider as 'openai' | 'google',
+            b64,
+            mime,
+            locale,
+            provider === 'openai' ? openaiModel : undefined,
+          )
+          if (text.trim()) onTranscript(text.trim())
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e))
+        } finally {
+          setPhase('idle')
+        }
+      }
+      rec.start()
+      recRef.current = rec
+      setPhase('recording')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'mic unavailable')
+      setPhase('idle')
+    }
+  }
+
+  function stop() {
+    try {
+      recRef.current?.stop()
+    } catch { /* ignore */ }
+  }
+
+  const label =
+    phase === 'recording'
+      ? t('input.mic.stop')
+      : phase === 'transcribing'
+        ? t('input.mic.transcribing')
+        : sttOff
+          ? t('input.mic.off')
+          : t('input.mic.start')
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={phase === 'recording' ? stop : start}
+        disabled={disabled || sttOff || phase === 'transcribing'}
+        title={label}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40 ${
+          phase === 'recording'
+            ? 'bg-error/20 text-error hover:bg-error/30 animate-pulse'
+            : phase === 'transcribing'
+              ? 'text-accent'
+              : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+        }`}
+      >
+        <Mic size={16} className={phase === 'transcribing' ? 'animate-pulse' : ''} />
+      </button>
+      {error && (
+        <div className="absolute bottom-full right-0 mb-1 w-64 rounded-md border border-error/40 bg-bg-base px-2 py-1 text-[11px] text-error shadow-lg">
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const r = reader.result
+      if (typeof r !== 'string') {
+        reject(new Error('FileReader returned non-string'))
+        return
+      }
+      const idx = r.indexOf(',')
+      resolve(idx >= 0 ? r.slice(idx + 1) : r)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.readAsDataURL(blob)
   })
 }

@@ -427,6 +427,82 @@ export async function getPermissions(
   return out
 }
 
+// ─── STT ──────────────────────────────────────────────────────────────────
+
+export type SttModel = {
+  id: string
+  label: string
+  pricing_per_minute_usd?: number
+  recommended?: boolean
+  notes?: string
+}
+
+export type SttProviderEntry = {
+  id: string
+  label: string
+  models: SttModel[]
+  api_key_configured: boolean
+}
+
+export type SttCatalog = {
+  providers: SttProviderEntry[]
+}
+
+/** 拉 STT catalog(來自 orion-model)+ 各家 API key 是否設定。給 Settings UI 用。 */
+export async function getSttStatus(): Promise<SttCatalog> {
+  let out: SttCatalog = { providers: [] }
+  await window.agent.call('stt.status', {}, (frame) => {
+    const d = (frame.data ?? {}) as { providers?: SttProviderEntry[] }
+    if (Array.isArray(d.providers)) {
+      out = {
+        providers: d.providers.map((p) => ({
+          id: p.id,
+          label: p.label,
+          models: Array.isArray(p.models) ? p.models : [],
+          api_key_configured: !!p.api_key_configured,
+        })),
+      }
+    }
+  })
+  return out
+}
+
+/** 上傳錄音 base64 → 回 transcript。可能 throw(沒 key / API 失敗)。
+ *  model 只 provider='openai' 時生效。 */
+export async function sttTranscribe(
+  provider: 'openai' | 'google',
+  audioBase64: string,
+  mimeType: string,
+  locale: string,
+  model?: string,
+): Promise<string> {
+  let text = ''
+  let errMsg: string | null = null
+  const params: Record<string, unknown> = {
+    provider,
+    audio_base64: audioBase64,
+    mime_type: mimeType,
+    locale,
+  }
+  if (provider === 'openai' && model) params.model = model
+  await window.agent.call(
+    'stt.transcribe',
+    params,
+    (frame) => {
+      // sidecar 推 {event: 'error', data: {code, message}, final: true} 表示業務錯誤;
+      // 框架層的未捕例外則是 {error: {code, message}, final: true}。兩種都收。
+      const f = frame as { event?: string; data?: { message?: string }; error?: { message?: string } }
+      if (f.error?.message) errMsg = f.error.message
+      else if (f.event === 'error' && f.data?.message) errMsg = f.data.message
+      else if (f.event === 'transcribed' && typeof f.data === 'object' && f.data && typeof (f.data as { text?: unknown }).text === 'string') {
+        text = (f.data as { text: string }).text
+      }
+    },
+  )
+  if (errMsg) throw new Error(errMsg)
+  return text
+}
+
 /** 覆寫單一 scope 的 policy(整批替換,非 patch)。 */
 export async function setPermissions(
   scope: PermissionScope,

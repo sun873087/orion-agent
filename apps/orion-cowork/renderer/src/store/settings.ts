@@ -20,6 +20,15 @@ export type { Locale }
  */
 export type PermissionMode = 'ask' | 'act'
 
+/** STT provider 偏好。'off' = 麥克風 disabled。 */
+export type SttProvider = 'off' | 'openai' | 'google'
+
+/** OpenAI STT model — 只 sttProvider='openai' 時生效。 */
+export type OpenAiSttModel =
+  | 'whisper-1'
+  | 'gpt-4o-transcribe'
+  | 'gpt-4o-mini-transcribe'
+
 export type ModelEntry = {
   id: string
   label: string
@@ -66,6 +75,10 @@ type SettingsState = {
   /** Data URL of user avatar(JPEG, 256x256 resized);null = 用 fallback icon。 */
   userAvatar: string | null
   setUserAvatar: (dataUrl: string | null) => void
+  sttProvider: SttProvider
+  setSttProvider: (p: SttProvider) => void
+  openaiSttModel: OpenAiSttModel
+  setOpenaiSttModel: (m: OpenAiSttModel) => void
   setCatalog: (providers: Provider[]) => void
   openSettings: (section?: string) => void
   closeSettings: () => void
@@ -101,6 +114,8 @@ export const useSettingsStore = create<SettingsState>()(
       selectedModel: 'claude-sonnet-4-6',
       permissionMode: 'act',
       userAvatar: null,
+      sttProvider: 'openai',
+      openaiSttModel: 'gpt-4o-mini-transcribe',
       providers: [],
       catalogLoaded: false,
       settingsOpen: false,
@@ -130,6 +145,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ selectedProvider: provider, selectedModel: model }),
       setPermissionMode: (m) => set({ permissionMode: m }),
       setUserAvatar: (d) => set({ userAvatar: d }),
+      setSttProvider: (p) => set({ sttProvider: p }),
+      setOpenaiSttModel: (m) => set({ openaiSttModel: m }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
       openSettings: (section) =>
@@ -168,6 +185,8 @@ export const useSettingsStore = create<SettingsState>()(
         selectedModel: s.selectedModel,
         permissionMode: s.permissionMode,
         userAvatar: s.userAvatar,
+        sttProvider: s.sttProvider,
+        openaiSttModel: s.openaiSttModel,
         sidebarCollapsed: s.sidebarCollapsed,
         rightSidebarOpen: s.rightSidebarOpen,
       }),

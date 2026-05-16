@@ -26,7 +26,13 @@ from orion_sdk.permissions.decisions import (
 from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
 
-from orion_cowork_sidecar import memory_handlers, permissions as perm_mod, skill_handlers, storage
+from orion_cowork_sidecar import (
+    memory_handlers,
+    permissions as perm_mod,
+    skill_handlers,
+    storage,
+    stt_handlers,
+)
 from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.streaming import to_rpc_frame
@@ -250,6 +256,8 @@ class Handlers:
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
             "permissions.get": self.permissions_get,
             "permissions.set": self.permissions_set,
+            "stt.transcribe": stt_handlers.stt_transcribe,
+            "stt.status": self.stt_status,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "mcp.config_list": self.mcp_config_list,
@@ -610,6 +618,36 @@ class Handlers:
                 self._ask_pending.pop(request_id, None)
 
         return asker
+
+    async def stt_status(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """回前端 STT catalog(provider × model)+ per-provider API key 是否設。
+
+        Catalog 來自 orion-model/stt_models.json,sidecar / chat-api / CLI 同源,
+        前端不必硬編 model 清單。
+        """
+        import os
+
+        from orion_model.stt_catalog import list_stt_catalog
+
+        catalog = list_stt_catalog()
+        env_map = {
+            "openai": "OPENAI_API_KEY",
+            "google": "GOOGLE_STT_API_KEY",
+        }
+        providers = catalog.get("providers", [])
+        if isinstance(providers, list):
+            for p in providers:
+                if not isinstance(p, dict):
+                    continue
+                env_name = env_map.get(p.get("id", ""))
+                p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
+        yield {
+            "event": "stt_status",
+            "data": catalog,
+            "final": True,
+        }
 
     async def permissions_get(
         self, params: dict[str, Any]

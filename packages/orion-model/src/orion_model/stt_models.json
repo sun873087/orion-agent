@@ -1,0 +1,48 @@
+{
+  "_comment": "Single source of truth for STT (speech-to-text) per-(provider, model) attributes. Pricing is USD per minute of audio. Mirrors models.json layout but separate file because STT has different attributes (per-minute pricing, no token caps).",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "models": [
+        {
+          "id": "gpt-4o-mini-transcribe",
+          "label": "GPT-4o mini transcribe",
+          "pricing_per_minute_usd": 0.003,
+          "recommended": true,
+          "notes": "Cheapest, good multilingual accuracy (including zh/ja)."
+        },
+        {
+          "id": "gpt-4o-transcribe",
+          "label": "GPT-4o transcribe",
+          "pricing_per_minute_usd": 0.006,
+          "notes": "Highest accuracy."
+        },
+        {
+          "id": "gpt-4o-transcribe-diarize",
+          "label": "GPT-4o transcribe (diarize)",
+          "pricing_per_minute_usd": 0.006,
+          "notes": "Same accuracy as gpt-4o-transcribe + speaker diarization (Speaker 1 / Speaker 2 labels in output). Good for meetings / interviews."
+        },
+        {
+          "id": "whisper-1",
+          "label": "Whisper",
+          "pricing_per_minute_usd": 0.006,
+          "notes": "Legacy Whisper — kept for backward compat."
+        }
+      ]
+    },
+    {
+      "id": "google",
+      "label": "Google Cloud Speech-to-Text",
+      "models": [
+        {
+          "id": "default",
+          "label": "Default",
+          "pricing_per_minute_usd": 0.006,
+          "notes": "v1 speech:recognize endpoint."
+        }
+      ]
+    }
+  ]
+}
