@@ -133,6 +133,8 @@ export default {
   'askUser.submit': '送出回答',
   'askUser.openPlaceholder': '輸入你的回答…',
   'askUser.other': '其他(自己輸入)',
+  'askUser.prev': '上一題',
+  'askUser.next': '下一題',
   'input.askMode.actLabel': '放手讓我做',
   'input.askMode.actDesc': 'Orion 一路執行到底,不會中途停下。',
   'input.modelPill.tooltip': '變更模型',

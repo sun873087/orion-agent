@@ -8,8 +8,8 @@
  * 設計:每題獨立區塊,multi_select 用 checkbox group / single 用 radio 樣式
  * 按鈕。沒 options 的開放題顯 textarea。底部一鍵「送出」打包所有答案 reply。
  */
-import { useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react'
 
 import { sendAskUserReply, type AskQuestion } from '../api/agent'
 import { useTranslation } from '../i18n'
@@ -26,6 +26,13 @@ export function AskUserQuestionInline({ assistantId }: { assistantId: string }) 
   // 每題的「其他」自填文字。即使 user 沒勾 Other 也可先打字,勾了才生效。
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  // 多題時的當前頁籤;切換 pendingQuestion 時 reset。
+  const [activeIdx, setActiveIdx] = useState(0)
+  useEffect(() => {
+    setActiveIdx(0)
+    setDrafts({})
+    setOtherTexts({})
+  }, [pending?.requestId])
 
   if (!pending || pending.assistantId !== assistantId) return null
 
@@ -81,36 +88,101 @@ export function AskUserQuestionInline({ assistantId }: { assistantId: string }) 
     }
   }
 
+  const total = pending.questions.length
+  const isMulti = total > 1
+  const current = pending.questions[activeIdx]
+  const onLast = activeIdx === total - 1
+  const onFirst = activeIdx === 0
+
   return (
     <div className="mt-2 rounded-2xl border border-accent/30 bg-accent/5 p-4">
       <div className="mb-3 flex items-center gap-2 text-xs font-medium text-accent">
         <Sparkles size={12} />
         <span>{t('askUser.title')}</span>
+        {isMulti && (
+          <span className="text-fg-muted">
+            ({activeIdx + 1} / {total})
+          </span>
+        )}
       </div>
-      <div className="flex flex-col gap-4">
-        {pending.questions.map((q, qi) => (
-          <QuestionBlock
-            key={qi}
-            q={q}
-            picks={drafts[q.question] ?? []}
-            otherText={otherTexts[q.question] ?? ''}
-            onPick={(label) =>
-              q.multi_select ? toggleMulti(q.question, label) : setSingle(q.question, label)
-            }
-            onFreeText={(text) => setFreeText(q.question, text)}
-            onOtherText={(text) => setOther(q.question, text)}
-          />
-        ))}
-      </div>
-      <div className="mt-4 flex justify-end">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={busy || !readyToSubmit()}
-          className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {t('askUser.submit')}
-        </button>
+      {/* 頁籤 — 多題才顯,點任一題跳過去 */}
+      {isMulti && (
+        <div className="scrollbar-thin mb-3 flex gap-1 overflow-x-auto">
+          {pending.questions.map((q, i) => {
+            const done = questionReady(q.question)
+            const active = i === activeIdx
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveIdx(i)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
+                  active
+                    ? 'bg-accent text-white'
+                    : done
+                      ? 'bg-success/15 text-success hover:bg-success/25'
+                      : 'bg-bg-hover text-fg-muted hover:bg-bg-hover/80 hover:text-fg-base'
+                }`}
+              >
+                {done && !active ? (
+                  <Check size={11} />
+                ) : (
+                  <span className="font-mono text-[10px] opacity-70">{i + 1}</span>
+                )}
+                <span className="max-w-[120px] truncate">
+                  {q.header || `Q${i + 1}`}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <QuestionBlock
+        q={current}
+        picks={drafts[current.question] ?? []}
+        otherText={otherTexts[current.question] ?? ''}
+        onPick={(label) =>
+          current.multi_select
+            ? toggleMulti(current.question, label)
+            : setSingle(current.question, label)
+        }
+        onFreeText={(text) => setFreeText(current.question, text)}
+        onOtherText={(text) => setOther(current.question, text)}
+      />
+      <div className="mt-4 flex items-center justify-between gap-2">
+        {isMulti ? (
+          <button
+            type="button"
+            onClick={() => setActiveIdx((i) => Math.max(0, i - 1))}
+            disabled={onFirst}
+            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <ChevronLeft size={12} />
+            <span>{t('askUser.prev')}</span>
+          </button>
+        ) : (
+          <span />
+        )}
+        {isMulti && !onLast ? (
+          <button
+            type="button"
+            onClick={() => setActiveIdx((i) => Math.min(total - 1, i + 1))}
+            disabled={!questionReady(current.question)}
+            className="flex items-center gap-1 rounded-md bg-bg-hover px-3 py-1.5 text-sm font-medium text-fg-base hover:bg-bg-hover/80 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span>{t('askUser.next')}</span>
+            <ChevronRight size={12} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !readyToSubmit()}
+            className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {t('askUser.submit')}
+          </button>
+        )}
       </div>
     </div>
   )

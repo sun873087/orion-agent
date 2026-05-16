@@ -123,6 +123,8 @@ export default {
   'askUser.submit': 'Submit answer',
   'askUser.openPlaceholder': 'Type your answer…',
   'askUser.other': 'Other (type your own)',
+  'askUser.prev': 'Previous',
+  'askUser.next': 'Next',
   'input.askMode.actLabel': 'Act without asking',
   'input.askMode.actDesc': 'Orion works without pausing for approval.',
   'input.modelPill.tooltip': 'Change model',

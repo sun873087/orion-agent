@@ -123,6 +123,8 @@ export default {
   'askUser.submit': '回答を送信',
   'askUser.openPlaceholder': '回答を入力…',
   'askUser.other': 'その他(自由記述)',
+  'askUser.prev': '前へ',
+  'askUser.next': '次へ',
   'input.askMode.actLabel': '確認せず実行',
   'input.askMode.actDesc': 'Orion は止まらずに最後まで実行します。',
   'input.modelPill.tooltip': 'モデルを変更',
