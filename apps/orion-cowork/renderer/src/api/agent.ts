@@ -467,16 +467,31 @@ export async function getSttStatus(): Promise<SttCatalog> {
   return out
 }
 
-/** 上傳錄音 base64 → 回 transcript。可能 throw(沒 key / API 失敗)。
- *  model 只 provider='openai' 時生效。 */
+export type SttResult = {
+  text: string
+  provider: string
+  model: string
+  durationSeconds: number | null
+  costUsd: number | null
+}
+
+/** 上傳錄音 base64 → 回 transcript + estimated cost。可能 throw(沒 key / API 失敗)。
+ *  durationSeconds 由前端錄音時量;後端用 catalog pricing × duration 算 cost。 */
 export async function sttTranscribe(
   provider: 'openai' | 'google',
   audioBase64: string,
   mimeType: string,
   locale: string,
   model?: string,
-): Promise<string> {
-  let text = ''
+  durationSeconds?: number,
+): Promise<SttResult> {
+  let result: SttResult = {
+    text: '',
+    provider,
+    model: model ?? '',
+    durationSeconds: durationSeconds ?? null,
+    costUsd: null,
+  }
   let errMsg: string | null = null
   const params: Record<string, unknown> = {
     provider,
@@ -485,22 +500,28 @@ export async function sttTranscribe(
     locale,
   }
   if (provider === 'openai' && model) params.model = model
+  if (durationSeconds != null) params.duration_seconds = durationSeconds
   await window.agent.call(
     'stt.transcribe',
     params,
     (frame) => {
-      // sidecar 推 {event: 'error', data: {code, message}, final: true} 表示業務錯誤;
-      // 框架層的未捕例外則是 {error: {code, message}, final: true}。兩種都收。
-      const f = frame as { event?: string; data?: { message?: string }; error?: { message?: string } }
+      const f = frame as { event?: string; data?: Record<string, unknown>; error?: { message?: string } }
       if (f.error?.message) errMsg = f.error.message
-      else if (f.event === 'error' && f.data?.message) errMsg = f.data.message
-      else if (f.event === 'transcribed' && typeof f.data === 'object' && f.data && typeof (f.data as { text?: unknown }).text === 'string') {
-        text = (f.data as { text: string }).text
+      else if (f.event === 'error' && typeof f.data?.message === 'string') errMsg = f.data.message as string
+      else if (f.event === 'transcribed' && f.data) {
+        const d = f.data
+        result = {
+          text: typeof d.text === 'string' ? d.text : '',
+          provider: typeof d.provider === 'string' ? d.provider : provider,
+          model: typeof d.model === 'string' ? d.model : (model ?? ''),
+          durationSeconds: typeof d.duration_seconds === 'number' ? d.duration_seconds : null,
+          costUsd: typeof d.cost_usd === 'number' ? d.cost_usd : null,
+        }
       }
     },
   )
   if (errMsg) throw new Error(errMsg)
-  return text
+  return result
 }
 
 /** 覆寫單一 scope 的 policy(整批替換,非 patch)。 */

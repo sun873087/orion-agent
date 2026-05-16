@@ -128,6 +128,7 @@ export default {
   'input.mic.transcribing': '转录中…',
   'input.mic.off': '语音输入已关闭 — 到「设置 → 一般」开启',
   'input.mic.tooShort': '录音太短 — 至少录一秒',
+  'input.mic.cost': '已转录 {duration}s · {cost} · {model}',
   'settings.model.chatHeading': '对话模型',
   'settings.stt.heading': '语音输入 (STT)',
   'settings.stt.hint': '选择音档送到哪一家转录。录音由浏览器本机捕获,然后上传到所选 provider。',

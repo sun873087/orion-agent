@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from orion_model.stt_catalog import validate_stt
+from orion_model.stt_pricing import compute_stt_cost
 
 
 def _lang_to_whisper(locale: str | None) -> str | None:
@@ -71,6 +72,12 @@ async def stt_transcribe(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
     audio_b64 = params.get("audio_base64")
     mime = params.get("mime_type") or "audio/webm"
     locale = params.get("locale")
+    # 前端錄音時長(估算用 — OpenAI 不在 response 回計費 duration)
+    duration_raw = params.get("duration_seconds")
+    try:
+        duration_seconds = float(duration_raw) if duration_raw is not None else None
+    except (TypeError, ValueError):
+        duration_seconds = None
     if provider not in ("openai", "google"):
         yield _err("BAD_PROVIDER", f"unknown provider: {raw_provider!r}")
         return
@@ -122,7 +129,13 @@ async def stt_transcribe(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
             return
         yield {
             "event": "transcribed",
-            "data": {"text": text, "provider": "openai", "model": model},
+            "data": {
+                "text": text,
+                "provider": "openai",
+                "model": model,
+                "duration_seconds": duration_seconds,
+                "cost_usd": compute_stt_cost("openai", model, duration_seconds),
+            },
             "final": True,
         }
         return
@@ -162,6 +175,12 @@ async def stt_transcribe(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
         return
     yield {
         "event": "transcribed",
-        "data": {"text": text, "provider": "google"},
+        "data": {
+            "text": text,
+            "provider": "google",
+            "model": "default",
+            "duration_seconds": duration_seconds,
+            "cost_usd": compute_stt_cost("google", "default", duration_seconds),
+        },
         "final": True,
     }

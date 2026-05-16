@@ -128,6 +128,7 @@ export default {
   'input.mic.transcribing': '文字起こし中…',
   'input.mic.off': '音声入力は OFF — 設定 → 一般で有効化',
   'input.mic.tooShort': '録音が短すぎます — 1 秒以上録音してください',
+  'input.mic.cost': '文字起こし完了 {duration}s · {cost} · {model}',
   'settings.model.chatHeading': 'チャットモデル',
   'settings.stt.heading': '音声入力 (STT)',
   'settings.stt.hint': '音声をどの provider に送って文字起こしするか選択。録音はブラウザでローカル取得後にアップロード。',

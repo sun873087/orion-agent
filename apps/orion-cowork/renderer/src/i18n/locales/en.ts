@@ -128,6 +128,7 @@ export default {
   'input.mic.transcribing': 'Transcribing…',
   'input.mic.off': 'Voice input is off — enable in Settings → General',
   'input.mic.tooShort': 'Recording too short — try at least a second',
+  'input.mic.cost': 'Transcribed {duration}s · {cost} · {model}',
   'settings.model.chatHeading': 'Chat models',
   'settings.stt.heading': 'Voice input (STT)',
   'settings.stt.hint': 'Choose where audio gets sent for transcription. Recording is captured locally via your browser, then uploaded to the chosen provider.',

@@ -722,9 +722,11 @@ function MicButton({
   const openaiModel = useSettingsStore((s) => s.openaiSttModel)
   const [phase, setPhase] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [costInfo, setCostInfo] = useState<{ duration: number; cost: number | null; model: string } | null>(null)
   const recRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const startTsRef = useRef<number>(0)
 
   // unmount 時收乾淨
   useEffect(() => {
@@ -742,6 +744,13 @@ function MicButton({
     const id = setTimeout(() => setError(null), 3000)
     return () => clearTimeout(id)
   }, [error])
+
+  // 成功 transcribe 的費用提示也 4 秒後淡掉
+  useEffect(() => {
+    if (!costInfo) return
+    const id = setTimeout(() => setCostInfo(null), 4000)
+    return () => clearTimeout(id)
+  }, [costInfo])
 
   const sttOff = provider === 'off'
 
@@ -763,6 +772,7 @@ function MicButton({
         streamRef.current = null
         const blob = new Blob(chunksRef.current, { type: mime })
         chunksRef.current = []
+        const duration = (Date.now() - startTsRef.current) / 1000
         if (blob.size < 1024) {
           setPhase('idle')
           setError(t('input.mic.tooShort'))
@@ -771,20 +781,29 @@ function MicButton({
         setPhase('transcribing')
         try {
           const b64 = await blobToBase64(blob)
-          const text = await sttTranscribe(
+          const result = await sttTranscribe(
             provider as 'openai' | 'google',
             b64,
             mime,
             locale,
             provider === 'openai' ? openaiModel : undefined,
+            duration,
           )
-          if (text.trim()) onTranscript(text.trim())
+          if (result.text.trim()) onTranscript(result.text.trim())
+          if (result.durationSeconds != null || result.costUsd != null) {
+            setCostInfo({
+              duration: result.durationSeconds ?? duration,
+              cost: result.costUsd,
+              model: result.model,
+            })
+          }
         } catch (e) {
           setError(e instanceof Error ? e.message : String(e))
         } finally {
           setPhase('idle')
         }
       }
+      startTsRef.current = Date.now()
       rec.start()
       recRef.current = rec
       setPhase('recording')
@@ -829,6 +848,15 @@ function MicButton({
       {error && (
         <div className="absolute bottom-full right-0 mb-1 w-64 rounded-md border border-error/40 bg-bg-base px-2 py-1 text-[11px] text-error shadow-lg">
           {error}
+        </div>
+      )}
+      {!error && costInfo && (
+        <div className="absolute bottom-full right-0 mb-1 w-64 rounded-md border border-bg-hover bg-bg-base px-2 py-1 text-[11px] text-fg-muted shadow-lg">
+          {t('input.mic.cost', {
+            duration: costInfo.duration.toFixed(1),
+            cost: costInfo.cost != null ? `~$${costInfo.cost.toFixed(4)}` : '—',
+            model: costInfo.model,
+          })}
         </div>
       )}
     </div>

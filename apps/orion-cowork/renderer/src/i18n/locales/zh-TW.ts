@@ -138,6 +138,7 @@ export default {
   'input.mic.transcribing': '轉錄中…',
   'input.mic.off': '語音輸入已關閉 — 到「設定 → 一般」開啟',
   'input.mic.tooShort': '錄音太短 — 至少錄一秒',
+  'input.mic.cost': '已轉錄 {duration}s · {cost} · {model}',
   'settings.model.chatHeading': '對話模型',
   'settings.stt.heading': '語音輸入 (STT)',
   'settings.stt.hint': '選擇音檔送到哪一家轉錄。錄音由瀏覽器本機擷取,然後上傳到所選 provider。',
