@@ -86,6 +86,10 @@ const SECTIONS: SectionDef[] = [
   },
 ]
 
+function isMacUA(): boolean {
+  return typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)
+}
+
 export function SettingsPage() {
   const { t } = useTranslation()
   const closeSettings = useSettingsStore((s) => s.closeSettings)
@@ -101,16 +105,20 @@ export function SettingsPage() {
   return (
     <div className="flex h-full w-full flex-col bg-bg-base">
       {/* Top bar:← 返回 + Settings 標題 */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-bg-hover px-4">
+      <header
+        className={`app-drag flex h-12 shrink-0 items-center gap-3 border-b border-bg-hover ${
+          isMacUA() ? 'pl-20 pr-4' : 'px-4'
+        }`}
+      >
         <button
           type="button"
           onClick={closeSettings}
           title={t('settings.back')}
-          className="rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          className="app-no-drag rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
         >
           <ArrowLeft size={16} />
         </button>
-        <h1 className="text-sm font-semibold">{t('settings.title')}</h1>
+        <h1 className="app-no-drag text-sm font-semibold">{t('settings.title')}</h1>
       </header>
 
       <div className="flex flex-1 overflow-hidden">

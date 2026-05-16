@@ -61,18 +61,25 @@ export function ProjectSettingsPage() {
     )
   }
 
+  const isMac =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)
+
   return (
     <div className="flex h-full w-full flex-col bg-bg-base">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-bg-hover px-4">
+      <header
+        className={`app-drag flex h-12 shrink-0 items-center gap-3 border-b border-bg-hover ${
+          isMac ? 'pl-20 pr-4' : 'px-4'
+        }`}
+      >
         <button
           type="button"
           onClick={close}
           title={t('settings.back')}
-          className="rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          className="app-no-drag rounded p-1.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
         >
           <ArrowLeft size={16} />
         </button>
-        <h1 className="text-sm font-semibold">
+        <h1 className="app-no-drag text-sm font-semibold">
           {t('projectSettings.title', { name: project.name })}
         </h1>
       </header>

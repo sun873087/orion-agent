@@ -13,6 +13,13 @@ import { detectDefaultLocale, LOCALES, type Locale } from '../i18n/types'
 export type Theme = 'dark' | 'light'
 export type { Locale }
 
+/**
+ * Tool 動作許可模式 — 跟 Claude Cowork 的 Ask / Act 同概念。
+ * - 'ask':每個 tool call 前 pause,user approve 才執行(尚未接 backend,顯示用)
+ * - 'act':放手讓 agent 自己跑(目前實際行為)
+ */
+export type PermissionMode = 'ask' | 'act'
+
 export type ModelEntry = {
   id: string
   label: string
@@ -54,6 +61,8 @@ type SettingsState = {
   toggleTheme: () => void
   setLocale: (l: Locale) => void
   setSelectedModel: (provider: string, model: string) => void
+  permissionMode: PermissionMode
+  setPermissionMode: (m: PermissionMode) => void
   setCatalog: (providers: Provider[]) => void
   openSettings: (section?: string) => void
   closeSettings: () => void
@@ -87,6 +96,7 @@ export const useSettingsStore = create<SettingsState>()(
       locale: detectDefaultLocale(),
       selectedProvider: 'anthropic',
       selectedModel: 'claude-sonnet-4-6',
+      permissionMode: 'act',
       providers: [],
       catalogLoaded: false,
       settingsOpen: false,
@@ -114,6 +124,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       setSelectedModel: (provider, model) =>
         set({ selectedProvider: provider, selectedModel: model }),
+      setPermissionMode: (m) => set({ permissionMode: m }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
       openSettings: (section) =>
@@ -150,6 +161,7 @@ export const useSettingsStore = create<SettingsState>()(
         locale: s.locale,
         selectedProvider: s.selectedProvider,
         selectedModel: s.selectedModel,
+        permissionMode: s.permissionMode,
         sidebarCollapsed: s.sidebarCollapsed,
         rightSidebarOpen: s.rightSidebarOpen,
       }),

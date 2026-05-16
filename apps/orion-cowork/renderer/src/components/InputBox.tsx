@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { Paperclip, Send, Square, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  FastForward,
+  Hand,
+  Mic,
+  Paperclip,
+  Send,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
+import { useSettingsStore, type PermissionMode } from '../store/settings'
 
 type Props = {
   onSend: (text: string, attachments?: Attachment[]) => Promise<void>
@@ -29,6 +41,8 @@ export function InputBox({ onSend, onAbort }: Props) {
   // lazy create。只有 initError(sidecar 連不上)才完全 disable。
   const initError = useAgentStore((s) => s.initError)
   const inputReady = !initError
+  const messageCount = useAgentStore((s) => s.messages.length)
+  const isEmpty = messageCount === 0
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // IME composition tracking — 注音 / 拼音中 Enter 確認候選詞時不要送出。
@@ -139,16 +153,39 @@ export function InputBox({ onSend, onAbort }: Props) {
     }
   }
 
+  const placeholder = !inputReady
+    ? t('input.placeholder.disabled')
+    : busy
+      ? t('input.placeholder.busy')
+      : isEmpty
+        ? t('input.placeholder.empty')
+        : t('input.placeholder.normal')
+
   return (
     <div
-      className={`border-t border-bg-hover bg-bg-base px-6 py-3 transition-colors ${
-        dragOver ? 'bg-accent/10 ring-2 ring-inset ring-accent' : ''
-      }`}
+      className={`bg-bg-base px-6 py-4 transition-colors ${
+        isEmpty ? '' : 'border-t border-bg-hover'
+      } ${dragOver ? 'bg-accent/10 ring-2 ring-inset ring-accent' : ''}`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
       <div className="mx-auto max-w-3xl">
+        {/* Empty-state hero — 跟 Claude Cowork 一致,大標題 + subtitle */}
+        {isEmpty && (
+          <div className="mb-6 flex items-start gap-3">
+            <Sparkles size={28} className="mt-1 shrink-0 text-accent" />
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-fg-base">
+                {t('input.hero.title')}
+              </h2>
+              <p className="mt-1 text-sm text-fg-muted underline decoration-fg-subtle underline-offset-4">
+                {t('input.hero.subtitle')}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Attachment thumbnails */}
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
@@ -187,26 +224,8 @@ export function InputBox({ onSend, onAbort }: Props) {
           <p className="mb-1 px-2 text-xs text-error">⚠ {attachError}</p>
         )}
 
-        <div className="flex items-end gap-2 rounded-2xl bg-bg-input p-2">
-          {/* Paperclip button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!inputReady || busy}
-            title={t('input.attach')}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Paperclip size={16} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={SUPPORTED_MIME.join(',')}
-            onChange={(e) => handleFiles(e.target.files)}
-            className="hidden"
-          />
-
+        {/* 主框:上方 textarea,下方 toolbar(+ / Ask pill / spacer / Model pill / mic / send) */}
+        <div className="flex flex-col gap-2 rounded-2xl bg-bg-input p-3">
           <textarea
             ref={textareaRef}
             value={text}
@@ -247,41 +266,187 @@ export function InputBox({ onSend, onAbort }: Props) {
               }
             }}
             disabled={!inputReady}
-            placeholder={
-              !inputReady
-                ? t('input.placeholder.disabled')
-                : busy
-                  ? t('input.placeholder.busy')
-                  : t('input.placeholder.normal')
-            }
-            rows={1}
-            className="scrollbar-thin max-h-[200px] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
+            placeholder={placeholder}
+            rows={isEmpty ? 2 : 1}
+            className="scrollbar-thin max-h-[200px] resize-none bg-transparent px-1 py-1 text-sm text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
           />
 
-          {busy ? (
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={onAbort}
-              title={t('input.stop')}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-error/20 text-error hover:bg-error/30"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!inputReady || busy}
+              title={t('input.attach')}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Square size={14} fill="currentColor" />
+              <Paperclip size={16} />
             </button>
-          ) : (
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={SUPPORTED_MIME.join(',')}
+              onChange={(e) => handleFiles(e.target.files)}
+              className="hidden"
+            />
+
+            <PermissionModePill />
+
+            <div className="flex-1" />
+
+            <ModelPill />
+
             <button
               type="button"
-              onClick={handleSubmit}
-              disabled={!canSend}
-              title={canSend ? t('input.send') : t('input.sendDisabled')}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+              disabled
+              title={t('input.mic.unsupported')}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-subtle disabled:cursor-not-allowed"
             >
-              <Send size={14} />
+              <Mic size={16} />
             </button>
-          )}
+
+            {busy ? (
+              <button
+                type="button"
+                onClick={onAbort}
+                title={t('input.stop')}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-error/20 text-error hover:bg-error/30"
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSend}
+                title={canSend ? t('input.send') : t('input.sendDisabled')}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Send size={14} />
+              </button>
+            )}
+          </div>
         </div>
+
         <FooterHint />
+        <p className="mt-2 text-center text-[11px] text-fg-subtle">
+          {t('input.disclaimer')}
+        </p>
       </div>
     </div>
+  )
+}
+
+/** Ask / Act 切換 pill — popup 兩個選項 + 描述。Backend gating 尚未串。 */
+function PermissionModePill() {
+  const { t } = useTranslation()
+  const mode = useSettingsStore((s) => s.permissionMode)
+  const setMode = useSettingsStore((s) => s.setPermissionMode)
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 點外面關掉 popup
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  const isAsk = mode === 'ask'
+  const Icon = isAsk ? Hand : FastForward
+  const label = isAsk ? t('input.askMode.pill') : t('input.actMode.pill')
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 items-center gap-1.5 rounded-lg bg-bg-hover/60 px-2.5 text-xs text-fg-base hover:bg-bg-hover"
+      >
+        <Icon size={13} />
+        <span>{label}</span>
+        <ChevronDown size={12} className="text-fg-muted" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 z-40 mb-2 w-72 overflow-hidden rounded-xl border border-bg-hover bg-bg-panel shadow-xl">
+          <PermissionModeRow
+            mode="ask"
+            current={mode}
+            icon={Hand}
+            label={t('input.askMode.askLabel')}
+            desc={t('input.askMode.askDesc')}
+            onPick={(m) => {
+              setMode(m)
+              setOpen(false)
+            }}
+          />
+          <PermissionModeRow
+            mode="act"
+            current={mode}
+            icon={FastForward}
+            label={t('input.askMode.actLabel')}
+            desc={t('input.askMode.actDesc')}
+            onPick={(m) => {
+              setMode(m)
+              setOpen(false)
+            }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PermissionModeRow({
+  mode,
+  current,
+  icon: Icon,
+  label,
+  desc,
+  onPick,
+}: {
+  mode: PermissionMode
+  current: PermissionMode
+  icon: typeof Hand
+  label: string
+  desc: string
+  onPick: (m: PermissionMode) => void
+}) {
+  const active = mode === current
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(mode)}
+      className="flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-bg-hover"
+    >
+      <Icon size={16} className="mt-0.5 shrink-0 text-fg-muted" />
+      <div className="flex-1">
+        <div className="text-sm font-medium text-fg-base">{label}</div>
+        <div className="mt-0.5 text-xs text-fg-muted">{desc}</div>
+      </div>
+      {active && <Check size={14} className="mt-1 shrink-0 text-accent" />}
+    </button>
+  )
+}
+
+/** Model 名稱 pill — 點開跳 Settings → Models。 */
+function ModelPill() {
+  const { t } = useTranslation()
+  const model = useSettingsStore((s) => s.selectedModel)
+  const openSettings = useSettingsStore((s) => s.openSettings)
+  return (
+    <button
+      type="button"
+      onClick={() => openSettings('models')}
+      title={t('input.modelPill.tooltip')}
+      className="flex h-8 max-w-[180px] items-center gap-1 rounded-lg px-2 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+    >
+      <span className="truncate">{model}</span>
+      <ChevronDown size={12} />
+    </button>
   )
 }
 

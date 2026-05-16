@@ -6,13 +6,36 @@
  * - 註冊 IPC handler 把 renderer 的 call 路由到 sidecar
  */
 
-import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+/**
+ * Dev mode 載 build/icon.png — 讓 Dock(macOS)/ taskbar(Win/Linux)顯
+ * 自訂 icon。 production 由 electron-builder 自動讀 build/icon.{icns,ico,png}
+ * 打進 .app/.exe。 user 把 1024x1024 PNG 放 build/icon.png 就生效。
+ */
+function customIconPath(): string | null {
+  // dev 跑 electron . 時 __dirname = apps/orion-cowork/dist/electron/
+  // production .app 內路徑不同,但已由 builder 處理 — 此 fn 只 dev 用。
+  const candidates = [
+    resolve(__dirname, '..', '..', 'build', 'icon.png'),
+    resolve(__dirname, '..', '..', 'build', 'icon.icns'),
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
 
 import { SidecarClient, findRepoRoot } from './sidecar'
 
 const isDev = process.env.NODE_ENV === 'development'
+
+// Dev mode 跑 `electron .` 預設 name 是 "Electron"(dock hover / menu bar 都
+// 顯這個)。 production 由 electron-builder productName 處理,dev 也補上。
+app.setName('Orion Cowork')
+
 const sidecar = new SidecarClient()
 
 /**
@@ -29,9 +52,12 @@ function packagedSidecarPath(): string | null {
 
 async function createWindow(): Promise<void> {
   const isMac = process.platform === 'darwin'
+  const iconPath = customIconPath()
+  // macOS:dock.setIcon 在 app.whenReady 後(see 下方);Win/Linux BrowserWindow.icon
   const win = new BrowserWindow({
     width: 1100,
     height: 800,
+    icon: iconPath && !isMac ? iconPath : undefined,
     // macOS:嵌入式紅綠燈,React 自畫整個頂端 toolbar,跟 Claude.ai 風格一致
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
@@ -42,6 +68,13 @@ async function createWindow(): Promise<void> {
       sandbox: false,
     },
   })
+  if (isMac && iconPath && app.dock) {
+    try {
+      app.dock.setIcon(nativeImage.createFromPath(iconPath))
+    } catch (err) {
+      console.warn('[main] dock.setIcon failed:', err)
+    }
+  }
 
   // Drop 檔案到非 InputBox 區域時,Electron 預設行為是 navigate 到該檔(取代整個
   // renderer)。我們不要那個 — file:// navigation 一律擋掉,讓 renderer 自己的

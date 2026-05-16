@@ -30,18 +30,9 @@ export function MessageList() {
     }
   }, [messages])
 
-  if (messages.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-center text-fg-muted">
-        <div>
-          <p className="text-sm">Start a conversation</p>
-          <p className="mt-1 text-xs text-fg-subtle">
-            Type a prompt below — agent will respond with tools and streaming text.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  // Empty state 的 hero 由 InputBox 自己顯示(對齊 Claude Cowork)。
+  // 這裡只 render 訊息列;沒訊息時就讓 chat column 上方空白,InputBox 自動 fill。
+  if (messages.length === 0) return null
 
   return (
     <div
