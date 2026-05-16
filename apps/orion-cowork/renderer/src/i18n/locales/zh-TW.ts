@@ -86,6 +86,11 @@ export default {
   // Settings General
   'settings.section.general': '一般',
   'general.defaultWorkspace': '預設工作目錄',
+  'general.avatar': '個人頭像',
+  'general.avatarHint': '顯示在訊息泡泡跟側邊欄。會中央裁成正方形,只存在本機。',
+  'general.avatarPick': '上傳圖片',
+  'general.avatarChange': '更換',
+  'general.avatarRemove': '移除',
   'general.defaultWorkspaceHint': '每個沒指定專案的對話會繼承這個資料夾,讓 model 看到 git 狀態 / 該目錄檔案 / `<目錄>/.orion/instructions.md`。',
   'general.pickFolder': '選擇資料夾⋯',
   'general.change': '變更',

@@ -7,6 +7,7 @@ import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
+import { useSettingsStore } from '../store/settings'
 import { AskUserQuestionInline } from './AskUserQuestionInline'
 import { InlineFileCards } from './RightSidebar'
 import { ToolCallGroup } from './ToolCallGroup'
@@ -241,6 +242,14 @@ function LazyAttachment({ att }: { att: AttachmentPreview }) {
 }
 
 function Avatar({ role }: { role: 'user' | 'assistant' }) {
+  const userAvatar = useSettingsStore((s) => s.userAvatar)
+  if (role === 'user' && userAvatar) {
+    return (
+      <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full">
+        <img src={userAvatar} alt="user" className="h-full w-full object-cover" />
+      </div>
+    )
+  }
   return (
     <div
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${

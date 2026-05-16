@@ -542,11 +542,25 @@ function UserMenu() {
         title={t('sidebar.openMenu')}
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-fg-base hover:bg-bg-hover"
       >
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent">
-          <User size={14} />
-        </div>
+        <UserAvatarMini />
         <span className="flex-1 truncate text-left">{t('sidebar.localUser')}</span>
       </button>
+    </div>
+  )
+}
+
+function UserAvatarMini() {
+  const userAvatar = useSettingsStore((s) => s.userAvatar)
+  if (userAvatar) {
+    return (
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full">
+        <img src={userAvatar} alt="user" className="h-full w-full object-cover" />
+      </div>
+    )
+  }
+  return (
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent">
+      <User size={14} />
     </div>
   )
 }

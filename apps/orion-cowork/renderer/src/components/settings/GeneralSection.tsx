@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Folder, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Folder, User, X } from 'lucide-react'
 
 import { getPrefs, setPref } from '../../api/agent'
 import { useTranslation } from '../../i18n'
+import { useSettingsStore } from '../../store/settings'
 
 export function GeneralSection() {
   const { t } = useTranslation()
@@ -36,7 +37,8 @@ export function GeneralSection() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      <AvatarPicker />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">
           {t('general.defaultWorkspace')}
@@ -79,4 +81,100 @@ export function GeneralSection() {
       </div>
     </div>
   )
+}
+
+/**
+ * 個人頭像上傳 — canvas resize 到 256×256 JPEG 0.85,存 zustand persist
+ * (localStorage)。沒打 sidecar,純 renderer。Avatar 顯在訊息泡泡 user 側
+ * + Sidebar 底部 user 列。
+ */
+function AvatarPicker() {
+  const { t } = useTranslation()
+  const avatar = useSettingsStore((s) => s.userAvatar)
+  const setAvatar = useSettingsStore((s) => s.setUserAvatar)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onPick(file: File) {
+    setError(null)
+    setBusy(true)
+    try {
+      const dataUrl = await resizeToJpeg(file, 256, 0.85)
+      setAvatar(dataUrl)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-fg-muted">
+        {t('general.avatar')}
+      </label>
+      <p className="text-[11px] text-fg-subtle">{t('general.avatarHint')}</p>
+      <div className="mt-2 flex items-center gap-3">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent/15 text-accent">
+          {avatar ? (
+            <img src={avatar} alt="avatar" className="h-full w-full object-cover" />
+          ) : (
+            <User size={28} />
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={busy}
+              className="rounded-md border border-bg-hover bg-bg-panel px-3 py-1 text-xs hover:bg-bg-hover disabled:opacity-40"
+            >
+              {avatar ? t('general.avatarChange') : t('general.avatarPick')}
+            </button>
+            {avatar && (
+              <button
+                type="button"
+                onClick={() => setAvatar(null)}
+                disabled={busy}
+                className="rounded-md px-3 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:opacity-40"
+              >
+                {t('general.avatarRemove')}
+              </button>
+            )}
+          </div>
+          {error && <p className="text-[11px] text-error">{error}</p>}
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void onPick(f)
+            if (inputRef.current) inputRef.current.value = ''
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Resize image → 正方形 cover crop → JPEG data URL。 */
+async function resizeToJpeg(file: File, edge: number, quality: number): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = edge
+  canvas.height = edge
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas 2d unavailable')
+  // Cover crop:取中央正方形
+  const side = Math.min(bitmap.width, bitmap.height)
+  const sx = (bitmap.width - side) / 2
+  const sy = (bitmap.height - side) / 2
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, edge, edge)
+  bitmap.close()
+  return canvas.toDataURL('image/jpeg', quality)
 }

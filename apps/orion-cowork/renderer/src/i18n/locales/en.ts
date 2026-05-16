@@ -80,6 +80,11 @@ export default {
 
   'settings.section.general': 'General',
   'general.defaultWorkspace': 'Default workspace',
+  'general.avatar': 'Your avatar',
+  'general.avatarHint': 'Shown in chat bubbles and the sidebar. Square crop, stored locally only.',
+  'general.avatarPick': 'Upload image',
+  'general.avatarChange': 'Change',
+  'general.avatarRemove': 'Remove',
   'general.defaultWorkspaceHint': 'Every chat without a project inherits this folder, so the model sees git status / files / `<folder>/.orion/instructions.md`.',
   'general.pickFolder': 'Choose folder…',
   'general.change': 'Change',

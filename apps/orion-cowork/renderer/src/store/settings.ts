@@ -63,6 +63,9 @@ type SettingsState = {
   setSelectedModel: (provider: string, model: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (m: PermissionMode) => void
+  /** Data URL of user avatar(JPEG, 256x256 resized);null = 用 fallback icon。 */
+  userAvatar: string | null
+  setUserAvatar: (dataUrl: string | null) => void
   setCatalog: (providers: Provider[]) => void
   openSettings: (section?: string) => void
   closeSettings: () => void
@@ -97,6 +100,7 @@ export const useSettingsStore = create<SettingsState>()(
       selectedProvider: 'anthropic',
       selectedModel: 'claude-sonnet-4-6',
       permissionMode: 'act',
+      userAvatar: null,
       providers: [],
       catalogLoaded: false,
       settingsOpen: false,
@@ -125,6 +129,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSelectedModel: (provider, model) =>
         set({ selectedProvider: provider, selectedModel: model }),
       setPermissionMode: (m) => set({ permissionMode: m }),
+      setUserAvatar: (d) => set({ userAvatar: d }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
       openSettings: (section) =>
@@ -162,6 +167,7 @@ export const useSettingsStore = create<SettingsState>()(
         selectedProvider: s.selectedProvider,
         selectedModel: s.selectedModel,
         permissionMode: s.permissionMode,
+        userAvatar: s.userAvatar,
         sidebarCollapsed: s.sidebarCollapsed,
         rightSidebarOpen: s.rightSidebarOpen,
       }),

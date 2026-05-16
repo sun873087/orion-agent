@@ -80,6 +80,11 @@ export default {
 
   'settings.section.general': '通用',
   'general.defaultWorkspace': '默认工作目录',
+  'general.avatar': '个人头像',
+  'general.avatarHint': '显示在消息气泡跟侧边栏。会中心裁成正方形,只存在本机。',
+  'general.avatarPick': '上传图片',
+  'general.avatarChange': '更换',
+  'general.avatarRemove': '移除',
   'general.defaultWorkspaceHint': '每个不属于项目的对话都会继承这个目录,让 model 看到 git 状态 / 文件 / `<目录>/.orion/instructions.md`。',
   'general.pickFolder': '选择文件夹⋯',
   'general.change': '变更',

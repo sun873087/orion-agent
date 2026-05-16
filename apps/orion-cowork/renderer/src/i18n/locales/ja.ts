@@ -80,6 +80,11 @@ export default {
 
   'settings.section.general': '一般',
   'general.defaultWorkspace': 'デフォルト workspace',
+  'general.avatar': 'アバター',
+  'general.avatarHint': 'メッセージとサイドバーに表示。中央クロップで正方形化、ローカルのみ保存。',
+  'general.avatarPick': '画像を選択',
+  'general.avatarChange': '変更',
+  'general.avatarRemove': '削除',
   'general.defaultWorkspaceHint': 'プロジェクトに属さない会話はこのフォルダを継承し、モデルは git 状態 / ファイル / `<フォルダ>/.orion/instructions.md` を参照可能。',
   'general.pickFolder': 'フォルダを選択⋯',
   'general.change': '変更',
