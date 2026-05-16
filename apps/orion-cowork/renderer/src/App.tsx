@@ -28,7 +28,8 @@ export function App() {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         {!sidebarCollapsed && <Sidebar />}
-        <div className="flex flex-1 flex-col">
+        {/* min-w-0 讓 chat column 在 flex 內可縮,內容 wrap 而非 overflow */}
+        <div className="flex min-w-0 flex-1 flex-col">
           <MessageList />
           <InputBox onSend={sendPrompt} onAbort={abort} />
         </div>
