@@ -213,8 +213,15 @@ export function useSendPrompt() {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(msg)
     } finally {
-      useAgentStore.getState().endAssistantMessage(assistantId)
-      useAgentStore.getState().setBusy(false)
+      const state = useAgentStore.getState()
+      state.endAssistantMessage(assistantId)
+      state.setBusy(false)
+      // 本 turn 結束(自然 / abort / error)— 若還有屬於這 assistantId 的
+      // pendingQuestion(例如 user abort 時 banner 卡住),清掉避免殘留。
+      const pq = state.pendingQuestion
+      if (pq && pq.assistantId === assistantId) {
+        state.setPendingQuestion(null)
+      }
       refreshSessions()
     }
   }, [provider, model, activeProjectId, permissionMode])

@@ -416,14 +416,18 @@ class Handlers:
         conv.can_use_tool = self._build_can_use_tool(permission_mode, out_queue)
 
         # ─── AskUserQuestion asker wiring ──────────────────────────────
-        # 把 AskUserQuestionTool 的 asker 綁到本 turn 的 out_queue,讓 LLM
-        # 呼叫此 tool 時推 ask_user_question frame 到 renderer 渲互動按鈕。
-        # 同時把 should_defer 拿掉,LLM 才看得到 schema 主動使用。
+        # 只在 Ask 模式才把 tool 對外開放 + 綁 asker:Act 模式 = 「放手讓我做」,
+        # user 期望 AI 不要打擾,所以把 AskUserQuestion 收回 deferred(LLM 看不到
+        # schema),asker 維持 None,模型自然不會反問。Ask 模式則開放 schema +
+        # 推 ask_user_question frame 給 renderer 渲互動按鈕。
         for tool in conv.tools:
             if getattr(tool, "name", None) == "AskUserQuestion":
-                tool.asker = self._build_asker(out_queue)
-                # 讓 schema 直接放 system prompt,不用 ToolSearch 才能看到
-                tool.should_defer = False
+                if permission_mode == "ask":
+                    tool.asker = self._build_asker(out_queue)
+                    tool.should_defer = False
+                else:
+                    tool.asker = None
+                    tool.should_defer = True
                 break
 
         async def _producer() -> None:
@@ -819,6 +823,20 @@ class Handlers:
             }
             return
         ctx.abort_event.set()
+        # 喚醒任何 pending approval / AskUserQuestion futures — 否則它們繼續
+        # await 沒有人會 resolve,conv.send 內部就卡住,abort_event 永遠
+        # 沒機會被檢查到。Approval 視為 deny、AskUser 視為空回答。
+        for fut in list(self._approvals.values()):
+            if not fut.done():
+                fut.set_result(PermissionResult(
+                    decision=PermissionDecision.DENY,
+                    reason="aborted by user",
+                ))
+        self._approvals.clear()
+        for fut in list(self._ask_pending.values()):
+            if not fut.done():
+                fut.set_result({})
+        self._ask_pending.clear()
         # Give the loop a chance to observe the abort
         await asyncio.sleep(0)
         yield {"event": "abort_requested", "data": {"session_id": sid}, "final": True}

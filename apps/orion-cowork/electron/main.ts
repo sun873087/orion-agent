@@ -100,13 +100,23 @@ app.whenReady().then(async () => {
   // 2. 註冊 IPC
   ipcMain.on('agent:call', async (event, msg: { callId: string; method: string; params: Record<string, unknown> }) => {
     const channel = `agent-frame:${msg.callId}`
+    // sidecar 還在 in-flight 時若 window 被關掉 / 銷毀(e.g. user 關 app
+    // 視窗的瞬間 sidecar.exit 還在處理 pending RPC),event.sender 變
+    // destroyed,send() 就丟 "Object has been destroyed"。包一層 safe send。
+    const safeSend = (payload: unknown): void => {
+      const sender = event.sender
+      if (sender.isDestroyed()) return
+      try {
+        sender.send(channel, payload)
+      } catch {
+        // isDestroyed 跟 send 之間 race 也吞掉
+      }
+    }
     try {
-      await sidecar.call(msg.method, msg.params, (frame) => {
-        event.sender.send(channel, frame)
-      })
+      await sidecar.call(msg.method, msg.params, safeSend)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      event.sender.send(channel, { id: msg.callId, error: { code: 'IPC_ERROR', message }, final: true })
+      safeSend({ id: msg.callId, error: { code: 'IPC_ERROR', message }, final: true })
     }
   })
 
