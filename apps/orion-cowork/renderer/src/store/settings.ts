@@ -38,17 +38,17 @@ type SettingsState = {
   providers: Provider[]
   catalogLoaded: boolean
   settingsOpen: boolean
-  languagePanelOpen: boolean
+  /** 當前 Settings page 高亮的 section id。Page 是 list-driven 全頁,不再是 modal。 */
+  activeSettingsSection: string
 
   setTheme: (t: Theme) => void
   toggleTheme: () => void
   setLocale: (l: Locale) => void
   setSelectedModel: (provider: string, model: string) => void
   setCatalog: (providers: Provider[]) => void
-  openSettings: () => void
+  openSettings: (section?: string) => void
   closeSettings: () => void
-  openLanguagePanel: () => void
-  closeLanguagePanel: () => void
+  setActiveSettingsSection: (id: string) => void
 }
 
 const STORAGE_KEY = 'orion-cowork-settings/v1'
@@ -63,7 +63,7 @@ export const useSettingsStore = create<SettingsState>()(
       providers: [],
       catalogLoaded: false,
       settingsOpen: false,
-      languagePanelOpen: false,
+      activeSettingsSection: 'appearance',
 
       setTheme: (t) => {
         set({ theme: t })
@@ -82,10 +82,13 @@ export const useSettingsStore = create<SettingsState>()(
         set({ selectedProvider: provider, selectedModel: model }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
-      openSettings: () => set({ settingsOpen: true }),
+      openSettings: (section) =>
+        set((s) => ({
+          settingsOpen: true,
+          activeSettingsSection: section ?? s.activeSettingsSection,
+        })),
       closeSettings: () => set({ settingsOpen: false }),
-      openLanguagePanel: () => set({ languagePanelOpen: true }),
-      closeLanguagePanel: () => set({ languagePanelOpen: false }),
+      setActiveSettingsSection: (id) => set({ activeSettingsSection: id }),
     }),
     {
       name: STORAGE_KEY,

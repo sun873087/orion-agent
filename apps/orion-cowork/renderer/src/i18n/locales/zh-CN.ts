@@ -16,6 +16,10 @@ export default {
   'menu.language': '语言',
   'language.title': '语言',
 
+  'settings.back': '返回',
+  'settings.group.general': '通用',
+  'settings.group.desktop': '桌面应用',
+
   'session.label': 'session: {id}',
 
   'input.placeholder.disabled': 'sidecar 无法连接',

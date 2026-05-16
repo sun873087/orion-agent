@@ -16,6 +16,10 @@ export default {
   'menu.language': 'Language',
   'language.title': 'Language',
 
+  'settings.back': 'Back',
+  'settings.group.general': 'General',
+  'settings.group.desktop': 'Desktop app',
+
   'session.label': 'session: {id}',
 
   'input.placeholder.disabled': 'sidecar unavailable',

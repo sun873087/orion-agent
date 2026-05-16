@@ -16,6 +16,10 @@ export default {
   'menu.language': '言語',
   'language.title': '言語',
 
+  'settings.back': '戻る',
+  'settings.group.general': '一般',
+  'settings.group.desktop': 'デスクトップ',
+
   'session.label': 'session: {id}',
 
   'input.placeholder.disabled': 'sidecar に接続できません',

@@ -22,7 +22,7 @@ export function Header() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={openSettings}
+          onClick={() => openSettings('models')}
           className="flex items-center gap-2 rounded-md border border-bg-hover bg-bg-input px-2 py-1 font-mono text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
           title={t('settings.title')}
         >

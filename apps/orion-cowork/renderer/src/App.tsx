@@ -1,15 +1,21 @@
 import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
-import { LanguagePanel } from './components/LanguagePanel'
 import { MessageList } from './components/MessageList'
-import { SettingsPanel } from './components/SettingsPanel'
+import { SettingsPage } from './components/SettingsPage'
 import { Sidebar } from './components/Sidebar'
 import { useAbort, useInitConversation, useSendPrompt } from './hooks/useAgent'
+import { useSettingsStore } from './store/settings'
 
 export function App() {
   useInitConversation()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
+  const settingsOpen = useSettingsStore((s) => s.settingsOpen)
+
+  // Settings 是全頁 view — 開時整個 chat layout 被取代,不疊 modal。
+  if (settingsOpen) {
+    return <SettingsPage />
+  }
 
   return (
     <div className="flex h-full w-full">
@@ -19,8 +25,6 @@ export function App() {
         <MessageList />
         <InputBox onSend={sendPrompt} onAbort={abort} />
       </div>
-      <SettingsPanel />
-      <LanguagePanel />
     </div>
   )
 }

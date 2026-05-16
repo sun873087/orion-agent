@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  Check,
   ChevronRight,
   Globe,
   MessageSquare,
@@ -9,12 +10,12 @@ import {
   User,
 } from 'lucide-react'
 
-import { useTranslation } from '../i18n'
+import { LOCALES, useTranslation, type Locale } from '../i18n'
 import { useDeleteConversation, useNewConversation, useSwitchConversation } from '../hooks/useAgent'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
 
-/** 左側對話列表 + 底部 user popup menu。menu 入口未來易擴(Profile / Shortcuts / Help…)。 */
+/** 左側對話列表 + 底部 user popup menu(支援 nested submenu)。 */
 export function Sidebar() {
   const { t } = useTranslation()
   const sessions = useAgentStore((s) => s.sessions)
@@ -84,24 +85,32 @@ export function Sidebar() {
   )
 }
 
-/** Sidebar 左下 user 區塊 + popup menu。menu items 用 array,加項目只改 array。 */
+type Submenu = 'language' | null
+
+/**
+ * Sidebar 左下 user button + popup menu。
+ * 有些項目走 nested submenu(像 Language),有些直接 action(Settings)。
+ * 加新 item 只改 buildItems() 內的 array。
+ */
 function UserMenu() {
   const { t } = useTranslation()
   const openSettings = useSettingsStore((s) => s.openSettings)
-  const openLanguagePanel = useSettingsStore((s) => s.openLanguagePanel)
   const [open, setOpen] = useState(false)
+  const [submenu, setSubmenu] = useState<Submenu>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // click outside / Escape 關 menu
   useEffect(() => {
     if (!open) return
     function onMouseDown(e: MouseEvent) {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false)
+        closeAll()
       }
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        if (submenu) setSubmenu(null)
+        else closeAll()
+      }
     }
     window.addEventListener('mousedown', onMouseDown)
     window.addEventListener('keydown', onKey)
@@ -109,26 +118,34 @@ function UserMenu() {
       window.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, submenu])
 
-  const items: Array<{ key: string; label: string; icon: JSX.Element; onClick: () => void }> = [
+  function closeAll() {
+    setOpen(false)
+    setSubmenu(null)
+  }
+
+  type MenuItem =
+    | { kind: 'action'; key: string; label: string; icon: JSX.Element; onClick: () => void }
+    | { kind: 'submenu'; key: string; label: string; icon: JSX.Element; submenu: Submenu }
+
+  const items: MenuItem[] = [
     {
+      kind: 'action',
       key: 'settings',
       label: t('menu.settings'),
       icon: <SettingsIcon size={14} />,
       onClick: () => {
-        setOpen(false)
+        closeAll()
         openSettings()
       },
     },
     {
+      kind: 'submenu',
       key: 'language',
       label: t('menu.language'),
       icon: <Globe size={14} />,
-      onClick: () => {
-        setOpen(false)
-        openLanguagePanel()
-      },
+      submenu: 'language',
     },
   ]
 
@@ -136,25 +153,46 @@ function UserMenu() {
     <div ref={rootRef} className="relative border-t border-bg-hover p-2">
       {open && (
         <div className="absolute bottom-full left-2 right-2 mb-1 rounded-lg border border-bg-hover bg-bg-base p-1 shadow-2xl">
-          {items.map((it) => (
-            <button
-              key={it.key}
-              type="button"
-              onClick={it.onClick}
-              className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-sm text-fg-base hover:bg-bg-hover"
-            >
-              <span className="flex items-center gap-2">
-                {it.icon}
-                <span>{it.label}</span>
-              </span>
-              <ChevronRight size={12} className="text-fg-subtle" />
-            </button>
-          ))}
+          {items.map((it) => {
+            const isActive = it.kind === 'submenu' && submenu === it.submenu
+            return (
+              <div key={it.key} className="relative">
+                <button
+                  type="button"
+                  onMouseEnter={() => {
+                    if (it.kind === 'submenu') setSubmenu(it.submenu)
+                    else setSubmenu(null)
+                  }}
+                  onClick={() => {
+                    if (it.kind === 'action') it.onClick()
+                    else setSubmenu(submenu === it.submenu ? null : it.submenu)
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-sm text-fg-base hover:bg-bg-hover ${
+                    isActive ? 'bg-bg-hover' : ''
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    {it.icon}
+                    <span>{it.label}</span>
+                  </span>
+                  {it.kind === 'submenu' && (
+                    <ChevronRight size={12} className="text-fg-subtle" />
+                  )}
+                </button>
+                {it.kind === 'submenu' && submenu === it.submenu && (
+                  <LanguageSubmenu onPick={closeAll} />
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (open) closeAll()
+          else setOpen(true)
+        }}
         title={t('sidebar.openMenu')}
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-fg-base hover:bg-bg-hover"
       >
@@ -163,6 +201,45 @@ function UserMenu() {
         </div>
         <span className="flex-1 truncate text-left">{t('sidebar.localUser')}</span>
       </button>
+    </div>
+  )
+}
+
+function LanguageSubmenu({ onPick }: { onPick: () => void }) {
+  const { t } = useTranslation()
+  const locale = useSettingsStore((s) => s.locale)
+  const setLocale = useSettingsStore((s) => s.setLocale)
+
+  return (
+    <div
+      // 對齊 Language item bottom 往上 grow — popup 本身就在 sidebar 底,
+      // 從 item top 往下會超出 viewport / 被 input bar 蓋住。
+      className="absolute left-full bottom-0 ml-1 w-48 rounded-lg border border-bg-hover bg-bg-base p-1 shadow-2xl"
+      // 子 menu 維持顯示:hover 進來不要被 parent 的 onMouseEnter 清掉
+      onMouseEnter={(e) => e.stopPropagation()}
+    >
+      {LOCALES.map((l) => {
+        const active = l === locale
+        return (
+          <button
+            key={l}
+            type="button"
+            onClick={() => {
+              setLocale(l)
+              onPick()
+            }}
+            className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+              active ? 'bg-accent/15 text-accent' : 'text-fg-base hover:bg-bg-hover'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              {active ? <Check size={12} /> : <Globe size={12} className="opacity-50" />}
+              <span>{t(`lang.${l}` as `lang.${Locale}`)}</span>
+            </span>
+            <span className="font-mono text-[10px] text-fg-subtle">{l}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

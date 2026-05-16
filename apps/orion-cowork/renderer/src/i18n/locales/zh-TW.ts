@@ -19,6 +19,11 @@ export default {
   'menu.language': '語言',
   'language.title': '語言',
 
+  // Settings page
+  'settings.back': '返回',
+  'settings.group.general': '一般',
+  'settings.group.desktop': '桌面應用',
+
   // Session label
   'session.label': 'session: {id}',
 
