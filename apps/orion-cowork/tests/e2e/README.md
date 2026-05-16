@@ -1,37 +1,64 @@
-# apps/orion-cowork/tests/e2e/
+# Cowork e2e tests
 
-跨 Electron renderer + main + sidecar 的 end-to-end 測試。**目前空,Phase 30 未實作**。
+Playwright Electron 起完整 Cowork(renderer + main + sidecar)+ 透過 mock
+provider override 跑 happy path,**不打真 LLM**(無成本)。
 
-## 計畫範圍
+## 跑法
 
-啟動完整 Electron app,驗證:
+需要本機:
+- `make install` 已跑過(`uv sync` + `npm install`)
+- `npm install` 包含 `@playwright/test`(Phase 31-F 加進 `apps/orion-cowork`
+  的 devDependencies — npm install 已自動裝)
+- 第一次跑要 `npx playwright install`(下載 Playwright 用的 browsers,
+  e2e 雖然不開 browser,但 Playwright runtime 需要)
+- **GUI display**:macOS / Windows native 直接跑;Linux CI 需 `xvfb-run`
+- Renderer:dev mode 需要 vite dev server(:5174)同步跑
 
-- App 開窗,sidecar 啟動,renderer 收到 `sidecar.ready`
-- 透過 IPC 觸發 `conversation.send`,renderer 顯示 streaming text
-- Renderer 觸發 tool 呼叫(例如 Bash),收到 result
-- Abort 流程
-- 關閉時 sidecar 進程清乾淨
+兩個 terminal:
 
-## 依賴
+```bash
+# Terminal 1:vite renderer dev
+npm run dev:renderer -w @orion/cowork
 
-- **Headless Electron**:`xvfb`(Linux CI)或 `electron-builder` 的 spectron / playwright-electron
-- `pytest`(Python 端)或 `vitest` + Playwright(TS 端)— 看選哪個生態系
-- 真的 spawn Python sidecar(workspace `uv run`)
+# Terminal 2:跑 e2e
+npm run test:e2e -w @orion/cowork
+# 或從 root
+make test-e2e-cowork
+```
 
-## 為何 Phase 30 沒做
+## Mock provider 注入
 
-- Headless Electron 在 CI 環境設定是頭痛源,光是穩定起來就要 3-5 天
-- 屬於後續 phase scope
+`fixtures.ts` 啟 Electron 時帶 env:
 
-## 開工 checklist(留給後續 phase)
+- `ORION_PROVIDER_OVERRIDE=mock` — sidecar `__main__.py` 看到後呼
+  `set_test_provider_factory()`,所有 LLM call 都走 fake
+- `ORION_MOCK_SCRIPT_JSON='[{"text":"hi"}, ...]'` — scripted turns
+- `ORION_COWORK_DATA_DIR=/tmp/cowork-e2e-xxx` — 隔離 sessions.db,test 互不污染
 
-- [ ] 選 e2e 框架:Playwright Electron vs spectron(spectron 已棄用,推薦 Playwright)
-- [ ] CI workflow 加 xvfb / headless display
-- [ ] 第一個 happy-path test:啟 app → 看到 ready → 送 prompt → 看到 streaming
-- [ ] Sidecar 殘留檢測:close window → assert no python process leaked
+## 已有 specs
 
-## 替代:單元級 e2e
+- `smoke.spec.ts` — app 啟動 / sidebar New chat 出現 / 多按 New chat 不建空 session
 
-短期內 sidecar 已有 `sidecar/tests/test_rpc.py`(子進程 stdio 測試)。renderer 跟
-main 邏輯目前沒 unit test — 可以先用 Playwright 跑 vite dev server(不啟 Electron)
-做 renderer 單元測試,等 Electron e2e 環境穩了再合併。
+## 留下 phase 補
+
+- 完整 chat flow:send prompt → 看到 streaming text → tool call → result
+- Abort mid-flight UI
+- Settings panel 切換 theme / model 後再 send
+- MCP server 顯示 / reconnect
+- Cross-restart persistence(open app → send → close → reopen → 見 history)
+
+## Headless mode
+
+Playwright Electron 不支援完全 headless(Electron 本身需要 display)。Linux CI
+得 `xvfb-run`:
+
+```bash
+xvfb-run --auto-servernum npm run test:e2e -w @orion/cowork
+```
+
+macOS / Windows CI runner 有實體 display 不用額外設定。
+
+## 為何沒在 main test 套件跑
+
+預設 `make test` 不跑這個(避免每次測試都彈 Electron 窗)。要 opt-in
+`make test-e2e-cowork`。

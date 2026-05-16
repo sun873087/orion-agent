@@ -1,4 +1,4 @@
-.PHONY: help install test test-model test-sdk test-cli test-chat-api test-e2e-chat-api test-sidecar test-all lint typecheck \
+.PHONY: help install test test-model test-sdk test-cli test-chat-api test-e2e-chat-api test-e2e-cowork test-sidecar test-all lint typecheck \
         gen-types \
         dev-cli dev-api dev-web dev-cowork \
         demo-anthropic demo-openai \
@@ -18,6 +18,7 @@ help:
 	@echo "  test-cli        orion-cli (CLI 殼)"
 	@echo "  test-chat-api   orion-chat-api (FastAPI + WS unit tests)"
 	@echo "  test-e2e-chat-api  chat-api full-stack e2e (uvicorn + SQLite + WS)"
+	@echo "  test-e2e-cowork    Cowork full-stack e2e (Playwright Electron + sidecar)"
 	@echo "  test-sidecar    orion-cowork-sidecar (stdio RPC)"
 	@echo "  lint            uv run ruff check ."
 	@echo "  typecheck       uv run mypy packages apps"
@@ -64,6 +65,12 @@ test-chat-api:
 # Phase 31-E:chat-api full-stack e2e (uvicorn + SQLite + WS) — 顯式 opt-in。
 test-e2e-chat-api:
 	cd apps/orion-chat/api && uv run pytest tests/e2e -v -m e2e
+
+# Phase 31-F:Cowork full-stack e2e (Playwright Electron + mock provider) —
+# 需要 GUI display(macOS / Windows native;Linux 用 xvfb-run)+ vite dev
+# server 跑著(npm run dev:renderer -w @orion/cowork)。
+test-e2e-cowork:
+	npm run test:e2e -w @orion/cowork
 
 test-sidecar:
 	cd apps/orion-cowork/sidecar && uv run pytest -q
