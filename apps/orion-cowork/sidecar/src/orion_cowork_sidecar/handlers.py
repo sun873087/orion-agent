@@ -27,6 +27,17 @@ from orion_cowork_sidecar.streaming import to_rpc_frame
 load_dotenv()
 
 
+# Cowork 是 desktop 聊天 app — 不該帶 cwd / git_status / env_info(那是給
+# CLI 用的)。給個簡短 system prompt,SDK 看到 self.system_prompt 非空就會
+# 跳過 fetch_system_prompt_parts,user message 不被 per-turn 注入污染。
+COWORK_SYSTEM_PROMPT = (
+    "You are a helpful AI assistant in a desktop chat app called Orion Cowork. "
+    "Answer the user clearly. When the user attaches images, describe or analyze "
+    "them as requested. Use tools only when they directly help the user's current "
+    "question — do not call tools unprompted."
+)
+
+
 class Handlers:
     """Active Conversation in-memory cache + SQLite persistence。
 
@@ -131,6 +142,10 @@ class Handlers:
             persistence_enabled=False,  # Phase E:in-memory only
             memory_enabled=False,
             auto_extract_memories=False,
+            # Cowork 是聊天 app,不該帶 CLI 的 cwd/git context — 否則 SDK
+            # 會把 repo 的 branch + recent commits 注入 user message,model
+            # 看到滿滿 git 上下文,圖片 prompt 被忽略,直接回 git log。
+            system_prompt=COWORK_SYSTEM_PROMPT,
         )
         sid = str(conv.session_id)
         self._conversations[sid] = conv
@@ -194,19 +209,39 @@ class Handlers:
 
         # 把 attachments 轉成 ImageBlock(預期格式:[{media_type, data: base64}])
         images = []
+        # Debug — stderr 印到 Electron main process console;不影響 stdio RPC
+        import sys
+        print(
+            f"[sidecar] conversation.send sid={sid[:8]} prompt={prompt[:30]!r} "
+            f"attachments_count={len(raw_attachments)}",
+            file=sys.stderr, flush=True,
+        )
         if raw_attachments:
             from orion_model.types import ImageBlock
-            for a in raw_attachments:
+            for i, a in enumerate(raw_attachments):
                 if not isinstance(a, dict):
+                    print(f"[sidecar]   attachment[{i}] dropped: not a dict (got {type(a).__name__})", file=sys.stderr, flush=True)
                     continue
                 media_type = a.get("media_type") or "image/png"
                 data = a.get("data")
                 if not isinstance(data, str) or not data:
+                    print(
+                        f"[sidecar]   attachment[{i}] dropped: bad data "
+                        f"(type={type(data).__name__}, len={len(data) if isinstance(data,str) else 'N/A'})",
+                        file=sys.stderr, flush=True,
+                    )
                     continue
                 try:
                     images.append(ImageBlock(media_type=media_type, data=data))
-                except Exception:  # noqa: BLE001
+                    print(
+                        f"[sidecar]   attachment[{i}] OK: {media_type} "
+                        f"{len(data)}b base64",
+                        file=sys.stderr, flush=True,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    print(f"[sidecar]   attachment[{i}] ImageBlock build failed: {e}", file=sys.stderr, flush=True)
                     continue
+        print(f"[sidecar] -> conv.send with {len(images)} images", file=sys.stderr, flush=True)
 
         # 記下 turn 開始時的 message 數,結束後 diff append 新訊息進 DB
         before_count = len(conv.state_messages)
@@ -250,6 +285,7 @@ class Handlers:
             memory_enabled=False,
             auto_extract_memories=False,
             session_id=_UUID(sid),
+            system_prompt=COWORK_SYSTEM_PROMPT,
         )
         conv.state_messages = await storage.load_messages(engine, sid)
         # 若已有 messages,title 應已設過,記下避免重複 update

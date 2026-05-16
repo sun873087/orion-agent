@@ -11,7 +11,25 @@
  */
 
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+
+// Sidecar stderr 鏡到 ~/.orion-cowork/sidecar.log — 讓 packaged build 也能 debug。
+const SIDECAR_LOG_DIR = resolve(homedir(), '.orion-cowork')
+const SIDECAR_LOG_PATH = resolve(SIDECAR_LOG_DIR, 'sidecar.log')
+try {
+  mkdirSync(SIDECAR_LOG_DIR, { recursive: true })
+} catch {
+  // ignore — 第一次沒這目錄,storage.py 也會建
+}
+function appendSidecarLog(line: string): void {
+  try {
+    appendFileSync(SIDECAR_LOG_PATH, line)
+  } catch {
+    // ignore — log 寫不進不該擋主流程
+  }
+}
 
 type Frame = Record<string, unknown> & { id?: string; final?: boolean }
 type FrameHandler = (frame: Frame) => void
@@ -56,6 +74,8 @@ export class SidecarClient {
     proc.stderr.on('data', (chunk: string) => {
       // Sidecar 的 stderr 給 main process 看 (debug);不送 renderer
       console.error('[sidecar]', chunk.trimEnd())
+      // 同時鏡到 ~/.orion-cowork/sidecar.log (packaged build 唯一的 debug 通道)
+      appendSidecarLog(chunk)
     })
     proc.on('exit', (code, signal) => {
       console.error(`[sidecar] exited code=${code} signal=${signal}`)
@@ -97,6 +117,13 @@ export class SidecarClient {
         }
       })
       const line = JSON.stringify({ id, method, params }) + '\n'
+      // 為 debug attachment 走失:記下 method + 大小 + (若 send) attachments 數
+      if (method === 'conversation.send') {
+        const atts = (params.attachments as Array<unknown> | undefined) ?? []
+        const msg = `[main->sidecar] conversation.send id=${id} bytes=${line.length} attachments=${atts.length}\n`
+        console.log(msg.trimEnd())
+        appendSidecarLog(msg)
+      }
       this.proc!.stdin.write(line)
     })
   }

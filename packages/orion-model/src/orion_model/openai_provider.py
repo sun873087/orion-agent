@@ -85,6 +85,21 @@ class OpenAIProvider:
         openai_input = translate_messages_to_openai(messages, system=system_str)
         openai_tools = translate_tools_to_openai(tools or [])
 
+        # Debug — 計每筆 input item 的 input_image 數量,印 system_str 前 80 字。
+        import sys as _sys
+        _img_count = 0
+        for _it in openai_input:
+            _content = _it.get("content") if isinstance(_it, dict) else None
+            if isinstance(_content, list):
+                for _b in _content:
+                    if isinstance(_b, dict) and _b.get("type") == "input_image":
+                        _img_count += 1
+        print(
+            f"[openai] stream model={self.model} input_items={len(openai_input)} "
+            f"images_in_input={_img_count} sys_head={system_str[:80]!r}",
+            file=_sys.stderr, flush=True,
+        )
+
         extra: dict[str, Any] = {}
         if temperature is not None:
             extra["temperature"] = temperature
