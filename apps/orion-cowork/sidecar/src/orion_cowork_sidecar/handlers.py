@@ -20,7 +20,6 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.permissions.decisions import (
     PermissionDecision,
     PermissionResult,
-    always_allow,
     current_tool_use_id,
 )
 from orion_sdk.services.feature_flags import load_feature_flags
@@ -151,6 +150,9 @@ class Handlers:
         # 等 renderer 透過 conversation.ask_user_reply RPC resolve。
         # Key 是 sidecar-generated request_id。
         self._ask_pending: dict[str, asyncio.Future[dict[str, str]]] = {}
+        # Per-session 當前 permission_mode — turn 開始時寫入,can_use_tool 每次
+        # invocation 都讀 live 值,讓 user 中途切 mode 立刻生效。
+        self._session_modes: dict[str, str] = {}
 
     async def ensure_engine(self) -> AsyncEngine:
         # 加 lock 避免兩個 concurrent task 都跑 init_db → "table already exists"
@@ -244,6 +246,7 @@ class Handlers:
             "conversation.regenerate": self.conversation_regenerate,
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
+            "conversation.set_permission_mode": self.conversation_set_permission_mode,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "mcp.config_list": self.mcp_config_list,
@@ -422,11 +425,14 @@ class Handlers:
 
         # ─── permission_mode wiring(Ask vs Act)────────────────────────
         permission_mode = params.get("permission_mode", "act")
+        # 寫入 per-session live state — can_use_tool 每次 call 都讀 latest,
+        # user 中途切 mode 立刻生效。
+        self._session_modes[sid] = permission_mode
         # Frame queue:can_use_tool 在 conv.send 內 await,沒法自己 yield
         # frame。改把 approval-request frame 推 queue,outer loop multiplex
         # 從 queue + conv.send 兩邊收 frame。
         out_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-        conv.can_use_tool = self._build_can_use_tool(permission_mode, out_queue)
+        conv.can_use_tool = self._build_can_use_tool(sid, out_queue)
 
         # ─── AskUserQuestion + system prompt wiring per mode ───────────
         # Ask 模式:綁 asker + system prompt 加 _ASK_MODE_NOTE 鼓勵互動
@@ -509,22 +515,22 @@ class Handlers:
 
     def _build_can_use_tool(
         self,
-        permission_mode: str,
+        sid: str,
         out_queue: asyncio.Queue[dict[str, Any] | None],
     ) -> Any:
-        """依 permission_mode 組 can_use_tool callback。
+        """組 can_use_tool callback,每次 invocation 讀 latest session mode。
 
-        'ask':每個 tool call 前推 frame 到 renderer,await 對應 future。
-        其他(預設 'act'):always_allow,不擋。
+        Live mode → user 中途切 Ask/Act 立刻生效,不必等下一個 turn。
+        - Ask 模式:推 frame 到 renderer 等 approval future。
+        - Act 模式:always_allow。
+        - AskUserQuestion 永遠 allow(它自身就是問 user,雙重確認沒意義)。
         """
-        if permission_mode != "ask":
-            return always_allow
-
-        # AskUserQuestion 本身就是問 user — Ask 模式還要 user 先 approve 才能問
-        # 問題,是雙重確認,UX 沒意義。一律放行。
         AUTO_ALLOW_TOOLS = {"AskUserQuestion"}
 
-        async def _ask(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
+        async def _gate(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
+            mode = self._session_modes.get(sid, "act")
+            if mode != "ask":
+                return PermissionResult(decision=PermissionDecision.ALLOW)
             tool_name = getattr(tool, "name", type(tool).__name__)
             if tool_name in AUTO_ALLOW_TOOLS:
                 return PermissionResult(decision=PermissionDecision.ALLOW)
@@ -539,7 +545,7 @@ class Handlers:
                 "event": "tool_approval_request",
                 "data": {
                     "tool_use_id": tool_use_id,
-                    "tool_name": getattr(tool, "name", type(tool).__name__),
+                    "tool_name": tool_name,
                     "input": dict(tool_input),
                 },
             })
@@ -548,7 +554,7 @@ class Handlers:
             finally:
                 self._approvals.pop(tool_use_id, None)
 
-        return _ask
+        return _gate
 
     def _build_asker(
         self,
@@ -580,6 +586,43 @@ class Handlers:
                 self._ask_pending.pop(request_id, None)
 
         return asker
+
+    async def conversation_set_permission_mode(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """中途切 Ask / Act 模式。切到 'act' 時 auto-resolve 所有 pending
+        approvals(allow)和 ask futures(空回答),讓 in-flight turn 立刻
+        不再被卡住。
+        """
+        sid = params.get("session_id")
+        mode = params.get("mode")
+        if not isinstance(sid, str) or mode not in ("ask", "act"):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id + mode required"},
+                "final": True,
+            }
+            return
+        self._session_modes[sid] = mode
+        if mode == "act":
+            # 切到放手 → 把目前等 user 決定的 approval 一律放行;ask question
+            # 空回答(LLM 看到 "user didn't respond" 自己繼續判斷)
+            for fut in list(self._approvals.values()):
+                if not fut.done():
+                    fut.set_result(PermissionResult(
+                        decision=PermissionDecision.ALLOW,
+                        reason="permission_mode switched to act",
+                    ))
+            self._approvals.clear()
+            for fut in list(self._ask_pending.values()):
+                if not fut.done():
+                    fut.set_result({})
+            self._ask_pending.clear()
+        yield {
+            "event": "permission_mode_set",
+            "data": {"session_id": sid, "mode": mode},
+            "final": True,
+        }
 
     async def conversation_ask_user_reply(
         self, params: dict[str, Any]

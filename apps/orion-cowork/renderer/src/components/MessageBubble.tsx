@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronUp, User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import { useRegenerate } from '../hooks/useAgent'
@@ -47,11 +47,7 @@ export function MessageBubble({
           </div>
         )}
         {isUser
-          ? message.text && (
-              <div className="rounded-2xl rounded-tr-sm bg-accent px-4 py-2 text-white">
-                <span className="whitespace-pre-wrap">{message.text}</span>
-              </div>
-            )
+          ? message.text && <UserMessageBubble text={message.text} />
           : message.blocks && message.blocks.length > 0
             ? // 新版:依 LLM emit 順序 inline render text + tool groups
               message.blocks.map((b, i) => {
@@ -121,6 +117,48 @@ export function MessageBubble({
         {/* Regenerate(只最後一個 assistant message 顯示)*/}
         {!isUser && isLastAssistant && !message.streaming && <RegenerateButton />}
       </div>
+    </div>
+  )
+}
+
+/**
+ * User message bubble — 超過 5 行就 collapse,加「展開 / 收合」鈕。
+ * 用 line-clamp-5 CSS + ref 量 scrollHeight vs clientHeight 判斷有沒有截。
+ */
+function UserMessageBubble({ text }: { text: string }) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+
+  // 量內容是否超過 5 行 — 用 useLayoutEffect 在 paint 前測,避免 flicker
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // line-clamp 套上時,scrollHeight 是完整內容,clientHeight 是顯示區
+    setOverflows(el.scrollHeight - el.clientHeight > 1)
+  }, [text])
+
+  return (
+    <div className="rounded-2xl rounded-tr-sm bg-accent px-4 py-2 text-white">
+      <span
+        ref={ref}
+        className={`block whitespace-pre-wrap ${
+          !expanded ? 'line-clamp-5' : ''
+        }`}
+      >
+        {text}
+      </span>
+      {overflows && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 flex items-center gap-1 text-xs text-white/80 hover:text-white"
+        >
+          {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          <span>{expanded ? t('message.collapse') : t('message.expand')}</span>
+        </button>
+      )}
     </div>
   )
 }

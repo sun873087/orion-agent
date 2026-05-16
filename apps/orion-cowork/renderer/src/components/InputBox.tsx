@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
-import { fetchModels } from '../api/agent'
+import { fetchModels, setPermissionMode as rpcSetPermissionMode } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore, type PermissionMode } from '../store/settings'
@@ -338,13 +338,25 @@ export function InputBox({ onSend, onAbort }: Props) {
   )
 }
 
-/** Ask / Act 切換 pill — popup 兩個選項 + 描述。Backend gating 尚未串。 */
+/** Ask / Act 切換 pill — popup 兩個選項 + 描述。中途切會即時同步 sidecar。 */
 function PermissionModePill() {
   const { t } = useTranslation()
   const mode = useSettingsStore((s) => s.permissionMode)
-  const setMode = useSettingsStore((s) => s.setPermissionMode)
+  const setModeLocal = useSettingsStore((s) => s.setPermissionMode)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 切 mode 時:1) 寫入本地 settings store 2) 若有 active session 推給 sidecar
+  // 讓 in-flight turn 立刻響應(切到 act 會 auto-resolve pending approvals)。
+  function setMode(m: PermissionMode) {
+    setModeLocal(m)
+    const sid = useAgentStore.getState().sessionId
+    if (sid) {
+      rpcSetPermissionMode(sid, m).catch(() => {
+        // backend 沒接 / session 已過期都不擋本地 UI
+      })
+    }
+  }
 
   // 點外面關掉 popup
   useEffect(() => {

@@ -211,5 +211,7 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': 'Regenerate',
+  'message.expand': 'Show more',
+  'message.collapse': 'Show less',
   'message.failedHistory': 'failed to load history: {msg}',
 }

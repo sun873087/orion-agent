@@ -383,6 +383,21 @@ export async function sendAskUserReply(
   )
 }
 
+/**
+ * 中途切 Ask / Act mode — sidecar 立刻把 in-flight turn 的 can_use_tool gate
+ * 切過去;若切到 'act' 還會 auto-resolve 所有等中的 approval / ask futures。
+ */
+export async function setPermissionMode(
+  sessionId: string,
+  mode: PermissionMode,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_permission_mode',
+    { session_id: sessionId, mode },
+    () => {},
+  )
+}
+
 export type ModelCatalog = {
   providers: Array<{
     id: string

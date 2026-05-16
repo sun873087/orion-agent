@@ -211,5 +211,7 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '再生成',
+  'message.expand': '展開',
+  'message.collapse': '折りたたむ',
   'message.failedHistory': '履歴の読み込みに失敗:{msg}',
 }

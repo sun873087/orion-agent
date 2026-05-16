@@ -227,5 +227,7 @@ export default {
 
   // Message
   'message.regenerate': '重新生成',
+  'message.expand': '展開',
+  'message.collapse': '收合',
   'message.failedHistory': '對話歷史載入失敗:{msg}',
 }
