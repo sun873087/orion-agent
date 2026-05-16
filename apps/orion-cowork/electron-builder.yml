@@ -3,9 +3,14 @@ productName: Orion Cowork
 copyright: Copyright © 2026
 artifactName: ${productName}-${version}-${arch}.${ext}
 
+# npm workspaces hoist electron → root/node_modules,electron-builder 從 cowork/
+# 跑時找不到。顯式指定版本,bypass introspection。
+electronVersion: 33.4.11
+
 directories:
   buildResources: build
   output: dist/installers
+  app: .
 
 # Renderer build output + Electron main/preload/sidecar(TS 編譯後)+ package.json
 files:

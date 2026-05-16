@@ -442,6 +442,7 @@ class Conversation:
         can_use_tool: CanUseToolFn = always_allow,
         hooks: HookRegistry | None = None,
         max_turns: int = 30,
+        db_engine: Any = None,
     ) -> Conversation:
         """從既有 session 載入 transcript,重建 Conversation。
 
@@ -449,15 +450,23 @@ class Conversation:
             session_id: 之前 conversation 的 session_id
             provider / tools / system_prompt / ...: 同 __init__,system_prompt 若 None
                 會試著從 transcript 的 session-meta record 取出。
+            db_engine: Phase 31-H cross-machine resume — 若提供 AsyncEngine,
+                從 DB 載入 state_messages(優先於檔案 transcript)。其他機器上
+                resume 同一 session 時用。大 tool result 仍以 placeholder 形式存在
+                (跨機器看不到 ~/.orion/sessions/.../tool-results/ 內容)。
 
         Returns:
             Conversation 實例,state_messages + replacement_state 已重建。
         """
         import sys
 
-        from orion_sdk.storage.resume import load_session
+        from orion_sdk.storage.resume import fetch_db_messages, load_session
 
-        snapshot = load_session(session_id)
+        prebaked_messages = None
+        if db_engine is not None:
+            prebaked_messages = await fetch_db_messages(session_id, db_engine)
+
+        snapshot = load_session(session_id, prebaked_messages=prebaked_messages)
         sp_text = system_prompt or snapshot.system_prompt or ""
 
         # Dangling tool_use auto-repair 等警告(若有)印到 stderr

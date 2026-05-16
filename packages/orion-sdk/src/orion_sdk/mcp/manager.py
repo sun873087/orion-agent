@@ -109,6 +109,54 @@ class McpManager:
     def connection_errors(self) -> dict[str, str]:
         return dict(self._connection_errors)
 
+    @property
+    def failed_servers(self) -> list[str]:
+        """Server names that are currently in error state(Phase 31-H supervisor 用)。"""
+        return list(self._connection_errors.keys())
+
+    async def reconnect(self, name: str) -> bool:
+        """嘗試重連單一 failed server。
+
+        - 成功 → 加入 _clients、append tools、從 _connection_errors 移除,return True
+        - 失敗 → 更新 error message,return False
+        - 不在 configs 內 → return False(無法重連未知 server)
+        - 已 connected → return True(no-op)
+
+        要求 McpManager 還在 active session(`__aenter__` 進去過、`__aexit__` 未呼叫)。
+        """
+        if self._exit_stack is None:
+            logger.warning("McpManager.reconnect called outside active session")
+            return False
+        if name in self._clients:
+            return True
+        config = self.configs.get(name)
+        if config is None:
+            return False
+        try:
+            client = await self._exit_stack.enter_async_context(
+                McpClient(name, config),
+            )
+            self._clients[name] = client
+            tool_defs = await client.list_tools()
+            for tool_def in tool_defs:
+                try:
+                    wrapper = wrap_mcp_tool(
+                        server_name=name,
+                        tool_def=tool_def,
+                        client=client,
+                    )
+                    self._tools.append(wrapper)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to wrap tool %r from server %r: %s",
+                        tool_def.get("name"), name, e,
+                    )
+            self._connection_errors.pop(name, None)
+            return True
+        except Exception as e:  # noqa: BLE001
+            self._connection_errors[name] = f"{type(e).__name__}: {e}"
+            return False
+
     def server_summary(self) -> str:
         """給 mcp_instructions section 用 — 每 server 一行 + 工具數。"""
         if not self._clients and not self._connection_errors:

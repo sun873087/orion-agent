@@ -98,6 +98,27 @@ if (sidecarPath) {
 - [ ] Sidecar process 不洩漏(close app → `ps` 無 `orion-cowork-sidecar` 殘留)
 - [ ] App size 合理(<= 200MB on macOS,<= 150MB AppImage / NSIS)
 
+## 4.5 已知 ship-tooling 痛點(實作中發現)
+
+`npm install` 從 root workspace 跑時,**electron-builder 的 native helper
+`app-builder-bin` 沒被裝下來**(可能跟 npm workspaces hoist + optional dep
+互動有關)。`npm run dist:mac` 跑時報:
+
+```
+spawn .../node_modules/app-builder-bin/mac/app-builder_arm64 ENOENT
+```
+
+可能解法(後續驗證):
+
+1. cowork/ 加 `.npmrc` 設 `install-strategy=nested`(npm 9+)
+2. 改用 pnpm 取代 npm workspaces(原生支援 nohoist)
+3. 在 cowork/ 內 `npm install electron-builder app-builder-bin --no-workspaces`
+   強制 local 裝
+4. CI build 時改用 `electron-builder` Docker image,繞過 host npm hoist
+
+選擇之前先用 minimal repro 驗,別盲試。Phase 31-A scope 視為「sidecar binary
++ Electron production path 抓取」完成;ship 真正 .dmg / .exe 出貨留下一輪。
+
 ## 5. 完成後
 
 Phase 31-A 完成 = Cowork **無簽章版本**可以給內部 / dev 用。要 ship 給外部 user 還缺簽章 → 進 Phase 31-B。
