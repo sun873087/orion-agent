@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 
 from orion_model.provider import LLMProvider
 from orion_model.types import NormalizedMessage, TextBlock
@@ -160,20 +161,52 @@ def _heuristic_rank(
     memories: list[Memory],
     query: str,
     max_results: int,
+    *,
+    memory_dir: Path | None = None,
 ) -> list[Memory]:
-    """Bag-of-words overlap。"""
+    """Bag-of-words overlap + optional usage decay (Phase 31-G Layer 3)。
+
+    若 `memory_dir` 提供且 `ORION_MEMORY_USAGE_WEIGHT > 0`,最終 score 為:
+        score = (1 - w) * keyword_overlap + w * usage_decay
+    usage_decay 由 `usage.compute_usage_score` 算(exponential decay over hits)。
+    """
     query_words = _tokenize(query)
+
+    # Lazy import 避免 circular。
+    weight = 0.0
+    usage_lookup = None
+    if memory_dir is not None:
+        try:
+            from orion_sdk.memory.usage import compute_usage_score, usage_weight
+            weight = usage_weight()
+            if weight > 0:
+                usage_lookup = lambda m: compute_usage_score(m.filename, memory_dir)
+        except Exception:  # noqa: BLE001
+            weight = 0.0
+
     if not query_words:
-        # 沒 query word — 優先回 user / feedback 類(general 偏好,最常需要)
+        if weight > 0 and usage_lookup is not None:
+            # 沒 query word — 用 usage 排
+            scored = [(usage_lookup(m), m) for m in memories]
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [m for _, m in scored[:max_results]]
         return _by_type_priority(memories)[:max_results]
 
-    scored = [(_heuristic_score(m, query_words), m) for m in memories]
+    if weight > 0 and usage_lookup is not None:
+        scored = [
+            (
+                (1 - weight) * _heuristic_score(m, query_words) + weight * usage_lookup(m),
+                m,
+            )
+            for m in memories
+        ]
+    else:
+        scored = [(float(_heuristic_score(m, query_words)), m) for m in memories]
     scored.sort(key=lambda x: x[0], reverse=True)
 
     relevant = [m for s, m in scored if s > 0][:max_results]
     if relevant:
         return relevant
-    # 全 0 分 → fallback 到 type priority
     return _by_type_priority(memories)[:max_results]
 
 
@@ -287,6 +320,7 @@ async def rank_memories(
     *,
     provider: LLMProvider | None = None,
     max_results: int = _DEFAULT_MAX_RESULTS,
+    memory_dir: Path | None = None,
 ) -> list[Memory]:
     """挑 top N relevant memories。
 
@@ -295,6 +329,9 @@ async def rank_memories(
         conversation_messages: 當前對話歷史 — 用最近 user 訊息做 query
         provider: 若有且 ORION_MEMORY_RANKER=llm,用 LLM 排;否則 heuristic
         max_results: 上限,預設 10
+        memory_dir: 若有,Phase 31-G Layer 3 usage tracking 啟用 — 選中
+            的 memory 寫 ranker_hit event;heuristic 分數混入 usage decay
+            score(`ORION_MEMORY_USAGE_WEIGHT` env var 控制權重,預設 0)
     """
     if not memories:
         return []
@@ -309,7 +346,22 @@ async def rank_memories(
     if use_llm and provider is not None and query:
         result = await _llm_rank(memories, query, provider, max_results)
         if result is not None:
+            _emit_hits(memory_dir, result)
             return result
         # LLM 失敗 → fallback
 
-    return _heuristic_rank(memories, query, max_results)
+    result = _heuristic_rank(memories, query, max_results, memory_dir=memory_dir)
+    _emit_hits(memory_dir, result)
+    return result
+
+
+def _emit_hits(memory_dir: Path | None, selected: list[Memory]) -> None:
+    """Emit ranker_hit events for selected memories(Phase 31-G Layer 3)。"""
+    if memory_dir is None:
+        return
+    try:
+        from orion_sdk.memory.usage import record_ranker_hit
+        for m in selected:
+            record_ranker_hit(memory_dir, m.filename)
+    except Exception:  # noqa: BLE001 — usage tracking 失敗不該炸 ranker
+        pass

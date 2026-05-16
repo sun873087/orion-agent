@@ -93,6 +93,7 @@ async def memory_section(
             conversation_messages,
             provider=provider,
             max_results=max_results,
+            memory_dir=paths.memory_dir,
         )
         return render_memories(relevant)
     except Exception:  # noqa: BLE001 — memory 載入失敗不該影響對話
