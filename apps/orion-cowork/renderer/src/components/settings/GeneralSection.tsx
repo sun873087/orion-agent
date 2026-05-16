@@ -9,12 +9,18 @@ export function GeneralSection() {
   const { t } = useTranslation()
   const [defaultWorkspace, setDefaultWorkspace] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [instructions, setInstructions] = useState('')
+  const [instructionsServer, setInstructionsServer] = useState('')
+  const [savingInstr, setSavingInstr] = useState(false)
 
   async function refresh() {
     setLoading(true)
     try {
       const p = await getPrefs()
       setDefaultWorkspace(p.default_workspace_dir || null)
+      const ui = p.user_instructions ?? ''
+      setInstructions(ui)
+      setInstructionsServer(ui)
     } finally {
       setLoading(false)
     }
@@ -36,9 +42,57 @@ export function GeneralSection() {
     setDefaultWorkspace(null)
   }
 
+  async function saveInstructions() {
+    setSavingInstr(true)
+    try {
+      const trimmed = instructions.trim()
+      await setPref('user_instructions', trimmed || null)
+      setInstructionsServer(trimmed)
+    } finally {
+      setSavingInstr(false)
+    }
+  }
+
+  const instrDirty = instructions.trim() !== instructionsServer.trim()
+
   return (
     <div className="flex flex-col gap-6">
       <AvatarPicker />
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium text-fg-muted">
+          {t('general.instructions')}
+        </label>
+        <p className="text-[11px] text-fg-subtle">
+          {t('general.instructionsHint')}
+        </p>
+        <textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          rows={8}
+          placeholder={t('general.instructionsPlaceholder')}
+          className="scrollbar-thin mt-2 resize-y rounded-md border border-bg-hover bg-bg-input px-3 py-2 text-sm focus:border-accent focus:outline-none"
+        />
+        <div className="mt-1 flex items-center justify-end gap-2">
+          {instrDirty && (
+            <button
+              type="button"
+              onClick={() => setInstructions(instructionsServer)}
+              disabled={savingInstr}
+              className="rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:opacity-40"
+            >
+              {t('general.discard')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={saveInstructions}
+            disabled={!instrDirty || savingInstr}
+            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {savingInstr ? '…' : t('general.save')}
+          </button>
+        </div>
+      </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">
           {t('general.defaultWorkspace')}

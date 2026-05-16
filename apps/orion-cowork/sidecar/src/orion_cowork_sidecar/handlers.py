@@ -854,8 +854,9 @@ class Handlers:
             return
         engine = await self.ensure_engine()
         await storage.set_pref(engine, key, value)
-        # default_workspace_dir 變更 → 既有 cached conv 失效(下次 send 用新值)
-        if key == "default_workspace_dir":
+        # default_workspace_dir / user_instructions 變更 → 既有 cached conv
+        # 失效(下次 send 用新值,system_prompt / cwd 才會跟著刷新)
+        if key in ("default_workspace_dir", "user_instructions"):
             self._conversations.clear()
         yield {"event": "prefs_set", "data": {"key": key}, "final": True}
 
@@ -922,6 +923,11 @@ class Handlers:
             workspace_dir=effective_workspace,
             in_project=bool(project_id),
         )
+        # User-level instructions(prefs)— 跨 project 跨對話一律生效,
+        # 例如「always answer in zh-TW」、「I'm a senior engineer, skip basics」
+        user_instructions = await storage.get_pref(engine, "user_instructions")
+        if user_instructions and user_instructions.strip():
+            system_prompt += "\n\n# Your instructions for Orion\n\n" + user_instructions.strip()
         if project_custom_instructions:
             system_prompt += "\n\n# Project instructions\n\n" + project_custom_instructions
 
