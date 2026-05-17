@@ -1603,6 +1603,7 @@ name = "orion-cli"
 version = "0.1.0"
 source = { editable = "apps/orion-cli" }
 dependencies = [
+    { name = "apscheduler" },
     { name = "orion-sdk" },
     { name = "python-dotenv" },
     { name = "typer" },
@@ -1617,6 +1618,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "apscheduler", specifier = ">=3.10" },
     { name = "orion-sdk", editable = "packages/orion-sdk" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "typer", specifier = ">=0.12" },
@@ -1707,7 +1709,6 @@ dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "anyio" },
-    { name = "apscheduler" },
     { name = "asyncpg" },
     { name = "beautifulsoup4" },
     { name = "cryptography" },
@@ -1744,7 +1745,6 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19" },
     { name = "alembic", specifier = ">=1.13" },
     { name = "anyio", specifier = ">=4.0" },
-    { name = "apscheduler", specifier = ">=3.10" },
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "cryptography", specifier = ">=42.0" },

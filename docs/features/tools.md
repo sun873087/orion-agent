@@ -81,13 +81,13 @@ class MyTool(Tool[MyToolInput]):
 
 兩組,**目標不同**:
 
-| 工具 | 跑什麼 | host |
-|---|---|---|
-| `CronCreate` / `CronList` / `CronDelete` | shell command(in-process apscheduler) | CLI / chat-api |
-| `ScheduleCreate` / `ScheduleList` / `ScheduleDelete` | 開**新對話 session** 跑 LLM(prompt 或 skill) | Cowork(host 透過 `schedule_callbacks` 注入) |
-| `LoopCreate` | 在**當前對話內**定期 re-fire 一段 prompt(context 累積) | Cowork(透過 `schedule_callbacks.loop_create` 注入,綁 `AgentContext.session_id`) |
+| 工具 | 跑什麼 | host | 位置 |
+|---|---|---|---|
+| `CronCreate` / `CronList` / `CronDelete` | shell command(in-process apscheduler) | **CLI only** | `apps/orion-cli/src/orion_cli/cron_tools/` |
+| `ScheduleCreate` / `ScheduleList` / `ScheduleDelete` | 開**新對話 session** 跑 LLM(prompt 或 skill) | **Cowork only**(host 透過 `schedule_callbacks` 注入) | `packages/orion-sdk/src/orion_sdk/tools/schedule/`(spec 共用) |
+| `LoopCreate` | 在**當前對話內**定期 re-fire 一段 prompt(context 累積) | **Cowork only**(透過 `schedule_callbacks.loop_create` 注入,綁 `AgentContext.session_id`) | 同上 |
 
-SDK 只定義 tool spec + arg schema;`ScheduleCreate / ScheduleList / ScheduleDelete / LoopCreate` 的**執行邏輯由 host(目前是 Cowork sidecar)透過 callback 注入**:
+**Schedule / Loop**:SDK 定 spec、host 注 callback:
 
 ```python
 build_default_tool_set(
@@ -102,6 +102,8 @@ build_default_tool_set(
 
 沒給 `schedule_callbacks` 的 host(CLI / chat-api)這四個 tool **完全不註冊**,LLM 看不見 schema。Cowork 對應的 sidecar handler 在
 `apps/orion-cowork/sidecar/src/orion_cowork_sidecar/handlers.py:_build_schedule_callbacks()`。
+
+**Cron**:Phase 31-H 後從 SDK 搬到 CLI host(SDK 不再背 `apscheduler` dep)。CLI `__main__.py` 透過 `extra_tools=build_cron_tools()` 注入,Cowork / chat-api 不註冊。
 
 ### Browser(Cowork-only)
 

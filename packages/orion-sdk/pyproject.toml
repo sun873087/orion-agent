@@ -26,7 +26,6 @@ dependencies = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27",
-    "apscheduler>=3.10",
     "pyinstrument>=4.6",
     "nbformat>=5.10",
     "cryptography>=42.0",
@@ -35,6 +34,7 @@ dependencies = [
 
 # Host-specific tools 不在 SDK:
 # - Browser*(playwright)→ apps/orion-cowork/sidecar/
+# - Cron*(apscheduler)→ apps/orion-cli/
 
 [dependency-groups]
 dev = [
@@ -58,7 +58,7 @@ warn_redundant_casts = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["frontmatter.*", "nbformat.*", "apscheduler.*", "pyinstrument.*", "keyring.*"]
+module = ["frontmatter.*", "nbformat.*", "pyinstrument.*", "keyring.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

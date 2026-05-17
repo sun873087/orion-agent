@@ -49,10 +49,16 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 def _build_tools() -> list[Tool[Any]]:
     """CLI 註冊內建工具(用 stdin asker 給 AskUserQuestionTool)。
 
-    Web chat 場景請改用 `tools.builtin_set.build_default_tool_set()`(無 asker)。
+    Cron* tools 是 CLI host-specific(SDK 不背 apscheduler dep),透過
+    `extra_tools` 注入。Web chat 場景請改用 `tools.builtin_set.build_default_tool_set()`
+    (無 asker、無 extra_tools)。
     """
+    from orion_cli.cron_tools import build_cron_tools
     from orion_sdk.tools.builtin_set import build_default_tool_set
-    return build_default_tool_set(asker=make_stdin_asker())
+    return build_default_tool_set(
+        asker=make_stdin_asker(),
+        extra_tools=build_cron_tools(),
+    )
 
 
 # Phase 30-C:`orion serve` 移到 orion-chat-api package(`orion-chat-api serve`)

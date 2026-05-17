@@ -8,7 +8,14 @@ dependencies = [
     "orion-sdk",
     "typer>=0.12",
     "python-dotenv>=1.0",
+    # CLI-only host tools(從 orion-sdk 搬出來 — SDK 不背 apscheduler dep):
+    "apscheduler>=3.10",
 ]
+
+[tool.mypy]
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true
 
 [project.scripts]
 orion = "orion_cli.__main__:cli"

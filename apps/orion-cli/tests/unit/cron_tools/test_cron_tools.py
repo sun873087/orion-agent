@@ -8,10 +8,10 @@ import pytest
 
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent
-from orion_sdk.tools.cron.cron_create import CronCreateInput, CronCreateTool
-from orion_sdk.tools.cron.cron_delete import CronDeleteInput, CronDeleteTool
-from orion_sdk.tools.cron.cron_list import CronListInput, CronListTool
-from orion_sdk.tools.cron.scheduler import reset_scheduler
+from orion_cli.cron_tools.cron_create import CronCreateInput, CronCreateTool
+from orion_cli.cron_tools.cron_delete import CronDeleteInput, CronDeleteTool
+from orion_cli.cron_tools.cron_list import CronListInput, CronListTool
+from orion_cli.cron_tools.scheduler import reset_scheduler
 
 
 @pytest.fixture(autouse=True)

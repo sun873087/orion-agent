@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import TextEvent, ToolEvent, ToolInput
-from orion_sdk.tools.cron.scheduler import get_scheduler
+from orion_cli.cron_tools.scheduler import get_scheduler
 
 
 class CronListInput(ToolInput):

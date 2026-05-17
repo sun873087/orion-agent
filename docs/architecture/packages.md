@@ -70,7 +70,7 @@ async for event in conv.send("讀 /etc/hosts", ctx=ctx):
 | 子目錄 | 內容 |
 |---|---|
 | `core/` | Conversation、QueryLoop、StreamingExecutor、ToolOrchestration — 心臟 |
-| `tools/` | 20+ 共用內建工具(Bash / Read / Edit / Grep / WebFetch / Task / Skill / Schedule / Cron / ...);Browser 已下放 Cowork sidecar(SDK 不背 playwright) |
+| `tools/` | 20+ 共用內建工具(Bash / Read / Edit / Grep / WebFetch / Task / Skill / Schedule / ...);Browser → Cowork sidecar、Cron → CLI(host-specific 不在 SDK) |
 | `mcp/` | MCP client(4 種 transport + OAuth + dynamic tool wrapping) |
 | `sandbox/` | Docker / local sandbox backend |
 | `permissions/` | Permission policy(`always_allow` / `ask` / DSL rules) |
@@ -114,6 +114,7 @@ async for event in conv.send("讀 /etc/hosts", ctx=ctx):
 |---|---|
 | `commands/` | Slash 命令(`/clear` `/help` `/model` 等)註冊與分發 |
 | `input/` | stdin 處理 + slash parser + image upload + token estimation |
+| `cron_tools/` | `CronCreate / CronList / CronDelete`(APScheduler-backed shell cron)— Phase 31-H 從 SDK 搬來,CLI-only |
 | `__main__.py` | `orion` entrypoint(typer app) |
 
 ---

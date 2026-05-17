@@ -4,8 +4,8 @@
 透過 `chat.py` 把 ws asker 設到 tool.asker 上(per-connection late-bind)。
 asker 是 None 時呼叫 tool 會回 ErrorEvent(模型可看到 schema、知道工具存在)。
 
-Host-specific tools(Browser)不在這 — 由 host 透過 `extra_tools` 注入,
-SDK 不背 playwright 這類 dep。
+Host-specific tools(Browser / Cron 等)不在這 — 由 host 透過 `extra_tools`
+注入,SDK 不背 playwright / apscheduler 這類 dep。
 """
 
 from __future__ import annotations
@@ -15,9 +15,6 @@ from typing import Any
 from orion_sdk.core.tool import Tool
 from orion_sdk.tools.agent.skill_tool import SkillTool
 from orion_sdk.tools.config.config_tool import ConfigTool
-from orion_sdk.tools.cron.cron_create import CronCreateTool
-from orion_sdk.tools.cron.cron_delete import CronDeleteTool
-from orion_sdk.tools.cron.cron_list import CronListTool
 from orion_sdk.tools.file.edit import FileEditTool
 from orion_sdk.tools.file.notebook_edit import NotebookEditTool
 from orion_sdk.tools.file.read import FileReadTool
@@ -69,9 +66,9 @@ def build_default_tool_set(
         schedule_callbacks: 給 Schedule* tools 用的 sidecar callback dict。
             預期 keys: 'create' / 'list' / 'delete' / 'loop_create'。
             None 時 Schedule tools 不註冊(只有 Cowork 啟用)。
-        extra_tools: host 注入的工具 — 譬如 Cowork 的 Browser*、Cowork 的
-            OpenUrl/OpenPath 等。SDK 本身不註冊 playwright 這類綁特定 runtime
-            的工具。
+        extra_tools: host 注入的工具 — 譬如 Cowork 的 Browser*、CLI 的 Cron*、
+            Cowork 的 OpenUrl/OpenPath 等。SDK 本身不註冊 playwright / apscheduler
+            這類綁特定 runtime 的工具。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
@@ -106,10 +103,6 @@ def build_default_tool_set(
         TaskUpdateTool(),
         TaskStopTool(),
         TaskOutputTool(),
-        # Phase 10 — cron
-        CronCreateTool(),
-        CronListTool(),
-        CronDeleteTool(),
     ]
     # Schedule tools(對話排程) — 需要 host 提供 callbacks 才註冊
     if schedule_callbacks:
@@ -143,8 +136,8 @@ def list_builtin_tool_groups(
     """回 builtin tools 的分組 metadata,給 settings UI 顯示「組別 + 展開個別」用。
 
     結構:[{ group: str, tools: [{name, description}] }]。MCP tools 不在這 — 它們
-    是動態 plug-in,UI 走另一個來源(mcp.list)。Host-specific group(Cowork Browser)
-    由各 host 透過 `extra_groups` 注入。
+    是動態 plug-in,UI 走另一個來源(mcp.list)。Host-specific group(Cowork Browser /
+    CLI Cron)由各 host 透過 `extra_groups` 注入。
     """
     from orion_sdk.tools.interactive.ask_user import AskUserQuestionTool
 
@@ -181,10 +174,6 @@ def list_builtin_tool_groups(
                 to_dict(TaskCreateTool()), to_dict(TaskGetTool()), to_dict(TaskListTool()),
                 to_dict(TaskUpdateTool()), to_dict(TaskStopTool()), to_dict(TaskOutputTool()),
             ],
-        },
-        {
-            "group": "Cron",
-            "tools": [to_dict(CronCreateTool()), to_dict(CronListTool()), to_dict(CronDeleteTool())],
         },
         {
             "group": "Interactive",
