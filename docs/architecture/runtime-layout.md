@@ -19,7 +19,7 @@ source code 結構見 [`packages.md`](./packages.md)。本文只講 **runtime** 
 ```
 packages/orion-sdk/src/orion_sdk/skills/bundled/
 ├── README.md                         # 這份文件 + skills 來源說明
-└── <skill-name>/SKILL.md             # 10 個內建 skill(be-concise / simplify / loop ...)
+└── <skill-name>/SKILL.md             # 11 個內建 skill(be-concise / simplify / loop / goal ...)
 ```
 
 模組:`orion_sdk.skills.loader._bundled_skills()`。透過 `importlib.resources` 讀,
@@ -280,7 +280,7 @@ load_all_skills(
 |---|---|---|
 | 基底資料夾名 | `.claude/` | `.orion/`(避免衝突) |
 | Project memory 檔 | `CLAUDE.md` / `CLAUDE.local.md` | `instructions.md`(`.orion/` 內) |
-| Bundled skills | 17 個 TS 函式 | 10 個 markdown 檔(8 個從上游移植 + 2 個 orion 原有) |
+| Bundled skills | 17 個 TS 函式 | 11 個 markdown 檔(8 個從上游移植 + 3 個 orion 原有:loop / goal / skillify 等) |
 | `commands/` legacy 目錄 | 有 | **無**(Phase 11c 之後評估) |
 | `agents/` 自定 agent | 有 | **無**(Phase 24 multi-agent tool 整合時做) |
 | Per-user / multi-tenant | 單機假設,沒 user 維度 | `~/.orion/users/<uid>/`(JWT 推) |

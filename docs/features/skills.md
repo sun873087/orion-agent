@@ -53,12 +53,13 @@ list 隱藏不影響 LLM 能力 — 對話內若有人問起,LLM 仍可 `Skill(s
 
 ## 內建 skill(`bundled`)
 
-`packages/orion-sdk/src/orion_sdk/skills/bundled/` 預裝 10 個(Phase 31-G 為止):
+`packages/orion-sdk/src/orion_sdk/skills/bundled/` 預裝 11 個(Phase 31-G 為止):
 
 | Skill | 用途 | `cowork_visible` |
 |---|---|---|
 | `be-concise` | 強制簡潔回應 | true |
 | `debug` | 看 session log / transcript 診斷 | true |
+| `goal` | 條件驅動 self-iterate(plan → act → eval → 重複)達標自停;對應 `/goal <objective>` | true |
 | `loop` | 解析 `/loop <interval> <prompt>` → 算 cron + 呼 `LoopCreate`(Cowork)或 `CronCreate`(CLI) | true |
 | `remember` | 整理 user memory layer(auto-memory / instructions) | true |
 | `review-diff` | code review diff | true |
