@@ -1,7 +1,7 @@
 """RPC method handlers — 連 orion-sdk Conversation。
 
 Phase 31-D 後:對話跨 app restart 保留(本機 SQLite)。
-~/.orion-cowork/sessions.db 由 storage.py 管理。
+~/.orion/sessions/cowork.db 由 storage.py 管理。
 """
 
 from __future__ import annotations
@@ -55,8 +55,10 @@ _COWORK_PROMPT_BASE = (
     "- Reading / writing files in their workspace\n"
     "- Searching the web, fetching pages, analysing attached images\n"
     "\n"
-    "Cowork stores everything under `~/.orion-cowork/`, **NOT** `~/.orion/` "
-    "(that one belongs to the CLI and chat-api).\n"
+    "Local data lives under `~/.orion/` (shared with the CLI / chat-api hosts). "
+    "Cowork's own sessions go to `~/.orion/sessions/cowork.db`; "
+    "skills / memory / MCP config are shared so a skill you install via CLI shows "
+    "up in Cowork and vice versa.\n"
     "\n"
     "When the user attaches images, describe or analyze them as requested. "
     "Do not refuse desktop actions on grounds of 'I can't control your computer' — "
@@ -123,7 +125,7 @@ _ACT_MODE_INSTRUCTIONS = (
 
 _SYSTEM_LEVEL_NOTE = (
     "\n\n# System-level (Cowork-wide, not personal nor project)\n"
-    "`~/.orion-cowork/skills/` exists for skills that should outlast / cross "
+    "`~/.orion/skills/` exists for skills that should outlast / cross "
     "the personal vs project distinction. **Do not use this scope unless the "
     "user explicitly says 'system level' / 'app-wide' / 'system 級'** — "
     "default to personal or project."
@@ -139,22 +141,22 @@ def _paths_section(workspace_dir: str | None, in_project: bool) -> str:
             f"  `{ws}`\n"
             "When the user mentions 'skill / memory / mcp library' or 'this "
             "project's …', use the **project-scoped** paths first:\n"
-            f"- Project skills:        `{ws}/.orion-cowork/skills/`\n"
-            f"- Project memory:        `{ws}/.orion-cowork/memory/`\n"
-            f"- Project MCP config:    `{ws}/.orion-cowork/mcp.json`\n"
-            f"- Project instructions:  `{ws}/.orion-cowork/instructions.md`\n"
+            f"- Project skills:        `{ws}/.orion/skills/`\n"
+            f"- Project memory:        `{ws}/.orion/memory/`\n"
+            f"- Project MCP config:    `{ws}/.orion/mcp.json`\n"
+            f"- Project instructions:  `{ws}/.orion/instructions.md`\n"
             "Personal libraries still exist at "
-            "`~/.orion-cowork/users/cowork-local/{skills,memory}/` and "
-            "`~/.orion-cowork/mcp.json`, but **only use them if the user "
+            "`~/.orion/users/cowork-local/{skills,memory}/` and "
+            "`~/.orion/mcp.json`, but **only use them if the user "
             "explicitly says 'personal' / 'app-level' / 'global'**."
         ) + _SYSTEM_LEVEL_NOTE
     return (
         "\n\n# This is a personal chat (not in a project)\n"
         "Use the personal libraries — that's the only scope here:\n"
-        "- Personal skills:  `~/.orion-cowork/users/cowork-local/skills/`\n"
-        "- Personal memory:  `~/.orion-cowork/users/cowork-local/memory/`\n"
-        "- Personal MCP:     `~/.orion-cowork/mcp.json`\n"
-        "- Default workspace `~/.orion-cowork/users/cowork-local/workspace/` "
+        "- Personal skills:  `~/.orion/users/cowork-local/skills/`\n"
+        "- Personal memory:  `~/.orion/users/cowork-local/memory/`\n"
+        "- Personal MCP:     `~/.orion/mcp.json`\n"
+        "- Default workspace `~/.orion/users/cowork-local/workspace/` "
         "(this is the cwd for personal chats; files you create can live here)."
     ) + _SYSTEM_LEVEL_NOTE
 
@@ -1113,7 +1115,7 @@ class Handlers:
             if ext.get("project_id"):
                 proj = await storage.get_project(engine, ext["project_id"])
                 if proj is not None and proj.workspace_dir:
-                    pdir = Path(proj.workspace_dir) / ".orion-cowork" / "skills"
+                    pdir = Path(proj.workspace_dir) / ".orion" / "skills"
                     if pdir.is_dir():
                         for sk in load_skills_dir(pdir):
                             by_name[sk.name] = sk
@@ -1590,11 +1592,11 @@ class Handlers:
                 if not effective_workspace and proj.workspace_dir:
                     effective_workspace = proj.workspace_dir
                 project_custom_instructions = proj.custom_instructions
-        # B4:project instructions file 優先 — user 直接編 `<ws>/.orion-cowork/
+        # B4:project instructions file 優先 — user 直接編 `<ws>/.orion/
         # instructions.md` 不用過 RPC,read 時拿 file content。
         if effective_workspace:
             from pathlib import Path as _Path
-            inst_file = _Path(effective_workspace) / ".orion-cowork" / "instructions.md"
+            inst_file = _Path(effective_workspace) / ".orion" / "instructions.md"
             if inst_file.is_file():
                 try:
                     project_custom_instructions = inst_file.read_text(encoding="utf-8")
@@ -1621,11 +1623,11 @@ class Handlers:
             system_prompt += "\n\n# Project instructions\n\n" + project_custom_instructions
 
         include_ws = bool(effective_workspace)
-        # Project chat → auto-extract 寫 <workspace>/.orion-cowork/memory/
+        # Project chat → auto-extract 寫 <workspace>/.orion/memory/
         # 沒 project → 寫 user-level(SDK default)
         memory_override: Path | None = None
         if project_id and effective_workspace:
-            memory_override = Path(effective_workspace) / ".orion-cowork" / "memory"
+            memory_override = Path(effective_workspace) / ".orion" / "memory"
             memory_override.mkdir(parents=True, exist_ok=True)
 
         conv_kwargs: dict[str, Any] = dict(
@@ -2074,7 +2076,7 @@ class Handlers:
             if proj is None or not proj.workspace_dir:
                 yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
                 return
-            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+            target = Path(proj.workspace_dir) / ".orion" / "mcp.json"
         else:
             target = cowork_mcp_config_path()
         servers = read_mcp_config_raw(target)
@@ -2139,7 +2141,7 @@ class Handlers:
             if proj is None or not proj.workspace_dir:
                 yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
                 return
-            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+            target = Path(proj.workspace_dir) / ".orion" / "mcp.json"
         servers = read_mcp_config_raw(target)
         if isinstance(rename_from, str) and rename_from and rename_from != name:
             servers.pop(rename_from, None)
@@ -2175,7 +2177,7 @@ class Handlers:
             if proj is None or not proj.workspace_dir:
                 yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
                 return
-            target = Path(proj.workspace_dir) / ".orion-cowork" / "mcp.json"
+            target = Path(proj.workspace_dir) / ".orion" / "mcp.json"
         servers = read_mcp_config_raw(target)
         if name not in servers:
             yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}

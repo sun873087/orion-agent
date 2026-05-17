@@ -58,14 +58,14 @@ export default {
   'projectSettings.title': '{name} 設定',
   'projectSettings.openSettings': '專案設定',
   'projectSettings.delete': '刪除專案',
-  'projectSettings.deleteConfirm': '確定刪除專案 {name}?(資料夾跟 .orion-cowork 子目錄不會刪)',
+  'projectSettings.deleteConfirm': '確定刪除專案 {name}?(資料夾跟 .orion 子目錄不會刪)',
   'projectSettings.workspaceHint': '建立後 workspace 無法變更;要改就建新專案',
   'projectSettings.instructionsHint': '同步寫入 {path},可以 git track / 跨機器分享',
   'projectSettings.resourcesTitle': '專案資源(co-located)',
   'projectSettings.skillsPath': '技能',
   'projectSettings.memoryPath': '記憶',
   'projectSettings.mcpPath': 'MCP 設定',
-  'projectSettings.resourcesHint': '直接編 workspace 內的 .orion-cowork/ 子目錄。下次該專案對話開始時自動載入。',
+  'projectSettings.resourcesHint': '直接編 workspace 內的 .orion/ 子目錄。下次該專案對話開始時自動載入。',
 
   // ProjectSettingsPage categories
   'projectSettings.section.general': '一般',
@@ -320,7 +320,7 @@ export default {
   'settings.mcp.refreshTitle': '重新載入狀態',
   'settings.mcp.loading': '載入中⋯',
   'settings.mcp.failed': '無法取得 MCP 狀態。',
-  'settings.mcp.none': '尚未設定任何 MCP 伺服器。\n請編輯 ~/.orion-cowork/mcp.json 後重新整理。',
+  'settings.mcp.none': '尚未設定任何 MCP 伺服器。\n請編輯 ~/.orion/mcp.json 後重新整理。',
   'settings.mcp.tools': '{n} 個工具',
   'settings.mcp.reconnect': '重新連線',
   // MCP CRUD
@@ -340,7 +340,7 @@ export default {
   'mcp.field.envHint': '可選,sensitive 也可寫但別 commit',
   'mcp.field.url': 'URL',
   'mcp.field.headers': '標頭(KEY=VALUE,一行一個)',
-  'settings.about.text': 'Orion Cowork · Phase 31。模型與外觀偏好存於 localStorage。MCP 伺服器設定於 ~/.orion-cowork/mcp.json。',
+  'settings.about.text': 'Orion Cowork · Phase 31。模型與外觀偏好存於 localStorage。MCP 伺服器設定於 ~/.orion/mcp.json。',
 
   // Language names
   'lang.zh-TW': '繁體中文',

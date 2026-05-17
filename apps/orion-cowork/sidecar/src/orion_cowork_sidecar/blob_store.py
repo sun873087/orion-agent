@@ -1,6 +1,6 @@
 """Filesystem-backed blob store。
 
-Cowork single-user 桌機 app,blob 直接落 ~/.orion-cowork/blobs/<uuid>.bin —
+Cowork single-user 桌機 app,blob 直接落 ~/.orion/blobs/<uuid>.bin —
 raw bytes,**不** base64。SQLite messages.content_json 內 image 只留 blob_id
 ref(`{type: image, media_type, blob_id}`),讓 row 從 MB 縮回 bytes,切歷史對話
 不再被 SELECT 撈出來的整段 base64 拖住。

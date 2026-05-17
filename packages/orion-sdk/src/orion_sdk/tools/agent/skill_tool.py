@@ -48,11 +48,11 @@ class SkillTool:
         input: SkillInput,
         ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
-        # Cowork project / 任何 caller 在 cwd 內放 .orion-cowork/skills/<name>/SKILL.md
+        # Cowork project / 任何 caller 在 cwd 內放 .orion/skills/<name>/SKILL.md
         # 都會被自動載入(per-project skills co-located in workspace)。
         extra: list = []
         if ctx.cwd:
-            project_skills = ctx.cwd / ".orion-cowork" / "skills"
+            project_skills = ctx.cwd / ".orion" / "skills"
             if project_skills.is_dir():
                 extra.append(project_skills)
         skills: list[Skill] = load_all_skills(

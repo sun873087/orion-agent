@@ -1,8 +1,8 @@
 """Cowork skill CRUD RPC。
 
-User-level skill 落 `~/.orion-cowork/users/cowork-local/skills/<name>/SKILL.md`
-(走 ORION_USERS_DIR env)。Bundled / system / project 是唯讀來源,UI 只能
-看不能改。
+User-level skill 落 `~/.orion/users/cowork-local/skills/<name>/SKILL.md`
+(SDK default,跟 CLI / chat-api 共用同一份)。Bundled / system / project 是
+唯讀來源,UI 只能看不能改。
 """
 
 from __future__ import annotations
@@ -24,18 +24,18 @@ from orion_cowork_sidecar.storage import LOCAL_USER_ID
 
 
 def _user_skills_dir() -> Path:
-    """Cowork 跑時 ORION_USERS_DIR 指 ~/.orion-cowork/users。"""
+    """SDK default `~/.orion/users/<u>/skills/` — 跟 CLI / chat-api 共用同一目錄。"""
     return default_users_root() / LOCAL_USER_ID / "skills"
 
 
 async def _project_skills_dir(project_id: str) -> Path | None:
-    """<workspace>/.orion-cowork/skills/ 若 project 有 workspace。"""
+    """<workspace>/.orion/skills/ 若 project 有 workspace。"""
     from orion_cowork_sidecar import storage as _storage
     engine = await _storage.init_storage()
     proj = await _storage.get_project(engine, project_id)
     if proj is None or not proj.workspace_dir:
         return None
-    d = Path(proj.workspace_dir) / ".orion-cowork" / "skills"
+    d = Path(proj.workspace_dir) / ".orion" / "skills"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

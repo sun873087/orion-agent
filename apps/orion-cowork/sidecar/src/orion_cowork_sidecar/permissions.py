@@ -1,6 +1,6 @@
 """Permission policy engine — Claude Code 風 allowlist / denylist。
 
-對應 `~/.orion-cowork/permissions.json`(全域)+ `<workspace>/.orion-cowork/
+對應 `~/.orion/permissions.json`(全域)+ `<workspace>/.orion/
 permissions.json`(專案)。can_use_tool 先讀 policy:deny 命中 → DENY,allow
 命中 → ALLOW,都不命中 → 'ask' 回去走 mode-based 行為(Ask 模式顯 banner、
 Act 模式 allow)。
@@ -26,11 +26,11 @@ from urllib.parse import urlparse
 
 
 def _global_policy_path() -> Path:
-    return Path.home() / ".orion-cowork" / "permissions.json"
+    return Path.home() / ".orion" / "permissions.json"
 
 
 def _project_policy_path(workspace_dir: Path) -> Path:
-    return workspace_dir / ".orion-cowork" / "permissions.json"
+    return workspace_dir / ".orion" / "permissions.json"
 
 
 @dataclass

@@ -199,7 +199,7 @@ function GeneralPanel({
   }
 
   const ws = project.workspace_dir ?? ''
-  const cowork = ws ? `${ws}/.orion-cowork` : ''
+  const cowork = ws ? `${ws}/.orion` : ''
 
   return (
     <div className="flex flex-col gap-4">

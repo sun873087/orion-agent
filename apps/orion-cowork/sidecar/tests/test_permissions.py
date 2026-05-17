@@ -1,6 +1,6 @@
 """Unit tests for orion_cowork_sidecar.permissions — Claude Code 風 allowlist。
 
-只測 pattern matcher + decide;file I/O 跑 tmp_path 避免污染 ~/.orion-cowork。
+只測 pattern matcher + decide;file I/O 跑 tmp_path 避免污染 ~/.orion。
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def test_save_and_load_global(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))  # type: ignore[arg-type]
     pol = perm.Policy(allow=["WebSearch", "Read"], deny=["Bash(sudo *)"])
     perm.save_policy(pol, scope="global")
-    written = tmp_path / ".orion-cowork" / "permissions.json"
+    written = tmp_path / ".orion" / "permissions.json"
     assert written.is_file()
     data = json.loads(written.read_text())
     assert data["allow"] == ["WebSearch", "Read"]
@@ -135,8 +135,8 @@ def test_missing_file_returns_empty_policy(tmp_path: Path) -> None:
 
 def test_malformed_json_does_not_crash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))  # type: ignore[arg-type]
-    (tmp_path / ".orion-cowork").mkdir()
-    (tmp_path / ".orion-cowork" / "permissions.json").write_text("not json {{{", encoding="utf-8")
+    (tmp_path / ".orion").mkdir()
+    (tmp_path / ".orion" / "permissions.json").write_text("not json {{{", encoding="utf-8")
     pol = perm.load_scope("global", None)
     assert pol.allow == []
     assert pol.deny == []

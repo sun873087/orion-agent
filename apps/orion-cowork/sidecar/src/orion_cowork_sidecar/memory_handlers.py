@@ -23,12 +23,12 @@ from orion_cowork_sidecar.storage import LOCAL_USER_ID
 
 
 async def _resolve_paths(project_id: str | None) -> MemoryPaths:
-    """project_id 給就走 <workspace>/.orion-cowork/memory;沒就 user-level。"""
+    """project_id 給就走 <workspace>/.orion/memory;沒就 user-level。"""
     if project_id:
         engine = await storage.init_storage()
         proj = await storage.get_project(engine, project_id)
         if proj is not None and proj.workspace_dir:
-            root = Path(proj.workspace_dir) / ".orion-cowork"
+            root = Path(proj.workspace_dir) / ".orion"
             p = MemoryPaths(user_id=f"_project_{project_id}", root=root)
             p.ensure_dirs()
             return p

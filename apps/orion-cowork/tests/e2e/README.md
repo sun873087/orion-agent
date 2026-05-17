@@ -33,7 +33,7 @@ make test-e2e-cowork
 - `ORION_PROVIDER_OVERRIDE=mock` — sidecar `__main__.py` 看到後呼
   `set_test_provider_factory()`,所有 LLM call 都走 fake
 - `ORION_MOCK_SCRIPT_JSON='[{"text":"hi"}, ...]'` — scripted turns
-- `ORION_COWORK_DATA_DIR=/tmp/cowork-e2e-xxx` — 隔離 sessions.db,test 互不污染
+- `ORION_COWORK_DATA_DIR=/tmp/cowork-e2e-xxx` — 隔離 sessions/cowork.db,test 互不污染
 
 ## 已有 specs
 

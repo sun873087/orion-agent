@@ -88,4 +88,4 @@ def test_db_file_created_in_data_dir(data_dir: str) -> None:
     _run_sidecar(['{"id":"1","method":"ping"}'], data_dir)
     # Ping doesn't touch DB,但其他 method 會;觸發 list 強制 init
     _run_sidecar(['{"id":"2","method":"conversation.list"}'], data_dir)
-    assert Path(data_dir, "sessions.db").exists()
+    assert Path(data_dir, "sessions", "cowork.db").exists()

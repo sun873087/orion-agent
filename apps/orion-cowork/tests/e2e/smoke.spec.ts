@@ -38,7 +38,7 @@ test('clicking New chat does not create empty DB session (lazy)', async ({ page,
   // Sidebar 應仍顯 "No conversations yet"(因為都還沒 send)
   await expect(page.getByText(/no conversations yet/i)).toBeVisible({ timeout: 5_000 })
 
-  // 確認 sessions.db 內 sessions 表是空的
+  // 確認 sessions/cowork.db 內 sessions 表是空的
   // (DB 寫入需要 sidecar 跑 init_storage,空狀態下 sessions 應為 0 rows)
   // 簡化版:不直接打 DB,只看 UI 提示(同義)
   void dataDir

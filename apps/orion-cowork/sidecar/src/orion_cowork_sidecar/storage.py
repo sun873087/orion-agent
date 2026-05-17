@@ -3,9 +3,10 @@
 跟 chat-api 的 DbSessionManager 不同:
 - Single-user 模式 — 用固定 dummy user "cowork-local"
 - 不依賴 fastapi / jwt(只用 orion-sdk storage primitives)
-- DB 位置:`~/.orion-cowork/sessions.db`(macOS / Linux),
-            `%LOCALAPPDATA%\\Orion Cowork\\sessions.db`(Windows),
-            `$ORION_COWORK_DATA_DIR/sessions.db`(e2e 用)
+- Root 跟 CLI / chat-api 共用 `~/.orion/`,sessions 透過子目錄 + 不同檔名隔離:
+    `~/.orion/sessions/cowork.db`    Cowork DB(本檔案管理)
+    `~/.orion/sessions/cli.db`        CLI 的 DB(不在這檔案管轄)
+- `$ORION_COWORK_DATA_DIR` env 可覆蓋 root(e2e test 用),DB 仍走 sessions/cowork.db
 
 Public API:
     init_storage() -> engine                   # call once at startup
@@ -44,24 +45,27 @@ LOCAL_USERNAME = "local"
 
 
 def data_dir() -> Path:
-    """Cowork user data root,可由 ORION_COWORK_DATA_DIR env 覆蓋。"""
+    """Cowork user data root — 與 CLI / chat-api 共用 `~/.orion/`。
+
+    `ORION_COWORK_DATA_DIR` env 仍可覆蓋(e2e 測試用)。其他 host
+    (CLI / chat-api)也用 `~/.orion/`,所以 skills / memory / mcp.json 自然共享;
+    sessions 透過子目錄 + 不同檔名隔離(cowork.db vs cli.db),不互相干擾。
+    """
     env = os.environ.get("ORION_COWORK_DATA_DIR")
     if env:
         return Path(env)
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "Orion Cowork"
-    return Path.home() / ".orion-cowork"
+    return Path.home() / ".orion"
 
 
 def _db_url() -> str:
-    d = data_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    return f"sqlite+aiosqlite:///{d / 'sessions.db'}"
+    """Cowork sessions DB 落 ~/.orion/sessions/cowork.db(CLI 走 cli.db 不會撞)。"""
+    sessions_dir = data_dir() / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return f"sqlite+aiosqlite:///{sessions_dir / 'cowork.db'}"
 
 
 def get_blob_store() -> BlobStore:
-    """Singleton blob store(同 data_dir 下的 blobs/)。"""
+    """Singleton blob store。跟 CLI 共用 ~/.orion/blobs/(blob_id 是 hash 不會撞)。"""
     return BlobStore(data_dir() / "blobs")
 
 
@@ -892,15 +896,15 @@ async def create_project(
     description: str | None = None,
     custom_instructions: str | None = None,
 ) -> Project:
-    """Workspace 為必填(B0)。建立後在 <workspace>/.orion-cowork/ 建子目錄,
-    custom_instructions 同時寫到 <workspace>/.orion-cowork/instructions.md。
+    """Workspace 為必填(B0)。建立後在 <workspace>/.orion/ 建子目錄,
+    custom_instructions 同時寫到 <workspace>/.orion/instructions.md。
     """
     from uuid import uuid4
     pid = str(uuid4())
     now = time.time()
     # 建 co-located 結構
     ws_path = Path(workspace_dir).expanduser()
-    cowork_dir = ws_path / ".orion-cowork"
+    cowork_dir = ws_path / ".orion"
     cowork_dir.mkdir(parents=True, exist_ok=True)
     (cowork_dir / "skills").mkdir(exist_ok=True)
     (cowork_dir / "memory").mkdir(exist_ok=True)
@@ -930,7 +934,7 @@ async def update_project(
 ) -> bool:
     """部分更新;None 表示「不動」,要清空傳空字串。回 True 若有 row 被改。
 
-    custom_instructions 變更時同步寫到 `<workspace>/.orion-cowork/instructions.md`(B4)。
+    custom_instructions 變更時同步寫到 `<workspace>/.orion/instructions.md`(B4)。
     """
     fields: list[tuple[str, Any]] = []
     if name is not None:
@@ -957,7 +961,7 @@ async def update_project(
         proj = await get_project(engine, project_id)
         if proj is not None and proj.workspace_dir:
             try:
-                cowork_dir = Path(proj.workspace_dir) / ".orion-cowork"
+                cowork_dir = Path(proj.workspace_dir) / ".orion"
                 cowork_dir.mkdir(parents=True, exist_ok=True)
                 inst = cowork_dir / "instructions.md"
                 if custom_instructions:

@@ -194,7 +194,7 @@ class Conversation:
 
     memory_dir_override: "Path | None" = None
     """若給定,extract 寫入這個目錄而非 user_memory_paths(user_id).memory_dir。
-    Cowork project chat 用此 override 把 memory 寫到 <workspace>/.orion-cowork/memory/。
+    Cowork project chat 用此 override 把 memory 寫到 <workspace>/.orion/memory/。
     """
 
     include_workspace_context: bool = True

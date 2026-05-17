@@ -1,7 +1,8 @@
 """Cowork MCP integration(Phase 31-D 下)。
 
-Cowork 用獨立 mcp.json — `~/.orion-cowork/mcp.json`(跟 CLI/chat-api 的
-~/.orion/mcp.json 分開,因為 Cowork 是獨立桌機 app,有自己的 server pref)。
+Global MCP config 跟 CLI / chat-api **共用** `~/.orion/mcp.json` — 一邊裝的 MCP
+server 另一邊也看見。Project-level config 在 `<workspace>/.orion/mcp.json`,
+可被 user 在 project context 內覆蓋 global。
 
 Lifecycle:
   manager.start()    啟動 McpManager + Supervisor,connect 所有 server
@@ -198,8 +199,8 @@ class CoworkMcpManager:
 
 
 def load_project_mcp_configs(workspace_dir: Path) -> dict[str, McpServerConfig]:
-    """讀 <workspace>/.orion-cowork/mcp.json,parse 成 McpServerConfig dict。"""
-    path = workspace_dir / ".orion-cowork" / "mcp.json"
+    """讀 <workspace>/.orion/mcp.json,parse 成 McpServerConfig dict。"""
+    path = workspace_dir / ".orion" / "mcp.json"
     if not path.is_file():
         return {}
     try:

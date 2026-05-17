@@ -2,7 +2,7 @@
  * Playwright Electron fixtures(Phase 31-F)。
  *
  * 啟一個 Electron 進程,override sidecar 用 MockProvider(env var)。
- * 每個 test 一個獨立 tmp data dir,避免共用 ~/.orion-cowork/sessions.db。
+ * 每個 test 一個獨立 tmp data dir,避免共用 ~/.orion/sessions/cowork.db。
  */
 
 import { _electron as electron, test as base } from '@playwright/test'

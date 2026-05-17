@@ -1,6 +1,6 @@
 ---
 name: skillify
-description: Capture this session's repeatable process into a reusable skill (writes a new SKILL.md under ~/.orion/users/<user_id>/skills/ or .orion/skills/).
+description: Turn the CURRENT conversation's workflow into a Skill — capture-only (4 short questions then writes SKILL.md). Use when the user says "save this as a skill" / "把以上動作包成 skill". For designing a NEW skill from scratch with evaluation / benchmarking / iteration, use `skill-creator` instead.
 ---
 
 # Skillify

@@ -1,8 +1,8 @@
 /**
  * Permissions(allowlist / denylist)管理 — Claude Code 風 pattern。
  *
- * Scope:Global(`~/.orion-cowork/permissions.json`)+ Project
- *   (`<workspace>/.orion-cowork/permissions.json`,只有 projectId 傳進來才顯)
+ * Scope:Global(`~/.orion/permissions.json`)+ Project
+ *   (`<workspace>/.orion/permissions.json`,只有 projectId 傳進來才顯)
  * Pattern 範例:
  *   - Bash(uv run *)
  *   - WebFetch(domain:docs.anthropic.com)

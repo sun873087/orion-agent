@@ -104,7 +104,7 @@ async def memory_section(
     包 Phase 3 機制:scan + rank + render。沒 memory / 載入失敗 → 回空字串。
 
     extra_memory_dirs:除了 user-level memory 外,額外讀的 memory 目錄(例如
-    Cowork project 的 `<workspace>/.orion-cowork/memory/`)。 union 後一起 rank。
+    Cowork project 的 `<workspace>/.orion/memory/`)。 union 後一起 rank。
     """
     from orion_sdk.memory.paths import MemoryPaths as _MP
 

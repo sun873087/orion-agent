@@ -15,8 +15,8 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
-// Sidecar stderr 鏡到 ~/.orion-cowork/sidecar.log — 讓 packaged build 也能 debug。
-const SIDECAR_LOG_DIR = resolve(homedir(), '.orion-cowork')
+// Sidecar stderr 鏡到 ~/.orion/sidecar.log — 讓 packaged build 也能 debug。
+const SIDECAR_LOG_DIR = resolve(homedir(), '.orion')
 const SIDECAR_LOG_PATH = resolve(SIDECAR_LOG_DIR, 'sidecar.log')
 try {
   mkdirSync(SIDECAR_LOG_DIR, { recursive: true })
@@ -74,7 +74,7 @@ export class SidecarClient {
     proc.stderr.on('data', (chunk: string) => {
       // Sidecar 的 stderr 給 main process 看 (debug);不送 renderer
       console.error('[sidecar]', chunk.trimEnd())
-      // 同時鏡到 ~/.orion-cowork/sidecar.log (packaged build 唯一的 debug 通道)
+      // 同時鏡到 ~/.orion/sidecar.log (packaged build 唯一的 debug 通道)
       appendSidecarLog(chunk)
     })
     proc.on('exit', (code, signal) => {

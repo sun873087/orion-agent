@@ -31,32 +31,32 @@ export function AboutSection() {
     {
       icon: <Database size={14} />,
       label: 'Session DB',
-      path: '~/.orion-cowork/sessions.db',
-      note: '對話歷史、metadata、attachments index(SQLite)',
+      path: '~/.orion/sessions/cowork.db',
+      note: '對話歷史、metadata、attachments index(SQLite,跟 CLI 的 sessions/cli.db 分檔)',
     },
     {
       icon: <FileText size={14} />,
       label: '附件圖',
-      path: '~/.orion-cowork/blobs/',
+      path: '~/.orion/blobs/',
       note: '訊息附件 raw bytes(by content hash 去重)',
     },
     {
       icon: <Brain size={14} />,
       label: '記憶 / Skills',
-      path: '~/.orion-cowork/users/cowork-local/{memory,skills}/',
-      note: '個人對話用;Project chat 走 <workspace>/.orion-cowork/',
+      path: '~/.orion/users/cowork-local/{memory,skills}/',
+      note: '個人對話用 — 跟 CLI 共用同一份;Project chat 走 <workspace>/.orion/',
     },
     {
       icon: <Folder size={14} />,
       label: '預設工作資料夾',
-      path: defaultWorkspace || '~/.orion-cowork/users/cowork-local/workspace/',
+      path: defaultWorkspace || '~/.orion/users/cowork-local/workspace/',
       note: '/export、AI 寫檔的預設目的地',
     },
     {
       icon: <Wrench size={14} />,
       label: 'MCP 伺服器設定',
-      path: '~/.orion-cowork/mcp.json',
-      note: 'App 級 MCP servers(project 可在 <ws>/.orion-cowork/mcp.json 加)',
+      path: '~/.orion/mcp.json',
+      note: 'App 級 MCP servers(project 可在 <ws>/.orion/mcp.json 加)',
     },
     {
       icon: <Sparkles size={14} />,
@@ -181,7 +181,7 @@ export function AboutSection() {
       {/* Privacy note */}
       <Section icon={<Shield size={14} />} title="隱私">
         <div className="rounded-lg border border-bg-hover bg-bg-panel px-3 py-2.5 text-xs leading-relaxed text-fg-muted">
-          所有對話、附件、記憶、技能都存在本機 <code className="rounded bg-bg-hover px-1 font-mono">~/.orion-cowork/</code> 之下,
+          所有對話、附件、記憶、技能都存在本機 <code className="rounded bg-bg-hover px-1 font-mono">~/.orion/</code> 之下,
           不會上傳任何雲端服務。LLM 呼叫直接從 sidecar 連你設定的 provider
           (Anthropic / OpenAI 等),app 本身沒任何 telemetry / analytics / phone-home。
           API key 由 OS keychain(macOS Keychain / Windows Credential Manager / libsecret)保管,
