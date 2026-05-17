@@ -53,7 +53,20 @@ class ErrorEvent(BaseModel):
     is_recoverable: bool = False
 
 
-ToolEvent = TextEvent | ProgressEvent | ErrorEvent
+class ImageEvent(BaseModel):
+    """工具產出圖片(會打包進 ToolResultBlock.content 給 LLM 下輪當 vision input)。
+
+    用例:browser screenshot、screen capture、圖表 render 等。
+    """
+
+    type: str = "image"
+    media_type: str = "image/png"
+    """e.g. 'image/png' / 'image/jpeg' / 'image/webp'。"""
+    data: str
+    """Base64-encoded(無 data: prefix)。"""
+
+
+ToolEvent = TextEvent | ProgressEvent | ErrorEvent | ImageEvent
 
 
 Input_T = TypeVar("Input_T", bound=ToolInput)

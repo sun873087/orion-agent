@@ -33,6 +33,11 @@ dependencies = [
     "keyring>=24.0",
 ]
 
+[project.optional-dependencies]
+# Headful browser automation via system Chrome(不 vendor chromium)。
+# 啟用後 build_default_tool_set() 會註冊 Browser* tools。
+browser = ["playwright>=1.40"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

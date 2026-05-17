@@ -69,12 +69,12 @@ export function AboutSection() {
   const features = [
     { name: '多 provider', desc: 'Anthropic / OpenAI 切換,各自獨立 model picker' },
     { name: '對話 compact', desc: '到閾值自動摘要前段對話釋出 token / 手動 /compact' },
+    { name: 'Browser use', desc: 'AI 可控你的 Chrome navigate / click / type / 截圖,headful 看得到' },
     { name: 'MCP 伺服器', desc: 'Plug-in 外部工具(檔案系統、瀏覽器、registry 等)' },
     { name: 'Skills', desc: '可上傳 SKILL.md 資料夾擴展 model 行為,bundled / system / user / project 四層' },
     { name: 'Projects', desc: '對話跟 workspace 資料夾綁定,co-located memory / skills / mcp' },
     { name: '記憶系統', desc: 'auto-extract 對話中的事實寫進 markdown,下次自動載入' },
     { name: 'STT 語音輸入', desc: 'OpenAI Whisper / Google STT,本地錄音 → 文字' },
-    { name: 'Cache-friendly prompt', desc: '4 BP rolling cache,system / mode / messages 分層 cache 命中' },
   ]
 
   const stack = [

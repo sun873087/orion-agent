@@ -242,8 +242,14 @@ class Handlers:
             return self._mcp
 
     async def shutdown(self) -> None:
-        """sidecar 退出時清理 MCP。"""
+        """sidecar 退出時清理 MCP + browser sessions。"""
         await self._mcp.shutdown()
+        # Close 所有開著的 Chrome instance(若有)
+        try:
+            from orion_sdk.tools.browser import close_all_browser_sessions
+            await close_all_browser_sessions()
+        except ImportError:
+            pass
 
     # ─── Dispatch table ─────────────────────────────────────────────────
     def methods(self) -> dict[str, Any]:

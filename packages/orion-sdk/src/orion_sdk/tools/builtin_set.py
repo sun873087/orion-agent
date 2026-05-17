@@ -44,6 +44,8 @@ from orion_sdk.tools.workdir.exit import ExitWorkdirTool
 
 def build_default_tool_set(
     asker: AskUserCallback | None = None,
+    *,
+    browser_enabled: bool = True,
 ) -> list[Tool[Any]]:
     """組所有內建工具。
 
@@ -51,6 +53,9 @@ def build_default_tool_set(
         asker: 給 AskUserQuestionTool 用的 callback。None 也會註冊 tool
             (asker 之後可由 caller 設到 tool.asker — 例如 chat.py 的 ws 連線
             掛上 ws asker)。模型若在 asker=None 時呼叫 tool 會收到 ErrorEvent。
+        browser_enabled: 自動偵測 playwright + system Chrome 是否可用,可用就
+            註冊 Browser* tools(Navigate / Click / Type / Screenshot 等)。
+            False 強制不註冊,即使環境支援也不放。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
@@ -89,6 +94,15 @@ def build_default_tool_set(
         CronListTool(),
         CronDeleteTool(),
     ]
+    # Browser use — 偵測 playwright + system Chrome 可用才註冊
+    if browser_enabled:
+        try:
+            from orion_sdk.tools.browser import build_browser_tools, is_browser_available
+            if is_browser_available():
+                base.extend(build_browser_tools())  # type: ignore[arg-type]
+        except ImportError:
+            pass
+
     base.append(AskUserQuestionTool(asker=asker))
     base.append(ToolSearchTool(all_tools=base))
     return base

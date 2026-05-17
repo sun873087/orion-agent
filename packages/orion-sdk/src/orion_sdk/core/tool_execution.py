@@ -19,7 +19,14 @@ from typing import Any
 from pydantic import ValidationError
 
 from orion_sdk.core.state import AgentContext
-from orion_sdk.core.tool import ErrorEvent, ProgressEvent, TextEvent, Tool, ToolEvent
+from orion_sdk.core.tool import (
+    ErrorEvent,
+    ImageEvent,
+    ProgressEvent,
+    TextEvent,
+    Tool,
+    ToolEvent,
+)
 from orion_sdk.hooks.events import (
     FileChangedEvent,
     PostToolUseEvent,
@@ -27,7 +34,7 @@ from orion_sdk.hooks.events import (
     PreToolUseEvent,
 )
 from orion_sdk.hooks.registry import HookRegistry
-from orion_model.types import NormalizedMessage, ToolResultBlock
+from orion_model.types import ImageBlock, NormalizedMessage, TextBlock, ToolResultBlock
 from orion_sdk.permissions.decisions import (
     CanUseToolFn,
     PermissionDecision,
@@ -82,14 +89,27 @@ def _make_result_message(
     text: str,
     *,
     is_error: bool = False,
+    images: list[ImageBlock] | None = None,
 ) -> NormalizedMessage:
-    """打包 ToolResultBlock 成 user role 的 NormalizedMessage。"""
+    """打包 ToolResultBlock 成 user role 的 NormalizedMessage。
+
+    images 不為空時 content 用 list[TextBlock | ImageBlock] 形式 — LLM 下輪
+    能 vision-aware 讀到工具產出的圖(browser screenshot、render 結果等)。
+    """
+    if images:
+        inner: list[TextBlock | ImageBlock] = []
+        if text:
+            inner.append(TextBlock(text=text))
+        inner.extend(images)
+        result_content: str | list[TextBlock | ImageBlock] = inner
+    else:
+        result_content = text
     return NormalizedMessage(
         role="user",
         content=[
             ToolResultBlock(
                 tool_use_id=tool_use_id,
-                content=text,
+                content=result_content,
                 is_error=is_error,
             )
         ],
@@ -265,6 +285,7 @@ async def _run_one_tool_inner(
     # ─── 5. call tool, accumulate events ────────────────────────────────────
     text_chunks: list[str] = []
     error_msgs: list[str] = []
+    image_blocks: list[ImageBlock] = []
     try:
         async for event in tool.call(parsed_input, ctx):
             yield ToolProgressUpdate(
@@ -272,6 +293,11 @@ async def _run_one_tool_inner(
             )
             if isinstance(event, TextEvent):
                 text_chunks.append(event.text)
+            elif isinstance(event, ImageEvent):
+                # Browser screenshot 等 — 打包進 tool result 給 LLM 下輪當 vision input
+                image_blocks.append(
+                    ImageBlock(media_type=event.media_type, data=event.data)
+                )
             elif isinstance(event, ErrorEvent):
                 error_msgs.append(event.message)
             elif isinstance(event, ProgressEvent):
@@ -342,6 +368,7 @@ async def _run_one_tool_inner(
     # ─── 8. final result update(送給模型的版本可能是 preview)──────────────
     msg = _make_result_message(
         tool_use_id, persisted.content_for_model, is_error=is_error,
+        images=image_blocks if image_blocks else None,
     )
     yield ToolResultUpdate(
         tool_use_id=tool_use_id,
