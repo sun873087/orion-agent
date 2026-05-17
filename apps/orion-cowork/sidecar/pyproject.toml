@@ -5,10 +5,12 @@ description = "Python sidecar bridging Electron main process to orion-sdk via st
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
-    "orion-sdk[browser]",
+    "orion-sdk",
     "orion-model",
     "python-dotenv>=1.0",
     "croniter>=2.0",
+    # Cowork-only host tools(從 orion-sdk 搬出來 — SDK 不背 playwright dep):
+    "playwright>=1.40",
 ]
 
 [project.scripts]

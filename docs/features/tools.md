@@ -103,6 +103,19 @@ build_default_tool_set(
 沒給 `schedule_callbacks` 的 host(CLI / chat-api)這四個 tool **完全不註冊**,LLM 看不見 schema。Cowork 對應的 sidecar handler 在
 `apps/orion-cowork/sidecar/src/orion_cowork_sidecar/handlers.py:_build_schedule_callbacks()`。
 
+### Browser(Cowork-only)
+
+| 工具 | 用途 |
+|---|---|
+| `BrowserNavigate` / `BrowserBack` / `BrowserForward` | URL 跳轉、上一頁 / 下一頁 |
+| `BrowserClick` / `BrowserType` / `BrowserScroll` | 元素互動 |
+| `BrowserScreenshot` / `BrowserReadPage` | 抓畫面 / 文字 |
+| `BrowserWaitFor` / `BrowserClose` | 等元素出現 / 關 session |
+
+Phase 31-H 後從 SDK 搬到 Cowork sidecar(`apps/orion-cowork/sidecar/src/orion_cowork_sidecar/browser_tools/`),SDK 不再背 `playwright` dep。Cowork sidecar `_build_conversation` 偵測 `is_browser_available()`(playwright + system Chrome 同時可用)後,透過 `extra_tools=build_browser_tools()` 注入。CLI / chat-api 不註冊。
+
+詳見 [`cowork.md`](./cowork.md) §桌面 OS 整合。
+
 ### 雜項
 
 `ToolSearch`(deferred tool 載入)、`Sleep`、`SyntheticOutput`(僅內部)、`SettingsRead/Write`(`config_tool.py`)

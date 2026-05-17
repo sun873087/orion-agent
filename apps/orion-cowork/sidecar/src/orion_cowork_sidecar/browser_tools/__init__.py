@@ -1,8 +1,11 @@
 """Browser-use tools — 透過 system Chrome(Playwright `channel='chrome'`)做
 互動式網頁操作。
 
+**Cowork-only**:Phase 31-H 後從 orion-sdk 搬到 Cowork sidecar,因為只 Cowork
+host 用 — SDK 不再背 playwright dep。CLI / chat-api 都不會註冊這組工具。
+
 啟用條件:
-- pip install 'orion-sdk[browser]'(playwright Python client)
+- Cowork sidecar `pyproject.toml` 已 list `playwright>=1.40`
 - system 安裝 Google Chrome(不下載 playwright 自帶 chromium bundle)
 
 Tools 全 headful — user 看得到 AI 在自己的 Chrome 視窗操作。每個 cowork
@@ -12,6 +15,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 
 def is_browser_available() -> bool:
@@ -52,23 +56,27 @@ def find_chrome_executable() -> Path | None:
     return None
 
 
-from orion_sdk.tools.browser.click import BrowserClickTool
-from orion_sdk.tools.browser.navigate import BrowserBackTool, BrowserForwardTool, BrowserNavigateTool
-from orion_sdk.tools.browser.read import BrowserReadPageTool
-from orion_sdk.tools.browser.screenshot import BrowserScreenshotTool
-from orion_sdk.tools.browser.scroll import BrowserScrollTool
-from orion_sdk.tools.browser.session import (
+from orion_cowork_sidecar.browser_tools.click import BrowserClickTool
+from orion_cowork_sidecar.browser_tools.navigate import (
+    BrowserBackTool,
+    BrowserForwardTool,
+    BrowserNavigateTool,
+)
+from orion_cowork_sidecar.browser_tools.read import BrowserReadPageTool
+from orion_cowork_sidecar.browser_tools.screenshot import BrowserScreenshotTool
+from orion_cowork_sidecar.browser_tools.scroll import BrowserScrollTool
+from orion_cowork_sidecar.browser_tools.session import (
     BrowserSession,
     close_all_browser_sessions,
     get_browser_session,
 )
-from orion_sdk.tools.browser.session_close import BrowserCloseTool
-from orion_sdk.tools.browser.type_tool import BrowserTypeTool
-from orion_sdk.tools.browser.wait import BrowserWaitForTool
+from orion_cowork_sidecar.browser_tools.session_close import BrowserCloseTool
+from orion_cowork_sidecar.browser_tools.type_tool import BrowserTypeTool
+from orion_cowork_sidecar.browser_tools.wait import BrowserWaitForTool
 
 
 def build_browser_tools() -> list[object]:
-    """所有 browser tools 一次回。Caller(builtin_set.py)再 extend 進 conv.tools。"""
+    """所有 browser tools 一次回。Caller(handlers.py)再 extend 進 extra_tools。"""
     return [
         BrowserNavigateTool(),
         BrowserScreenshotTool(),
@@ -83,10 +91,20 @@ def build_browser_tools() -> list[object]:
     ]
 
 
+def browser_tool_group() -> dict[str, Any]:
+    """Browser group metadata,Cowork sidecar `tools.list_builtin` 注 SDK
+    `list_builtin_tool_groups(extra_groups=...)`。"""
+    return {
+        "group": "Browser",
+        "tools": [{"name": t.name, "description": t.description} for t in build_browser_tools()],  # type: ignore[attr-defined]
+    }
+
+
 __all__ = [
     "is_browser_available",
     "find_chrome_executable",
     "build_browser_tools",
+    "browser_tool_group",
     "BrowserSession",
     "get_browser_session",
     "close_all_browser_sessions",

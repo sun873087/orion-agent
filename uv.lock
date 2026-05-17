@@ -1636,7 +1636,8 @@ source = { editable = "apps/orion-cowork/sidecar" }
 dependencies = [
     { name = "croniter" },
     { name = "orion-model" },
-    { name = "orion-sdk", extra = ["browser"] },
+    { name = "orion-sdk" },
+    { name = "playwright" },
     { name = "python-dotenv" },
 ]
 
@@ -1651,7 +1652,8 @@ dev = [
 requires-dist = [
     { name = "croniter", specifier = ">=2.0" },
     { name = "orion-model", editable = "packages/orion-model" },
-    { name = "orion-sdk", extras = ["browser"], editable = "packages/orion-sdk" },
+    { name = "orion-sdk", editable = "packages/orion-sdk" },
+    { name = "playwright", specifier = ">=1.40" },
     { name = "python-dotenv", specifier = ">=1.0" },
 ]
 
@@ -1726,11 +1728,6 @@ dependencies = [
     { name = "structlog" },
 ]
 
-[package.optional-dependencies]
-browser = [
-    { name = "playwright" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
@@ -1760,7 +1757,6 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },
     { name = "orion-model", editable = "packages/orion-model" },
-    { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyinstrument", specifier = ">=4.6" },
     { name = "python-dotenv", specifier = ">=1.0" },

@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import TextEvent, ToolEvent, ToolInput
-from orion_sdk.tools.browser.session import close_browser_session
+from orion_cowork_sidecar.browser_tools.session import close_browser_session
 
 
 class BrowserCloseInput(ToolInput):

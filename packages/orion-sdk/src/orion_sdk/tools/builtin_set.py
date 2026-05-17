@@ -3,6 +3,9 @@
 `AskUserQuestionTool` 永遠註冊。CLI 在這裡傳 stdin asker;web chat 在 ws 連上時
 透過 `chat.py` 把 ws asker 設到 tool.asker 上(per-connection late-bind)。
 asker 是 None 時呼叫 tool 會回 ErrorEvent(模型可看到 schema、知道工具存在)。
+
+Host-specific tools(Browser)不在這 — 由 host 透過 `extra_tools` 注入,
+SDK 不背 playwright 這類 dep。
 """
 
 from __future__ import annotations
@@ -29,10 +32,6 @@ from orion_sdk.tools.schedule import (
     ScheduleDeleteTool,
     ScheduleListTool,
 )
-from orion_sdk.tools.schedule.loop_create import LoopCreateCallback
-from orion_sdk.tools.schedule.schedule_create import ScheduleCreateCallback
-from orion_sdk.tools.schedule.schedule_delete import ScheduleDeleteCallback
-from orion_sdk.tools.schedule.schedule_list import ScheduleListCallback
 from orion_sdk.tools.search.glob import GlobTool
 from orion_sdk.tools.search.grep import GrepTool
 from orion_sdk.tools.shell.bash import BashTool
@@ -55,9 +54,9 @@ from orion_sdk.tools.workdir.exit import ExitWorkdirTool
 def build_default_tool_set(
     asker: AskUserCallback | None = None,
     *,
-    browser_enabled: bool = True,
     disabled_tools: set[str] | None = None,
     schedule_callbacks: dict[str, Any] | None = None,
+    extra_tools: list[Tool[Any]] | None = None,
 ) -> list[Tool[Any]]:
     """組所有內建工具。
 
@@ -65,14 +64,14 @@ def build_default_tool_set(
         asker: 給 AskUserQuestionTool 用的 callback。None 也會註冊 tool
             (asker 之後可由 caller 設到 tool.asker — 例如 chat.py 的 ws 連線
             掛上 ws asker)。模型若在 asker=None 時呼叫 tool 會收到 ErrorEvent。
-        browser_enabled: 自動偵測 playwright + system Chrome 是否可用,可用就
-            註冊 Browser* tools(Navigate / Click / Type / Screenshot 等)。
-            False 強制不註冊,即使環境支援也不放。
         disabled_tools: 名字在這 set 內的 tool 不會被註冊。
             Cowork 從 user prefs 讀進來,讓使用者按組 / 個別關。
         schedule_callbacks: 給 Schedule* tools 用的 sidecar callback dict。
-            預期 keys: 'create' / 'list' / 'delete' — 對應的 async fn。
+            預期 keys: 'create' / 'list' / 'delete' / 'loop_create'。
             None 時 Schedule tools 不註冊(只有 Cowork 啟用)。
+        extra_tools: host 注入的工具 — 譬如 Cowork 的 Browser*、Cowork 的
+            OpenUrl/OpenPath 等。SDK 本身不註冊 playwright 這類綁特定 runtime
+            的工具。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
@@ -112,14 +111,6 @@ def build_default_tool_set(
         CronListTool(),
         CronDeleteTool(),
     ]
-    # Browser use — 偵測 playwright + system Chrome 可用才註冊
-    if browser_enabled:
-        try:
-            from orion_sdk.tools.browser import build_browser_tools, is_browser_available
-            if is_browser_available():
-                all_candidates.extend(build_browser_tools())  # type: ignore[arg-type]
-        except ImportError:
-            pass
     # Schedule tools(對話排程) — 需要 host 提供 callbacks 才註冊
     if schedule_callbacks:
         if "create" in schedule_callbacks:
@@ -130,6 +121,9 @@ def build_default_tool_set(
             all_candidates.append(ScheduleDeleteTool(callback=schedule_callbacks["delete"]))
         if "loop_create" in schedule_callbacks:
             all_candidates.append(LoopCreateTool(callback=schedule_callbacks["loop_create"]))
+    # Host-specific tools(Browser / Cron / OpenUrl / OpenPath / ...)
+    if extra_tools:
+        all_candidates.extend(extra_tools)
     base: list[Tool[Any]] = [t for t in all_candidates if t.name not in disabled]
 
     # AskUserQuestion / ToolSearch 視為「核心 infra」— 也可被 disable,但通常不會
@@ -142,14 +136,16 @@ def build_default_tool_set(
     return base
 
 
-def list_builtin_tool_groups() -> list[dict[str, Any]]:
+def list_builtin_tool_groups(
+    *,
+    extra_groups: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """回 builtin tools 的分組 metadata,給 settings UI 顯示「組別 + 展開個別」用。
 
-    結構:[{ group: str, tools: [{name, description}] }]。
-    Browser group 若 system 沒裝 Chrome / playwright 仍會回(disabled UI 自行
-    處理)。MCP tools 不在這 — 它們是動態 plug-in,UI 走另一個來源(mcp.list)。
+    結構:[{ group: str, tools: [{name, description}] }]。MCP tools 不在這 — 它們
+    是動態 plug-in,UI 走另一個來源(mcp.list)。Host-specific group(Cowork Browser)
+    由各 host 透過 `extra_groups` 注入。
     """
-    from orion_sdk.tools.browser import build_browser_tools
     from orion_sdk.tools.interactive.ask_user import AskUserQuestionTool
 
     def to_dict(t: Any) -> dict[str, str]:
@@ -191,14 +187,12 @@ def list_builtin_tool_groups() -> list[dict[str, Any]]:
             "tools": [to_dict(CronCreateTool()), to_dict(CronListTool()), to_dict(CronDeleteTool())],
         },
         {
-            "group": "Browser",
-            "tools": [to_dict(t) for t in build_browser_tools()],
-        },
-        {
             "group": "Interactive",
             "tools": [to_dict(AskUserQuestionTool(asker=None))],
         },
     ]
+    if extra_groups:
+        groups.extend(extra_groups)
     return groups
 
 

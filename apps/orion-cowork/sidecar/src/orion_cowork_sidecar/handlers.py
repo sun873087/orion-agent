@@ -261,7 +261,7 @@ class Handlers:
         await self._mcp.shutdown()
         # Close 所有開著的 Chrome instance(若有)
         try:
-            from orion_sdk.tools.browser import close_all_browser_sessions
+            from orion_cowork_sidecar.browser_tools import close_all_browser_sessions
             await close_all_browser_sessions()
         except ImportError:
             pass
@@ -1435,13 +1435,15 @@ class Handlers:
     ) -> AsyncIterator[dict[str, Any]]:
         """列出所有 builtin tools(按組分),給 Settings → Tools 區渲染用。
 
-        Browser group:若 system 沒裝 Chrome / playwright,SDK 那邊 build_browser_tools
-        仍能列名,只是實際 build_default_tool_set 註冊時會 skip。前端不需要區分。
+        Browser group:Cowork host 自帶(從 `browser_tools` 注 `extra_groups`),
+        即使 system 沒裝 Chrome / playwright 仍會列名 — 實際 build_default_tool_set
+        註冊時 `is_browser_available()` 不通過就 skip,前端 UI 不需區分。
         """
+        from orion_cowork_sidecar.browser_tools import browser_tool_group
         from orion_sdk.tools.builtin_set import list_builtin_tool_groups
 
         try:
-            groups = list_builtin_tool_groups()
+            groups = list_builtin_tool_groups(extra_groups=[browser_tool_group()])
         except Exception as e:  # noqa: BLE001
             yield {
                 "event": "error",
@@ -1570,13 +1572,22 @@ class Handlers:
         # 「對話 → SKILL.md」走既有 `skillify` bundled skill + Write tool,
         # 不需要另一個 SkillWrite tool。
         schedule_callbacks = self._build_schedule_callbacks(project_id=project_id)
+        # Cowork host-specific tools — Browser group 只在 Cowork 註冊,SDK 不背
+        # playwright dep。`is_browser_available()` 不通過就 skip,LLM 看不到。
+        from orion_cowork_sidecar.browser_tools import (
+            build_browser_tools,
+            is_browser_available,
+        )
+        host_tools: list[Any] = [OpenUrlTool(), OpenPathTool()]
+        if is_browser_available():
+            host_tools.extend(build_browser_tools())  # type: ignore[arg-type]
         tools = (
             build_default_tool_set(
                 asker=None,
                 disabled_tools=disabled_set,
                 schedule_callbacks=schedule_callbacks,
+                extra_tools=host_tools,
             )
-            + [OpenUrlTool(), OpenPathTool()]
             + mcp.tools
         )
 

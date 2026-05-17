@@ -8,7 +8,7 @@ from pydantic import Field
 
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
-from orion_sdk.tools.browser.session import get_browser_session
+from orion_cowork_sidecar.browser_tools.session import get_browser_session
 
 
 class BrowserScrollInput(ToolInput):
