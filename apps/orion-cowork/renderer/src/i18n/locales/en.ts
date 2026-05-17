@@ -261,6 +261,17 @@ export default {
   'schedule.error.payloadRequired': 'Pick a skill or write a prompt',
   'schedule.error.cronInvalid': 'Invalid cron expression — need 5 fields (min hour day month dow)',
 
+  // Plan Mode (Phase 31-J)
+  'plan.banner.active': 'Plan Mode active — only Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion are allowed',
+  'plan.banner.awaiting': 'Plan submitted — awaiting your approval',
+  'plan.modal.title': 'Review plan',
+  'plan.modal.awaitingTag': 'Awaiting approval',
+  'plan.modal.description': 'Below is the plan the AI proposes to execute. Approve to proceed, or reject with optional feedback to redirect.',
+  'plan.modal.feedbackLabel': 'Feedback (optional, sent to AI on reject)',
+  'plan.modal.feedbackPlaceholder': 'e.g. don\'t touch query_loop, refactor conversation.py instead',
+  'plan.modal.approve': 'Approve & execute',
+  'plan.modal.reject': 'Reject',
+
   'skill.userDirLabel': 'User skills dir:',
   'skill.new': 'New skill',
   'skill.delete': 'Delete',

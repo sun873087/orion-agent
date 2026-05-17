@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  BookCheck,
   Check,
   ChevronDown,
   Clock,
@@ -62,6 +63,7 @@ const CLIENT_SLASH_NAMES = new Set([
   '/export',
   '/context',
   '/schedule',
+  '/plan',
 ])
 
 const SLASH_COMMANDS: SlashCommand[] = [
@@ -89,6 +91,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: '/schedule',
     icon: Clock,
     subtitle: '管理排程任務(個人 / 專案)',
+  },
+  {
+    name: '/plan',
+    icon: BookCheck,
+    subtitle: '進入 Plan Mode — 先擬計畫,user 批准才動手',
   },
   {
     name: '/loop',
@@ -219,6 +226,28 @@ export function InputBox({ onSend, onAbort }: Props) {
       }
     } else if (name === '/schedule') {
       useSettingsStore.getState().openSettings('schedules')
+    } else if (name === '/plan') {
+      // Toggle Plan Mode for current session
+      try {
+        const sid = useAgentStore.getState().sessionId
+        if (!sid) {
+          setAttachError('還沒對話 — 先送一句話建立 session 再進 Plan Mode')
+          return
+        }
+        const current = useAgentStore.getState().planModeStatusBySession[sid] || 'idle'
+        const { setPlanMode } = await import('../api/agent')
+        if (current === 'idle') {
+          await setPlanMode(sid, true)
+          useAgentStore.getState().setPlanModeStatus(sid, 'pending')
+        } else {
+          await setPlanMode(sid, false)
+          useAgentStore.getState().setPlanModeStatus(sid, 'idle')
+          useAgentStore.getState().clearPendingPlanApproval(sid)
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setAttachError(`/plan 失敗:${msg}`)
+      }
     } else if (name === '/context') {
       try {
         const sid = useAgentStore.getState().sessionId

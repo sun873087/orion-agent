@@ -261,6 +261,17 @@ export default {
   'schedule.error.payloadRequired': '请填写要执行的技能或 prompt 内容',
   'schedule.error.cronInvalid': 'Cron 表达式格式错误 — 需要 5 个字段(分 时 日 月 周)',
 
+  // Plan Mode(Phase 31-J)
+  'plan.banner.active': 'Plan Mode 进行中 — 只允许 Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion',
+  'plan.banner.awaiting': '计划已提交,等候你批准',
+  'plan.modal.title': '审核计划',
+  'plan.modal.awaitingTag': '待批准',
+  'plan.modal.description': '以下是 AI 预计执行的步骤。批准后 LLM 才会开始实作,期间可以填反馈让 AI 换方向重来。',
+  'plan.modal.feedbackLabel': '反馈(选填,Reject 时带给 AI)',
+  'plan.modal.feedbackPlaceholder': '例:先别动 query_loop,改重构 conversation.py',
+  'plan.modal.approve': '批准并执行',
+  'plan.modal.reject': '拒绝重来',
+
   'skill.userDirLabel': '用户技能目录:',
   'skill.new': '新建技能',
   'skill.delete': '删除',

@@ -32,6 +32,8 @@ PLAN_MODE_ALLOWED_TOOLS: frozenset[str] = frozenset({
     "WebSearch",
     # 規劃 / 描述輸出 — 不動 fs
     "TodoWrite",  # 寫的是 in-memory todos,不動 fs
+    # 釐清意圖 — planning 需要問 user 補資訊(沒 side effect)
+    "AskUserQuestion",
     # 結束 plan mode 必經
     "ExitPlanMode",
     # 進階查詢:子 agent 用 — 子 agent 自己有獨立 plan_mode_state

@@ -672,6 +672,94 @@ export async function setPermissionMode(
   )
 }
 
+// ─── Plan Mode(Phase 31-J)──────────────────────────────────────────
+
+/** 開 / 關 Plan Mode — enabled=true 設 pending flag,下次 send 切 ACTIVE。
+ *  enabled=false 從 active/awaiting → reject_and_exit + 刪 plan_file。 */
+export async function setPlanMode(
+  sessionId: string,
+  enabled: boolean,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_plan_mode',
+    { session_id: sessionId, enabled },
+    () => {},
+  )
+}
+
+export type PlanApproveResult = {
+  follow_up: string
+  plan_file_path: string | null
+}
+
+/** User 按 Approve。回傳 follow_up 字串,renderer 自己丟下一輪 conversation.send。 */
+export async function planApprove(
+  sessionId: string,
+  followUp?: string,
+): Promise<PlanApproveResult> {
+  let result: PlanApproveResult = { follow_up: 'Approved. Proceed with the plan.', plan_file_path: null }
+  await window.agent.call(
+    'conversation.plan_approve',
+    { session_id: sessionId, follow_up: followUp },
+    (frame) => {
+      if (frame.event === 'plan_approved' && frame.data) {
+        result = {
+          follow_up: (frame.data as { follow_up?: string }).follow_up || result.follow_up,
+          plan_file_path: (frame.data as { plan_file_path?: string | null }).plan_file_path ?? null,
+        }
+      }
+    },
+  )
+  return result
+}
+
+/** User 按 Reject(可帶 feedback)。回傳 follow_up 字串給下一輪 send。 */
+export async function planReject(
+  sessionId: string,
+  feedback?: string,
+): Promise<{ follow_up: string }> {
+  let result = { follow_up: 'Plan rejected. Try a different approach. Don\'t proceed with that plan.' }
+  await window.agent.call(
+    'conversation.plan_reject',
+    { session_id: sessionId, feedback },
+    (frame) => {
+      if (frame.event === 'plan_rejected' && frame.data) {
+        const f = (frame.data as { follow_up?: string }).follow_up
+        if (f) result = { follow_up: f }
+      }
+    },
+  )
+  return result
+}
+
+export type PlanStatusResult = {
+  status: 'idle' | 'pending' | 'active' | 'awaiting_approval'
+  plan_id: string | null
+  plan_markdown: string | null
+  plan_file_path: string | null
+}
+
+/** Renderer mount 時呼 — 從 sidecar 查 session 當前 plan mode 狀態,re-hydrate UI。 */
+export async function planStatus(sessionId: string): Promise<PlanStatusResult> {
+  let result: PlanStatusResult = { status: 'idle', plan_id: null, plan_markdown: null, plan_file_path: null }
+  await window.agent.call(
+    'conversation.plan_status',
+    { session_id: sessionId },
+    (frame) => {
+      if (frame.event === 'plan_status' && frame.data) {
+        const d = frame.data as Partial<PlanStatusResult>
+        result = {
+          status: d.status || 'idle',
+          plan_id: d.plan_id ?? null,
+          plan_markdown: d.plan_markdown ?? null,
+          plan_file_path: d.plan_file_path ?? null,
+        }
+      }
+    },
+  )
+  return result
+}
+
 export type PermissionScope = 'global' | 'project'
 
 export type PermissionPolicy = {

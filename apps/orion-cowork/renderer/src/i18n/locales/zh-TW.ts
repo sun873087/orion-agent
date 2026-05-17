@@ -272,6 +272,17 @@ export default {
   'schedule.error.payloadRequired': '請填寫要執行的技能或 prompt 內容',
   'schedule.error.cronInvalid': 'Cron 表達式格式錯誤 — 需要 5 個欄位(分 時 日 月 週)',
 
+  // Plan Mode(Phase 31-J)
+  'plan.banner.active': 'Plan Mode 進行中 — 只允許 Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion',
+  'plan.banner.awaiting': '計畫已提交,等候你批准',
+  'plan.modal.title': '審核計畫',
+  'plan.modal.awaitingTag': '待批准',
+  'plan.modal.description': '以下是 AI 預計執行的步驟。批准後 LLM 才會開始實作,期間可以填回饋讓 AI 換方向再來。',
+  'plan.modal.feedbackLabel': '回饋(選填,Reject 時帶給 AI)',
+  'plan.modal.feedbackPlaceholder': '例:先別動 query_loop,改重構 conversation.py',
+  'plan.modal.approve': '批准並執行',
+  'plan.modal.reject': '拒絕重來',
+
   // Skills
   'skill.userDirLabel': '使用者技能目錄:',
   'skill.new': '新增技能',

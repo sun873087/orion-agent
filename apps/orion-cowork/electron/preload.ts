@@ -60,6 +60,44 @@ const schedulerApi = {
   },
 }
 
+type PlanModeAwaitingPayload = {
+  session_id: string
+  plan_id: string | null
+  plan_markdown: string
+  plan_file_path: string | null
+}
+type PlanModeSessionEvent = { session_id: string; feedback?: string }
+
+const planApi = {
+  /** Plan submitted, awaiting user approval — renderer 跳 modal。 */
+  onAwaitingApproval: (cb: (data: PlanModeAwaitingPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: PlanModeAwaitingPayload) => cb(data)
+    ipcRenderer.on('plan_mode:awaiting_approval', listener)
+    return () => ipcRenderer.removeListener('plan_mode:awaiting_approval', listener)
+  },
+  /** User /plan 開啟 / Pill 切 Plan → sidecar 確認 pending。 */
+  onEntered: (cb: (data: PlanModeSessionEvent) => void): (() => void) => {
+    const listener = (_: unknown, data: PlanModeSessionEvent) => cb(data)
+    ipcRenderer.on('plan_mode:entered', listener)
+    return () => ipcRenderer.removeListener('plan_mode:entered', listener)
+  },
+  onExited: (cb: (data: PlanModeSessionEvent) => void): (() => void) => {
+    const listener = (_: unknown, data: PlanModeSessionEvent) => cb(data)
+    ipcRenderer.on('plan_mode:exited', listener)
+    return () => ipcRenderer.removeListener('plan_mode:exited', listener)
+  },
+  onApproved: (cb: (data: PlanModeSessionEvent) => void): (() => void) => {
+    const listener = (_: unknown, data: PlanModeSessionEvent) => cb(data)
+    ipcRenderer.on('plan_mode:approved', listener)
+    return () => ipcRenderer.removeListener('plan_mode:approved', listener)
+  },
+  onRejected: (cb: (data: PlanModeSessionEvent) => void): (() => void) => {
+    const listener = (_: unknown, data: PlanModeSessionEvent) => cb(data)
+    ipcRenderer.on('plan_mode:rejected', listener)
+    return () => ipcRenderer.removeListener('plan_mode:rejected', listener)
+  },
+}
+
 const agentApi = {
   /**
    * 呼叫 sidecar RPC。`onFrame` 每個 streaming frame 觸發一次。
@@ -94,6 +132,7 @@ contextBridge.exposeInMainWorld('shellApi', shellApi)
 // (postTask 那組),contextBridge 不能覆寫,會丟「Cannot bind an API on top of
 // an existing property」。改用 'schedulerApi' 跟 'shellApi' 對齊。
 contextBridge.exposeInMainWorld('schedulerApi', schedulerApi)
+contextBridge.exposeInMainWorld('planApi', planApi)
 
 declare global {
   interface Window {
@@ -101,5 +140,6 @@ declare global {
     dialog: typeof dialogApi
     shellApi: typeof shellApi
     schedulerApi: typeof schedulerApi
+    planApi: typeof planApi
   }
 }

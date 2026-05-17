@@ -23,8 +23,16 @@ from orion_sdk.permissions.decisions import (
     PermissionResult,
     current_tool_use_id,
 )
+from orion_sdk.plan_mode.state import (
+    PlanModeState,
+    PlanModeStatus,
+    approve_and_exit,
+    reject_and_exit,
+)
 from orion_sdk.services.feature_flags import load_feature_flags
 from orion_sdk.tools.builtin_set import build_default_tool_set
+from orion_sdk.tools.special.enter_plan_mode import EnterPlanModeTool
+from orion_sdk.tools.special.exit_plan_mode import ExitPlanModeTool
 
 from orion_cowork_sidecar import (
     memory_handlers,
@@ -190,6 +198,13 @@ class Handlers:
         # Per-session 當前 permission_mode — turn 開始時寫入,can_use_tool 每次
         # invocation 都讀 live 值,讓 user 中途切 mode 立刻生效。
         self._session_modes: dict[str, str] = {}
+        # Plan Mode(Phase 31-J)— `set_plan_mode(enabled=true)` 設這個 flag,
+        # 下次 `_build_conversation` 看到就 inject ACTIVE PlanModeState 並清掉。
+        # 不直接改 DB 是因為 ACTIVE 需要 plan_id / plan_file_path,只在實際 send
+        # 開始時才建。
+        self._pending_plan_enter: set[str] = set()
+        # In-flight plan_approve/reject 守 (避免 RPC vs 進行中 conv.send 競態)
+        self._plan_action_lock: dict[str, asyncio.Lock] = {}
         # Notifier 由 __main__ 在 RpcServer build 後注入(寫 stdout 無 id frame)。
         # SchedulerEngine.fire / record_compaction 等背景事件透過這個推給 main。
         self._notifier: Any = None
@@ -238,7 +253,67 @@ class Handlers:
                         f"[storage] cleanup failed: {e}",
                         file=sys.stderr, flush=True,
                     )
+                # Plan Mode crash recovery(Phase 31-J)
+                # 啟動時若有 session 卡在 AWAITING_APPROVAL → fire-and-forget
+                # 排程一次 re-emit notification(等 notifier 已注入 + renderer 連上)
+                asyncio.create_task(self._plan_mode_startup_recovery())
+                # Plan file GC — 孤兒 + 30 天舊
+                asyncio.create_task(self._cleanup_orphan_plan_files())
             return self._engine
+
+    async def _plan_mode_startup_recovery(self) -> None:
+        """啟動時若有 session 卡在 AWAITING_APPROVAL,re-emit notification 讓
+        renderer 重開 modal。等 5s 給 notifier + renderer 連上。"""
+        await asyncio.sleep(5)
+        if self._engine is None or self._notifier is None:
+            return
+        try:
+            rows = await storage.list_awaiting_approval_sessions(self._engine)
+        except Exception:  # noqa: BLE001
+            return
+        for row in rows:
+            await self.notify({
+                "event": "plan_mode.awaiting_approval",
+                "data": {
+                    "session_id": row["session_id"],
+                    "plan_id": row["plan_id"],
+                    "plan_markdown": row["plan_content"],
+                    "plan_file_path": row["plan_file_path"],
+                },
+            })
+
+    async def _cleanup_orphan_plan_files(self) -> None:
+        """掃 ~/.orion/plans/,刪不被任何 session 引用 + mtime > 30 天的孤兒。"""
+        import sys
+        import time
+        from pathlib import Path as _Path
+        plan_dir = _Path.home() / ".orion" / "plans"
+        if not plan_dir.is_dir():
+            return
+        if self._engine is None:
+            return
+        try:
+            referenced = await storage.list_referenced_plan_files(self._engine)
+        except Exception:  # noqa: BLE001
+            return
+        cutoff = time.time() - 30 * 24 * 3600
+        deleted = 0
+        for f in plan_dir.iterdir():
+            if not f.is_file() or f.suffix != ".md":
+                continue
+            if str(f) in referenced:
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    deleted += 1
+            except OSError:
+                pass
+        if deleted:
+            print(
+                f"[plan_mode] GC: deleted {deleted} orphan plan files",
+                file=sys.stderr, flush=True,
+            )
 
     async def ensure_mcp(self) -> CoworkMcpManager:
         """Lazy start McpManager + supervisor — 首次需要 mcp tools 或 mcp.list 時才連。"""
@@ -337,6 +412,10 @@ class Handlers:
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
+            "conversation.set_plan_mode": self.conversation_set_plan_mode,
+            "conversation.plan_approve": self.conversation_plan_approve,
+            "conversation.plan_reject": self.conversation_plan_reject,
+            "conversation.plan_status": self.conversation_plan_status,
             "conversation.stats": self.conversation_stats,
             "conversation.context_breakdown": self.conversation_context_breakdown,
             "conversation.compact": self.conversation_compact,
@@ -520,6 +599,78 @@ class Handlers:
         ctx = AgentContext(**ctx_kwargs)
         self._aborts[sid] = ctx
 
+        # ─── Plan Mode wiring(Phase 31-J)──────────────────────────────
+        # 三條路:
+        #  (a) `_pending_plan_enter[sid]` 為 True(user 剛點 /plan 開啟)
+        #      → inject 新 ACTIVE state,append 一條 system-style user msg
+        #         告知 LLM 進入 plan mode
+        #  (b) DB 有 active / awaiting_approval state(跨 turn 持續)
+        #      → reconstruct PlanModeState 注入
+        #  (c) AWAITING_APPROVAL:拒絕新 send(等 approve/reject 才放行)
+        injected_plan_state: PlanModeState | None = None
+        if sid in self._pending_plan_enter:
+            from pathlib import Path as _Path
+            from uuid import uuid4 as _uuid4
+            plan_dir = _Path.home() / ".orion" / "plans"
+            plan_dir.mkdir(parents=True, exist_ok=True)
+            plan_id = _uuid4()
+            plan_file = plan_dir / f"plan-{plan_id.hex[:12]}.md"
+            try:
+                plan_file.touch()
+            except OSError:
+                pass
+            injected_plan_state = PlanModeState(
+                status=PlanModeStatus.ACTIVE,
+                plan_id=plan_id,
+                plan_file=plan_file,
+                plan_content="",
+                entered_at_message_index=len(conv.state_messages),
+            )
+            self._pending_plan_enter.discard(sid)
+            # Append a synthetic system-style user msg so LLM knows we entered
+            # plan mode without faking a tool call in history.
+            from orion_model.types import NormalizedMessage
+            conv.state_messages.append(NormalizedMessage(
+                role="user",
+                content=(
+                    "[System: User enabled Plan Mode. Investigate via Read / Grep / "
+                    "Glob / WebFetch / Skill / TodoWrite / AskUserQuestion only — "
+                    "Bash / Write / Edit are blocked. When ready, call ExitPlanMode "
+                    "with a complete markdown plan for user review.]"
+                ),
+            ))
+        else:
+            db_plan = await storage.get_plan_state(engine, sid)
+            if db_plan is not None:
+                status_enum = PlanModeStatus(db_plan["status"])
+                if status_enum == PlanModeStatus.AWAITING_APPROVAL:
+                    yield {
+                        "event": "error",
+                        "data": {
+                            "code": "PLAN_AWAITING_APPROVAL",
+                            "message": (
+                                "A plan is awaiting your approval — call "
+                                "plan_approve or plan_reject before continuing."
+                            ),
+                        },
+                        "final": True,
+                    }
+                    self._aborts.pop(sid, None)
+                    return
+                if status_enum == PlanModeStatus.ACTIVE:
+                    from pathlib import Path as _Path
+                    pid = db_plan.get("plan_id")
+                    pfp = db_plan.get("plan_file_path")
+                    injected_plan_state = PlanModeState(
+                        status=PlanModeStatus.ACTIVE,
+                        plan_id=UUID(pid) if pid else None,
+                        plan_file=_Path(pfp) if pfp else None,
+                        plan_content=db_plan.get("plan_content") or "",
+                        entered_at_message_index=db_plan.get("entered_at_message_index"),
+                    )
+        if injected_plan_state is not None:
+            ctx.plan_mode_state = injected_plan_state
+
         # ─── permission_mode wiring(Ask vs Act)────────────────────────
         permission_mode = params.get("permission_mode", "act")
         # 寫入 per-session live state — can_use_tool 每次 call 都讀 latest,
@@ -656,6 +807,16 @@ class Handlers:
                 except Exception:  # noqa: BLE001
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
+            # ─── Plan Mode persist + notification(Phase 31-J)──────────
+            # Read ctx 上被 tools 修改過的 state,寫回 DB。狀態變化時 emit
+            # 對應 notification 讓 renderer 更新 UI。
+            try:
+                await self._persist_plan_state_and_notify(sid, ctx)
+            except Exception as e:  # noqa: BLE001
+                print(
+                    f"[plan_mode] persist/notify failed for {sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
 
     def _build_can_use_tool(
         self,
@@ -1318,6 +1479,267 @@ class Handlers:
             "final": True,
         }
 
+    # ─── Plan Mode RPC(Phase 31-J)────────────────────────────────────
+
+    def _plan_lock(self, sid: str) -> asyncio.Lock:
+        if sid not in self._plan_action_lock:
+            self._plan_action_lock[sid] = asyncio.Lock()
+        return self._plan_action_lock[sid]
+
+    async def _persist_plan_state_and_notify(
+        self, sid: str, ctx: AgentContext,
+    ) -> None:
+        """Send loop 結束後呼叫。Diff DB vs ctx,寫回 + emit notification。"""
+        engine = await self.ensure_engine()
+        live = ctx.plan_mode_state
+        if not isinstance(live, PlanModeState) or live.status == PlanModeStatus.INACTIVE:
+            # state 是 INACTIVE 或從未設過 → 清 DB(若有殘留)
+            existing = await storage.get_plan_state(engine, sid)
+            if existing is not None:
+                await storage.save_plan_state(engine, sid, status="idle")
+            return
+        # ACTIVE / AWAITING_APPROVAL — persist
+        plan_file_path = str(live.plan_file) if live.plan_file else None
+        plan_id_str = live.plan_id.hex if live.plan_id else None
+        await storage.save_plan_state(
+            engine, sid,
+            status=live.status.value,
+            plan_id=plan_id_str,
+            plan_file_path=plan_file_path,
+            plan_content=live.plan_content or None,
+            entered_at_message_index=live.entered_at_message_index,
+        )
+        if live.status == PlanModeStatus.AWAITING_APPROVAL:
+            await self.notify({
+                "event": "plan_mode.awaiting_approval",
+                "data": {
+                    "session_id": sid,
+                    "plan_id": plan_id_str,
+                    "plan_markdown": live.plan_content,
+                    "plan_file_path": plan_file_path,
+                },
+            })
+
+    async def conversation_set_plan_mode(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """User 切 Plan Mode 開關(`/plan` slash 或 PermissionModePill)。
+
+        enabled=true:設 pending flag,下次 send 時 inject ACTIVE state
+        enabled=false:若當前 active/awaiting → reject_and_exit + abort 進行中 send
+        """
+        sid = params.get("session_id")
+        enabled = params.get("enabled")
+        if not isinstance(sid, str) or not isinstance(enabled, bool):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id + enabled required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        async with self._plan_lock(sid):
+            if enabled:
+                self._pending_plan_enter.add(sid)
+                await self.notify({
+                    "event": "plan_mode.entered",
+                    "data": {"session_id": sid},
+                })
+                yield {
+                    "event": "plan_mode_set",
+                    "data": {"session_id": sid, "enabled": True, "status": "pending"},
+                    "final": True,
+                }
+                return
+            # disable
+            self._pending_plan_enter.discard(sid)
+            db_plan = await storage.get_plan_state(engine, sid)
+            if db_plan is not None:
+                # 嘗試 reject_and_exit;若進行中的 ctx 也存在,同步更新
+                from pathlib import Path as _Path
+                plan_file_path = db_plan.get("plan_file_path")
+                # 刪 plan_file(若存在)
+                if plan_file_path:
+                    try:
+                        _Path(plan_file_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                await storage.save_plan_state(engine, sid, status="idle")
+                # Abort in-flight send 若有
+                live_ctx = self._aborts.get(sid)
+                if isinstance(live_ctx, AgentContext):
+                    live_ctx.abort_event.set()
+                    if isinstance(live_ctx.plan_mode_state, PlanModeState):
+                        live_ctx.plan_mode_state = PlanModeState()
+            await self.notify({
+                "event": "plan_mode.exited",
+                "data": {"session_id": sid},
+            })
+            yield {
+                "event": "plan_mode_set",
+                "data": {"session_id": sid, "enabled": False, "status": "idle"},
+                "final": True,
+            }
+
+    async def conversation_plan_approve(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """User 按 Approve:state → INACTIVE,注入 'Approved, proceed' user msg
+        但**不**自動觸發 send(renderer 自己呼 conversation.send 接續)。
+        """
+        sid = params.get("session_id")
+        follow_up = params.get("follow_up") or "Approved. Proceed with the plan."
+        if not isinstance(sid, str):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        async with self._plan_lock(sid):
+            # 若 in-flight send 還沒結束 → 拒絕(approve 該在 turn 結束後才呼)
+            if sid in self._aborts:
+                yield {
+                    "event": "error",
+                    "data": {
+                        "code": "PLAN_SEND_IN_FLIGHT",
+                        "message": "wait for the planning turn to finish before approving",
+                    },
+                    "final": True,
+                }
+                return
+            db_plan = await storage.get_plan_state(engine, sid)
+            if db_plan is None or db_plan["status"] != PlanModeStatus.AWAITING_APPROVAL.value:
+                yield {
+                    "event": "error",
+                    "data": {
+                        "code": "PLAN_NOT_AWAITING",
+                        "message": "no plan awaiting approval for this session",
+                    },
+                    "final": True,
+                }
+                return
+            # State → INACTIVE,DB 清空
+            await storage.save_plan_state(engine, sid, status="idle")
+            # 同步 in-memory conv 若有(下次 send 重建 ctx,反正 ctx 是新的)
+            await self.notify({
+                "event": "plan_mode.approved",
+                "data": {"session_id": sid},
+            })
+            yield {
+                "event": "plan_approved",
+                "data": {
+                    "session_id": sid,
+                    "follow_up": follow_up,
+                    "plan_file_path": db_plan.get("plan_file_path"),
+                },
+                "final": True,
+            }
+
+    async def conversation_plan_reject(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """User 按 Reject(可帶 feedback):state → INACTIVE,刪 plan_file,
+        回傳 follow_up text 給 renderer 自行送下一輪 conversation.send。
+        """
+        sid = params.get("session_id")
+        feedback = params.get("feedback") or ""
+        if not isinstance(sid, str):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        async with self._plan_lock(sid):
+            if sid in self._aborts:
+                yield {
+                    "event": "error",
+                    "data": {
+                        "code": "PLAN_SEND_IN_FLIGHT",
+                        "message": "wait for the planning turn to finish before rejecting",
+                    },
+                    "final": True,
+                }
+                return
+            db_plan = await storage.get_plan_state(engine, sid)
+            if db_plan is None or db_plan["status"] != PlanModeStatus.AWAITING_APPROVAL.value:
+                yield {
+                    "event": "error",
+                    "data": {
+                        "code": "PLAN_NOT_AWAITING",
+                        "message": "no plan awaiting approval for this session",
+                    },
+                    "final": True,
+                }
+                return
+            from pathlib import Path as _Path
+            plan_file_path = db_plan.get("plan_file_path")
+            if plan_file_path:
+                try:
+                    _Path(plan_file_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            await storage.save_plan_state(engine, sid, status="idle")
+            feedback_clean = feedback.strip()
+            follow_up = (
+                f"Plan rejected. {feedback_clean} Don't proceed with that plan."
+                if feedback_clean
+                else "Plan rejected. Try a different approach. Don't proceed with that plan."
+            )
+            await self.notify({
+                "event": "plan_mode.rejected",
+                "data": {"session_id": sid, "feedback": feedback_clean},
+            })
+            yield {
+                "event": "plan_rejected",
+                "data": {"session_id": sid, "follow_up": follow_up},
+                "final": True,
+            }
+
+    async def conversation_plan_status(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """純查詢:回 session 當前 plan_mode_state(給 renderer mount 時 re-hydrate)。"""
+        sid = params.get("session_id")
+        if not isinstance(sid, str):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        db_plan = await storage.get_plan_state(engine, sid)
+        if db_plan is None and sid in self._pending_plan_enter:
+            # /plan toggle 開了但還沒第一 send → 視同 active(讓 banner 顯示)
+            yield {
+                "event": "plan_status",
+                "data": {"session_id": sid, "status": "pending"},
+                "final": True,
+            }
+            return
+        if db_plan is None:
+            yield {
+                "event": "plan_status",
+                "data": {"session_id": sid, "status": "idle"},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "plan_status",
+            "data": {
+                "session_id": sid,
+                "status": db_plan["status"],
+                "plan_id": db_plan.get("plan_id"),
+                "plan_markdown": db_plan.get("plan_content"),
+                "plan_file_path": db_plan.get("plan_file_path"),
+            },
+            "final": True,
+        }
+
     async def conversation_ask_user_reply(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
@@ -1578,7 +2000,14 @@ class Handlers:
             build_browser_tools,
             is_browser_available,
         )
-        host_tools: list[Any] = [OpenUrlTool(), OpenPathTool()]
+        host_tools: list[Any] = [
+            OpenUrlTool(),
+            OpenPathTool(),
+            # Plan Mode tools(Phase 31-J)— SDK 自動透過 plan_mode_aware
+            # wrapper enforce read-only 白名單。Host 不用包 policy。
+            EnterPlanModeTool(),
+            ExitPlanModeTool(),
+        ]
         if is_browser_available():
             host_tools.extend(build_browser_tools())  # type: ignore[arg-type]
         tools = (

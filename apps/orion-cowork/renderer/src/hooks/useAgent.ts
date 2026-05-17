@@ -74,6 +74,81 @@ export function useScheduleNotifications() {
 }
 
 /**
+ * Session 切換時呼 conversation.plan_status,re-hydrate plan mode UI。
+ * 用於 crash recovery / 切回有 AWAITING_APPROVAL 的 session。
+ */
+export function usePlanStatusRehydrate(): void {
+  const sid = useAgentStore((s) => s.sessionId)
+  useEffect(() => {
+    if (!sid) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { planStatus } = await import('../api/agent')
+        const result = await planStatus(sid)
+        if (cancelled) return
+        const store = useAgentStore.getState()
+        store.setPlanModeStatus(sid, result.status)
+        if (result.status === 'awaiting_approval' && result.plan_markdown) {
+          store.setPendingPlanApproval(sid, {
+            planId: result.plan_id,
+            planMarkdown: result.plan_markdown,
+            planFilePath: result.plan_file_path,
+          })
+        } else {
+          store.clearPendingPlanApproval(sid)
+        }
+      } catch {
+        // 沒這 method / sidecar 還沒起 — 略過,notification 之後會補
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [sid])
+}
+
+/**
+ * 訂閱 sidecar 推的 plan_mode.* 事件,同步 renderer store。
+ * Phase 31-J — Plan Mode UI 反應 sidecar 狀態變化。
+ */
+export function usePlanModeNotifications(): void {
+  useEffect(() => {
+    if (!window.planApi) return
+    const offAwaiting = window.planApi.onAwaitingApproval((data) => {
+      useAgentStore.getState().setPlanModeStatus(data.session_id, 'awaiting_approval')
+      useAgentStore.getState().setPendingPlanApproval(data.session_id, {
+        planId: data.plan_id,
+        planMarkdown: data.plan_markdown || '',
+        planFilePath: data.plan_file_path,
+      })
+    })
+    const offEntered = window.planApi.onEntered((data) => {
+      useAgentStore.getState().setPlanModeStatus(data.session_id, 'pending')
+    })
+    const offExited = window.planApi.onExited((data) => {
+      useAgentStore.getState().setPlanModeStatus(data.session_id, 'idle')
+      useAgentStore.getState().clearPendingPlanApproval(data.session_id)
+    })
+    const offApproved = window.planApi.onApproved((data) => {
+      useAgentStore.getState().setPlanModeStatus(data.session_id, 'idle')
+      useAgentStore.getState().clearPendingPlanApproval(data.session_id)
+    })
+    const offRejected = window.planApi.onRejected((data) => {
+      useAgentStore.getState().setPlanModeStatus(data.session_id, 'idle')
+      useAgentStore.getState().clearPendingPlanApproval(data.session_id)
+    })
+    return () => {
+      offAwaiting()
+      offEntered()
+      offExited()
+      offApproved()
+      offRejected()
+    }
+  }, [])
+}
+
+/**
  * "New chat" 按鈕。只清空 local state,不立即建 DB session。首次 send 時
  * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
  */

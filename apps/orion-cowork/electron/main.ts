@@ -112,12 +112,18 @@ app.whenReady().then(async () => {
   sidecar.onNotification((frame) => {
     const evt = frame.event as string | undefined
     if (!evt) return
-    if (evt === 'scheduler.fired') {
-      const data = frame.data as Record<string, unknown> | undefined
+    const data = frame.data as Record<string, unknown> | undefined
+    const broadcast = (channel: string): void => {
       for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) w.webContents.send('scheduler:fired', data ?? {})
+        if (!w.isDestroyed()) w.webContents.send(channel, data ?? {})
       }
     }
+    if (evt === 'scheduler.fired') broadcast('scheduler:fired')
+    else if (evt === 'plan_mode.awaiting_approval') broadcast('plan_mode:awaiting_approval')
+    else if (evt === 'plan_mode.entered') broadcast('plan_mode:entered')
+    else if (evt === 'plan_mode.exited') broadcast('plan_mode:exited')
+    else if (evt === 'plan_mode.approved') broadcast('plan_mode:approved')
+    else if (evt === 'plan_mode.rejected') broadcast('plan_mode:rejected')
   })
 
   // 2. 註冊 IPC

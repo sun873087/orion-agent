@@ -261,6 +261,17 @@ export default {
   'schedule.error.payloadRequired': 'スキルを選ぶかプロンプトを入力してください',
   'schedule.error.cronInvalid': 'Cron 式の形式が不正です — 5 フィールド必要(分 時 日 月 曜)',
 
+  // Plan Mode(Phase 31-J)
+  'plan.banner.active': 'Plan Mode 進行中 — Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion のみ許可',
+  'plan.banner.awaiting': 'プラン送信済み — 承認をお待ちください',
+  'plan.modal.title': 'プランをレビュー',
+  'plan.modal.awaitingTag': '承認待ち',
+  'plan.modal.description': '以下が AI が実行するプランです。承認すると実装開始、却下する場合はフィードバックで方向修正できます。',
+  'plan.modal.feedbackLabel': 'フィードバック(任意、却下時に AI へ送信)',
+  'plan.modal.feedbackPlaceholder': '例:query_loop には触れず conversation.py をリファクタしてほしい',
+  'plan.modal.approve': '承認して実行',
+  'plan.modal.reject': '却下',
+
   'skill.userDirLabel': 'ユーザースキルディレクトリ:',
   'skill.new': '新規スキル',
   'skill.delete': '削除',

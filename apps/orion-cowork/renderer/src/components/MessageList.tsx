@@ -1,13 +1,19 @@
 import { useEffect, useRef } from 'react'
-import { Loader2 } from 'lucide-react'
+import { BookCheck, Loader2 } from 'lucide-react'
 
+import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { MessageBubble } from './MessageBubble'
 
 /** 訊息列表 + 自動 scroll 到底(僅在 user 已在底時)。 */
 export function MessageList() {
+  const { t } = useTranslation()
   const messages = useAgentStore((s) => s.messages)
   const compacting = useAgentStore((s) => s.compacting)
+  const sid = useAgentStore((s) => s.sessionId)
+  const planStatus = useAgentStore((s) =>
+    sid ? s.planModeStatusBySession[sid] : undefined,
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
 
@@ -34,7 +40,8 @@ export function MessageList() {
 
   // Empty state 的 hero 由 InputBox 自己顯示(對齊 Claude Cowork)。
   // 這裡只 render 訊息列;沒訊息時就讓 chat column 上方空白,InputBox 自動 fill。
-  if (messages.length === 0 && !compacting) return null
+  const hasPlanBanner = planStatus === 'pending' || planStatus === 'active' || planStatus === 'awaiting_approval'
+  if (messages.length === 0 && !compacting && !hasPlanBanner) return null
 
   return (
     <div
@@ -46,6 +53,22 @@ export function MessageList() {
           <div className="flex items-center justify-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-4 py-2 text-sm text-fg-base">
             <Loader2 size={14} className="animate-spin text-accent" />
             <span>正在壓縮對話歷史…</span>
+          </div>
+        )}
+        {hasPlanBanner && (
+          <div
+            className={
+              planStatus === 'awaiting_approval'
+                ? 'flex items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300'
+                : 'flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-300'
+            }
+          >
+            <BookCheck size={14} />
+            <span>
+              {planStatus === 'awaiting_approval'
+                ? t('plan.banner.awaiting')
+                : t('plan.banner.active')}
+            </span>
           </div>
         )}
         {messages.map((m, i) => (

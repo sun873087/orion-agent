@@ -2,6 +2,7 @@ import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
 import { MessageList } from './components/MessageList'
 import { NewProjectModal } from './components/NewProjectModal'
+import { PlanApprovalModal } from './components/PlanApprovalModal'
 import { ProjectSettingsPage } from './components/ProjectSettingsPage'
 import { RightSidebar } from './components/RightSidebar'
 import { SettingsPage } from './components/SettingsPage'
@@ -9,6 +10,8 @@ import { Sidebar } from './components/Sidebar'
 import {
   useAbort,
   useInitConversation,
+  usePlanModeNotifications,
+  usePlanStatusRehydrate,
   useScheduleNotifications,
   useSendPrompt,
 } from './hooks/useAgent'
@@ -18,6 +21,8 @@ import { useSettingsStore } from './store/settings'
 export function App() {
   useInitConversation()
   useScheduleNotifications()
+  usePlanModeNotifications()
+  usePlanStatusRehydrate()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)
@@ -55,6 +60,7 @@ export function App() {
         {rightSidebarOpen && <RightSidebar />}
       </div>
       <NewProjectModal />
+      <PlanApprovalModal />
     </div>
   )
 }

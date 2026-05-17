@@ -181,6 +181,12 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             "scheduled_by_id TEXT",
             "scheduled_by_name TEXT",
             "starred INTEGER NOT NULL DEFAULT 0",
+            # Plan Mode(Phase 31-J)— per-session plan state 持久化:
+            "plan_mode_status TEXT",            # 'idle' / 'active' / 'awaiting_approval'
+            "plan_id TEXT",                     # uuid12,跟 SDK PlanModeState.plan_id 對應
+            "plan_file_path TEXT",              # 絕對路徑 ~/.orion/plans/plan-{id}.md
+            "plan_content TEXT",                # 提交的 plan markdown(crash recovery 用)
+            "plan_entered_at_message_index INTEGER",
         ):
             try:
                 await conn.exec_driver_sql(
@@ -580,6 +586,116 @@ async def set_session_project(
             (session_id, project_id),
         )
         await conn.commit()
+
+
+# ─── Plan Mode(Phase 31-J)──────────────────────────────────────────────
+
+
+async def get_plan_state(
+    engine: AsyncEngine, session_id: str
+) -> dict[str, Any] | None:
+    """讀 session 的 plan_mode 狀態。
+
+    回傳 dict 含 status / plan_id / plan_file_path / plan_content /
+    entered_at_message_index;若 status 為 None 或 'idle' 回 None。
+    """
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT plan_mode_status, plan_id, plan_file_path,
+                   plan_content, plan_entered_at_message_index
+            FROM cowork_session_ext WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        row = result.fetchone()
+    if row is None:
+        return None
+    status, plan_id, plan_file_path, plan_content, msg_idx = row
+    if not status or status == "idle":
+        return None
+    return {
+        "status": status,
+        "plan_id": plan_id,
+        "plan_file_path": plan_file_path,
+        "plan_content": plan_content,
+        "entered_at_message_index": msg_idx,
+    }
+
+
+async def save_plan_state(
+    engine: AsyncEngine,
+    session_id: str,
+    *,
+    status: str | None,
+    plan_id: str | None = None,
+    plan_file_path: str | None = None,
+    plan_content: str | None = None,
+    entered_at_message_index: int | None = None,
+) -> None:
+    """Upsert plan mode state。status=None 或 'idle' 等於清空整組欄位。"""
+    if status is None or status == "idle":
+        status = "idle"
+        plan_id = None
+        plan_file_path = None
+        plan_content = None
+        entered_at_message_index = None
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (
+                session_id, plan_mode_status, plan_id, plan_file_path,
+                plan_content, plan_entered_at_message_index
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                plan_mode_status = excluded.plan_mode_status,
+                plan_id = excluded.plan_id,
+                plan_file_path = excluded.plan_file_path,
+                plan_content = excluded.plan_content,
+                plan_entered_at_message_index = excluded.plan_entered_at_message_index
+            """,
+            (session_id, status, plan_id, plan_file_path,
+             plan_content, entered_at_message_index),
+        )
+        await conn.commit()
+
+
+async def list_awaiting_approval_sessions(
+    engine: AsyncEngine,
+) -> list[dict[str, Any]]:
+    """掃所有 AWAITING_APPROVAL 的 session(crash recovery 用)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT session_id, plan_id, plan_file_path, plan_content
+            FROM cowork_session_ext
+            WHERE plan_mode_status = 'awaiting_approval'
+            """,
+        )
+        rows = result.fetchall()
+    return [
+        {
+            "session_id": r[0],
+            "plan_id": r[1],
+            "plan_file_path": r[2],
+            "plan_content": r[3],
+        }
+        for r in rows
+    ]
+
+
+async def list_referenced_plan_files(engine: AsyncEngine) -> set[str]:
+    """所有 session 引用的 plan_file_path(GC 用 — 不在這 set 內的就是孤兒)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT plan_file_path FROM cowork_session_ext
+            WHERE plan_file_path IS NOT NULL
+            """,
+        )
+        rows = result.fetchall()
+    return {r[0] for r in rows if r[0]}
 
 
 async def append_messages(

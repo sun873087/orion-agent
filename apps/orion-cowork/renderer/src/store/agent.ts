@@ -111,6 +111,18 @@ type AgentState = {
   sessions: SessionSummary[]
   /** 當前等使用者回答的 AskUserQuestion(同時間只會有一個)。 */
   pendingQuestion: PendingQuestion | null
+  /** Plan Mode(Phase 31-J)— 每 session 一個 state,從 sidecar notification
+   *  跟 plan_status RPC 同步。不存 localStorage,sidecar DB 是 source of truth。 */
+  planModeStatusBySession: Record<string, 'idle' | 'pending' | 'active' | 'awaiting_approval'>
+  setPlanModeStatus: (sid: string, status: 'idle' | 'pending' | 'active' | 'awaiting_approval') => void
+  /** Plan AWAITING_APPROVAL 對話的 plan markdown(modal 用)。 */
+  pendingPlanApprovalBySession: Record<string, {
+    planId: string | null
+    planMarkdown: string
+    planFilePath: string | null
+  }>
+  setPendingPlanApproval: (sid: string, data: { planId: string | null; planMarkdown: string; planFilePath: string | null }) => void
+  clearPendingPlanApproval: (sid: string) => void
   /** 對話壓縮進行中(UI 顯 banner)。 */
   compacting: boolean
   setCompacting: (v: boolean) => void
@@ -176,6 +188,8 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   initError: null,
   sessions: [],
   pendingQuestion: null,
+  planModeStatusBySession: {},
+  pendingPlanApprovalBySession: {},
   compacting: false,
   extraOutputFiles: {},
 
@@ -330,6 +344,22 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
     })),
 
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
+
+  setPlanModeStatus: (sid, status) =>
+    set((state) => ({
+      planModeStatusBySession: { ...state.planModeStatusBySession, [sid]: status },
+    })),
+  setPendingPlanApproval: (sid, data) =>
+    set((state) => ({
+      pendingPlanApprovalBySession: { ...state.pendingPlanApprovalBySession, [sid]: data },
+    })),
+  clearPendingPlanApproval: (sid) =>
+    set((state) => {
+      const next = { ...state.pendingPlanApprovalBySession }
+      delete next[sid]
+      return { pendingPlanApprovalBySession: next }
+    }),
+
 
   setCompacting: (v) => set({ compacting: v }),
   appendContextReportCard: (report) =>
