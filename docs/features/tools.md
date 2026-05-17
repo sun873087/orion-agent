@@ -120,10 +120,16 @@ Phase 31-H 後從 SDK 搬到 Cowork sidecar(`apps/orion-cowork/sidecar/src/orion
 
 ### Config(CLI-only)
 
-`Config` 讀 / 寫 `~/.orion/settings.json`(`tools/config/config_tool.py`)。Phase 31-I 後從 SDK 默認註冊拿掉,只 CLI 透過 `extra_tools=[ConfigTool()]` 注入:
+`Config` 讀 / 寫 `~/.orion/settings.json`。Phase 31-I 後從 orion-sdk 整個搬到
+CLI host(`apps/orion-cli/src/orion_cli/config_tool.py`),orion-sdk 不再 ship
+這個 LLM-facing tool:
 - **Cowork**:用 SQLite `cowork_prefs` 表存偏好,不讀 settings.json
 - **chat-api**:多租戶,LLM 不該改 global config(安全考量)
 - **CLI**:settings.json 是它的家,LLM 改 OK
+
+SDK 內其他模組(`permissions/persistence.py`、`migrations/framework.py`)讀寫
+settings.json 走 `orion_sdk.settings.{settings_path, load_settings, save_settings}`
+helper(純函式,跟 LLM 無關,不註冊為 tool)。
 
 ### 雜項
 

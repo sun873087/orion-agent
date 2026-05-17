@@ -57,9 +57,9 @@ def _build_tools() -> list[Tool[Any]]:
     Web chat 場景請改用 `tools.builtin_set.build_default_tool_set()`(無 asker、
     無 extra_tools)。
     """
+    from orion_cli.config_tool import ConfigTool
     from orion_cli.cron_tools import build_cron_tools
     from orion_sdk.tools.builtin_set import build_default_tool_set
-    from orion_sdk.tools.config.config_tool import ConfigTool
     return build_default_tool_set(
         asker=make_stdin_asker(),
         extra_tools=[*build_cron_tools(), ConfigTool()],

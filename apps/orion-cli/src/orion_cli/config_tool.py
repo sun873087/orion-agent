@@ -1,53 +1,27 @@
-"""ConfigTool — Phase 10。對應 TS ConfigTool。
+"""ConfigTool — CLI-only。對應 TS ConfigTool。
 
-讀寫 user-level settings(`~/.orion/settings.json`)。Phase 8 plugins / Phase 7 hooks
-都從這個檔案讀。本工具讓 agent 可在對話中查 / 改 user 設定。
+讀寫 user-level settings(`~/.orion/settings.json`)。本工具讓 agent 在對話
+中查 / 改 user 設定。Phase 31-I 後從 orion-sdk 搬到 CLI host:
+- Cowork:用 SQLite `cowork_prefs`,不該寫 settings.json
+- chat-api:多租戶,LLM 不該改 global config(安全)
+- CLI:settings.json 是它的家,LLM 改 OK
 
-支援動作:
-- get(key): 取單一 key(支援 dot-path 例:"hooks.PreToolUse")
-- set(key, value_json): 設,value 是 JSON 字串
-- delete(key): 刪 key(dot-path)
-- list: 列出 top-level keys
-
-寫入時 atomic(寫 .tmp 後 rename)。
+SDK 內部其他模組(permissions / migrations)讀寫 settings.json 走
+`orion_sdk.settings.{settings_path, load_settings, save_settings}`(SDK 自帶
+helper,不再透過這個 Tool)。
 """
 
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field
 
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
-
-
-def settings_path() -> Path:
-    base = os.environ.get("ORION_HOME") or str(Path.home() / ".orion")
-    return Path(base) / "settings.json"
-
-
-def load_settings(path: Path | None = None) -> dict[str, Any]:
-    p = path or settings_path()
-    if not p.exists():
-        return {}
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_settings(settings: dict[str, Any], path: Path | None = None) -> None:
-    p = path or settings_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(p)
+from orion_sdk.settings import load_settings, save_settings
 
 
 # ─── dot-path helpers ────────────────────────────────────────────────────

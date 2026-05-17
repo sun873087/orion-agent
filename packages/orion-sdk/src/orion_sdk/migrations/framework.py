@@ -24,7 +24,7 @@ from typing import Any
 
 import structlog
 
-from orion_sdk.tools.config.config_tool import (
+from orion_sdk.settings import (
     load_settings,
     save_settings,
     settings_path,
@@ -167,7 +167,7 @@ def run_pending_migrations(
     啟動時 `lifespan` 內呼叫一次。冪等 — 沒 pending 就 no-op。
 
     Args:
-        settings_file: 預設用 `tools.config.config_tool.settings_path()`。
+        settings_file: 預設用 `orion_sdk.settings.settings_path()`。
         runner: 預設用 `get_runner()`(內建 ALL_MIGRATIONS)。
 
     Returns:

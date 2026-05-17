@@ -7,18 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from orion_sdk.core.state import AgentContext
-from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent
-from orion_sdk.tools.config.config_tool import (
+from orion_cli.config_tool import (
     ConfigInput,
     ConfigTool,
     _del_at,
     _get_at,
     _set_at,
-    load_settings,
-    save_settings,
-    settings_path,
 )
+from orion_sdk.core.state import AgentContext
+from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent
+from orion_sdk.settings import load_settings, save_settings, settings_path
 
 
 @pytest.fixture(autouse=True)

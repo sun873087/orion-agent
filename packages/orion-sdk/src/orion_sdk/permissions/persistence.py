@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from orion_sdk.tools.config.config_tool import (
+from orion_sdk.settings import (
     load_settings,
     save_settings,
     settings_path,

@@ -115,6 +115,7 @@ async for event in conv.send("讀 /etc/hosts", ctx=ctx):
 | `commands/` | Slash 命令(`/clear` `/help` `/model` 等)註冊與分發 |
 | `input/` | stdin 處理 + slash parser + image upload + token estimation |
 | `cron_tools/` | `CronCreate / CronList / CronDelete`(APScheduler-backed shell cron)— Phase 31-H 從 SDK 搬來,CLI-only |
+| `config_tool.py` | `Config` LLM tool(讀寫 `~/.orion/settings.json`)— Phase 31-I 從 SDK 搬來,CLI-only |
 | `__main__.py` | `orion` entrypoint(typer app) |
 
 ---
