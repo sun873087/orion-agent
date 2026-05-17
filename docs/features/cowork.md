@@ -61,16 +61,29 @@ apps/orion-cowork/
 {"id": "req-1", "error": {"code": "VALUEERROR", "message": "..."}, "final": true}
 ```
 
-## 支援的 RPC methods(Phase E PoC scope)
+## 支援的 RPC methods
 
-| Method | params | 用途 |
-|---|---|---|
-| `ping` | (none) | 健康檢查 → `pong` |
-| `conversation.create` | `provider`, `model` | 新建 Conversation,回 `session_id` |
-| `conversation.send` | `session_id`, `prompt` | 送 prompt,streaming 回 events |
-| `conversation.abort` | `session_id` | 中止當前 turn(set abort_event) |
+> **狀態**:Phase E PoC 起,Phase 31 後已從 4 個 method 擴張到 ~50+,涵蓋對話 / 專案 /
+> 排程 / 技能 / 記憶 / MCP / STT / 權限。完整列表見
+> `apps/orion-cowork/sidecar/src/orion_cowork_sidecar/handlers.py:methods()`。
 
-未實作(留給後續 phase):`conversation.resume` / `conversation.list` / memory / settings / MCP / multi-agent 等。
+| 類別 | Methods |
+|---|---|
+| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode}` |
+| **Project** | `project.{list,get,create,update,delete}` |
+| **Memory** | `memory.{list,get,write,delete}` |
+| **Skill** | `skill.{list,get,write,import_folder,delete}` |
+| **Schedule / Loop**(Phase 31-G) | `schedule.{list,get,write,delete,run_now}` |
+| **Prefs / Tools** | `prefs.{get_all,set}`、`tools.list_builtin` |
+| **Permissions** | `permissions.{get,set}` |
+| **MCP** | `mcp.{list,reconnect,config_list,config_upsert}` |
+| **STT**(Phase 31-D) | `stt.{transcribe,status}` |
+| **Models** | `models.list` |
+
+Notifications(sidecar 主動 push,無 `id`):
+- `sidecar.ready` — sidecar 啟動完成
+- `scheduler.fired` — 排程 / loop 觸發完成(renderer refresh sessions + 對齊 sidebar)
+- `log` — debug log
 
 ## Renderer side
 
@@ -109,28 +122,93 @@ await window.agent.call(
 
 詳見 [`../architecture/design-decisions.md`](../architecture/design-decisions.md) §3。簡述:Cowork 是本機單機,不需要 JWT / CORS / HTTP / 多 user 那一套。
 
-## Phase E 已實作 / 未實作
+## 主要功能(Phase 31 後狀態)
 
-**已實作**(Phase E PoC):
-- ✅ Sidecar 3 個 RPC method(ping / create / send + abort)
-- ✅ Sidecar 7 個 unit test(子進程拉起 sidecar 塞 stdin 讀 stdout)
-- ✅ Electron main + preload + BrowserWindow
-- ✅ Renderer 極簡 chat UI
-- ✅ Dev mode(`npm run dev -w @orion/cowork`)
+Phase 31-A~G 累積加上的功能:
 
-**未實作**:
-- ❌ PyInstaller 打包 sidecar → single binary
-- ❌ electron-builder 跨平台 .app / .exe / .AppImage
+### 對話管理
+- **跨 app restart 持久化** — SQLite `~/.orion/sessions/cowork.db`,沒「關閉就丟」
+- **Sidebar 分組** — Starred 區 + Recents 區,每筆 ⋯ 選單(Star / Rename / Move to project / Delete);Rename 走 inline edit
+- **搜尋** — Title + 對話內容 + tool_result 全文(in-memory,單機規模 OK;FTS5 留 v2)
+- **Compact 對話** — Auto-compact(threshold 可設)+ 手動 `/compact`;tombstone-based soft delete 保留 UI 歷史
+- **Edit / Delete** — 對任何訊息點 ⋯ 編輯送回原 session,或刪除「該則之後」
+- **Regenerate** — 重新生成最後一輪 assistant 回應
+
+### 排程 / Loop(Phase 31-G)
+共用同一張 `cowork_schedules` 表,差別在 `target_session_id`:
+
+| 模式 | `target_session_id` | 觸發行為 |
+|---|---|---|
+| **Schedule** | NULL | 開**新對話 session** 跑 LLM(prompt 或 skill);每次獨立 |
+| **Loop** | 既有 session_id | 送回**同對話** 接續(context 累積);跟既有 conversation 串連 |
+
+兩者都跑 `SchedulerEngine`(asyncio 60s tick),app 開著就跑。
+- LLM 對話設定:`ScheduleCreate` / `LoopCreate` builtin tool(host 注入 callback,SDK 不直接動 DB)
+- UI 設定:Settings → 排程(`+ 新增排程` 含 cron preset + model picker + Act mode hint)
+- 觸發出來的 session 在 Sidebar 顯時鐘 icon + scheduled_by badge
+
+詳見 [`tools.md`](./tools.md) §Schedule。
+
+### 專案
+- **Project** = name + workspace_dir + custom_instructions;對話可選綁專案,專案 chat
+  自動 cwd 到 workspace、注入 instructions、用 `<workspace>/.orion/{skills,memory,mcp.json,permissions.json,instructions.md}`
+- **Co-located resources** — 專案 skills / memory / mcp 在 workspace 內,跟 git repo 一起 commit / share
+
+### 技能系統
+- 4 來源(bundled / system / project / user)last-wins
+- `cowork_visible: false` frontmatter 讓 SDK skill 在 Cowork popover + Settings → 技能 隱藏(CLI 仍可用) — 用在 `batch`(worktree workflow)、`update-config`(改 `~/.orion/settings.json`,跟 Cowork GUI Settings 重疊)
+- 詳見 [`skills.md`](./skills.md)
+
+### 內建工具控制
+- Settings → 工具 — 13 個 tool group(File / Shell / Search / Web / Skill / Schedule / Todo / Workdir / System / Task / Cron / Browser / Interactive),group 級 tri-state checkbox + 展開個別 tool override
+- Disabled tools 存 `cowork_prefs.disabled_tools`(CSV),`build_default_tool_set` 過濾;變更立刻 invalidate conv cache
+
+### 路徑統一(Phase 31-G)
+Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / mcp / users
+跟 CLI / chat-api 共用**;sessions 透過 `sessions/cowork.db`(Cowork)vs `sessions/<uuid>/`
+(CLI / chat-api)分開,兩 app 同跑不會 lock 衝突。詳見
+[`../architecture/runtime-layout.md`](../architecture/runtime-layout.md) §2b。
+
+### 桌面 OS 整合
+- 圖檔附件:拖入 / paste / dialog 選檔三條 path,blob store(content hash)去重
+- STT(Phase 31-D):麥克風錄音 → 上傳 OpenAI Whisper / GPT-4o transcribe
+- Browser use(Phase 31-F):AI 用 Playwright 控 system Chrome(headful)— `BrowserNavigate / Click / Type / Screenshot / ...`
+- OS notifications:排程觸發完成 / 工具失敗等用 Web Notifications API
+
+### Slash commands
+
+| Command | 性質 |
+|---|---|
+| `/compact` | client — 觸發 manual compact |
+| `/add-files` | client — 開檔案選擇器 |
+| `/export` | client — bundle 全 sessions 成 ZIP 到工作資料夾 |
+| `/context` | client — 顯 context window 用量分配卡 |
+| `/schedule` | client — 跳 Settings → 排程 |
+| `/loop` | LLM — `/loop 5m <prompt>`,LLM 走 bundled `loop` skill 解析參數呼 `LoopCreate` |
+| `/<skill-name>` | LLM — 動態載入 bundled / user skill(popover 顯所有 `cowork_visible=true` 的) |
+
+## 已 / 未實作
+
+**已實作**(Phase 31-G 為止):
+- ✅ Sidecar ~50+ RPC methods
+- ✅ SQLite 持久化 + blob store + 圖檔附件
+- ✅ MCP server 整合(global + per-project mcp.json)
+- ✅ Multi-provider / model 切換 UI
+- ✅ STT(OpenAI / Google)
+- ✅ Browser use(system Chrome,headful)
+- ✅ 排程 + Loop
+- ✅ 工具 group 開關
+- ✅ 完整 Electron + React UI(Sidebar / RightSidebar / Settings)
+- ✅ E2e 測試(Playwright Electron)
+
+**未實作 / Roadmap**:
+- ❌ PyInstaller 單檔打包 + electron-builder cross-platform .app/.exe/.AppImage
 - ❌ macOS notarization / Windows code signing
 - ❌ Auto-update(electron-updater)
-- ❌ 完整 UI(目前是 PoC 級)
-- ❌ 工具 progress 顯示 / abort UI
-- ❌ 會話持久化(關閉就丟)
-- ❌ MCP server 整合
-- ❌ Multi-provider / model 切換 UI
-- ❌ E2e 測試(headless Electron 環境)
+- ❌ OS-level 排程(app 關了仍跑)— 目前 app 必須開
+- ❌ FTS5 全文搜尋(目前 in-memory)
 
-詳見 `apps/orion-cowork/tests/e2e/README.md` 跟 [`../roadmap/`](../roadmap/)。
+詳見 [`../roadmap/`](../roadmap/)。
 
 ## 限制
 

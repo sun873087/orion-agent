@@ -22,26 +22,54 @@ description: Trim responses to one paragraph max
 when_to_use: |
   Activate whenever the user explicitly asks for short replies,
   or in chat threads where a concise answer suits the context.
+cowork_visible: true
 ---
 
 You are responding in concise mode. Limit replies to ≤200 words.
 ...
 ```
 
+### Frontmatter 欄位
+
+| 欄位 | 必填 | 用途 |
+|---|---|---|
+| `name` | ✓ | Skill 識別名(LLM 透過 `Skill(skill_name='X')` 載入) |
+| `description` | ✓ | 一句話 — LLM 看這句決定何時呼 / popover 顯示 |
+| `when_to_use` |  | 觸發提示(進階版 description) |
+| `parameters` |  | JSON Schema — skill 接受的 args 結構 |
+| `hooks` |  | 同 settings.json hooks 格式 |
+| `effort` |  | `low` / `medium` / `high`(reasoning model 用) |
+| `model` |  | 強制這 skill 用某個 model |
+| `cowork_visible` |  | **預設 `true`**;設 `false` 表此 skill 是 CLI / web 專用,**Cowork 桌面 UI 兩處(slash popover + Settings → 技能)隱藏,LLM 仍可透過名字載**。CLI / chat-api host 忽略此欄,一視同仁。 |
+
+### `cowork_visible: false` 何時用
+
+當 skill 內容跟 Cowork 桌面場景不 fit:
+
+- **CLI 重度工作流** — 譬如 `batch`(5-30 個 worktree 平行開 PR),桌面 chat 沒這環境
+- **指向 CLI / chat-api 專屬路徑** — 譬如 `update-config` 寫 `~/.orion/settings.json`,跟 Cowork GUI Settings 重疊;Cowork 自己用 `cowork_prefs` 表存偏好不走這檔
+
+list 隱藏不影響 LLM 能力 — 對話內若有人問起,LLM 仍可 `Skill(skill_name='batch')` 載入(但這時 user 已明確要求,不會卡到他)。
+
 ## 內建 skill(`bundled`)
 
-`packages/orion-sdk/src/orion_sdk/skills/bundled/` 預裝 10 個:
+`packages/orion-sdk/src/orion_sdk/skills/bundled/` 預裝 10 個(Phase 31-G 為止):
 
-- `be-concise` — 強制短回應
-- `simplify` — 程式簡化
-- `loop` — 自循環 prompt
-- `review` / `security-review`
-- `init` — 新專案啟動
-- `claude-api` / `claude-code-guide`
-- `fewer-permission-prompts`
-- ... (詳見資料夾)
+| Skill | 用途 | `cowork_visible` |
+|---|---|---|
+| `be-concise` | 強制簡潔回應 | true |
+| `debug` | 看 session log / transcript 診斷 | true |
+| `loop` | 解析 `/loop <interval> <prompt>` → 算 cron + 呼 `LoopCreate`(Cowork)或 `CronCreate`(CLI) | true |
+| `remember` | 整理 user memory layer(auto-memory / instructions) | true |
+| `review-diff` | code review diff | true |
+| `simplify` | 改動 code 簡化 + 修問題 | true |
+| `skillify` | 把**當前對話**包成 SKILL.md(capture-only,4 問) | true |
+| `stuck` | 診斷凍 / 卡 / 慢 agent session | true |
+| `batch` | 5-30 個 worktree agent 平行 PR | **false** |
+| `update-config` | 改 `~/.orion/settings.json` | **false** |
 
 跟著 `pip install` ship。`~/.orion/skills/` 同名會覆蓋 bundled。
+`cowork_visible: false` 的兩個在 Cowork popover 跟 Settings 隱藏 — 見上方說明。
 
 ## 載入 4 層
 

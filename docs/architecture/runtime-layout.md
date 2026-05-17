@@ -136,6 +136,70 @@ session 本身的 GC(整個 `<sid>/` 何時刪)目前**沒做** — 由 user 透
 
 ---
 
+## 2b. Cowork host(`~/.orion/sessions/cowork.db` + co-located project resources)
+
+Cowork(`apps/orion-cowork/`)是**第三個 host**,跟 CLI / chat-api 並列;以前在獨立 root `~/.orion-cowork/`,Phase 31-G 後統一到 `~/.orion/`,**skills / memory / mcp / users 整套共用** — 一邊裝兩邊都看見。差別只在 **sessions 存法**:
+
+```
+~/.orion/
+├── sessions/
+│   ├── cowork.db                   ★ Cowork 用單一 SQLite(本節)
+│   └── <session-uuid>/             既有 CLI / chat-api JSONL pattern(§ 2a)
+├── skills/  users/  mcp.json ...   ✅ 共用 — Cowork 跟 CLI 同源
+└── blobs/                          ★ Cowork 附件 blob store(content-hash 去重)
+```
+
+### 為什麼 Cowork 走 SQLite
+
+CLI / chat-api 走「per-session JSONL 檔」適合單機開發 / 多 tenant server。Cowork 是
+**桌面 chat app**,需要做的事 JSONL pattern 不擅長:
+
+- Sidebar 一次列幾百個對話(LIST / COUNT / ORDER BY) → SQL 比逐檔讀快幾百倍
+- 跨 session 全文搜尋對話內容 → SQL `LIKE`(未來 FTS5)
+- 富 metadata(starred / scheduled_by / project_id / workspace_dir)需要 join / index
+- 對話多會議 attachments 的 dedup → content-hash blob store
+
+所以 Cowork 走 **單一 `cowork.db`** + 旁邊的 `blobs/` content-addressed store。
+
+### cowork.db 表結構
+
+詳細 schema 見 [`features/storage.md`](../features/storage.md);摘要:
+
+| 表 | 來源 | 用途 |
+|---|---|---|
+| `sessions` | SDK 共用 schema | 每個對話一筆(provider / model / created_at) |
+| `messages` | SDK 共用 schema | content_json blob,append-only;`metadata_json` 帶 `compacted_out` flag(soft delete) |
+| `conversation_metadata` | SDK 共用 schema | title / 自動命名 / per-session 偏好 |
+| `cowork_session_ext` | Cowork 擴充 | `workspace_dir` / `project_id` / `scheduled_by_*` / `starred` |
+| `cowork_projects` | Cowork 擴充 | 專案定義(name / workspace_dir / custom_instructions) |
+| `cowork_prefs` | Cowork 擴充 | KV pairs(default_workspace_dir / user_instructions / disabled_tools 等) |
+| `cowork_schedules` | Cowork 擴充 | 排程 + Loop(`target_session_id` NULL = schedule,有值 = loop bound 到既有 session) |
+
+### blob store(`~/.orion/blobs/`)
+
+每個附件圖檔依 SHA-256 取檔名(`<hash>.bin`)。重複貼同一張圖 → 同 hash → 只存一份。
+跟 CLI 共用 pool(blob_id 是 hash 不會撞)。message rows 內附件用 `{ type: 'image', blob_id }` ref,讀取時 lazy hydrate。
+
+### Cowork host 跟其他 host 同跑
+
+Cowork 跟 CLI / chat-api 可同時跑(各寫各的 DB):
+
+| Host | sessions 寫到 | skills / memory / mcp |
+|---|---|---|
+| Cowork | `~/.orion/sessions/cowork.db` | `~/.orion/{skills,users,mcp.json}` |
+| CLI | `~/.orion/sessions/<uuid>/transcript.jsonl` | 同上,共用 |
+| chat-api(若有 SQLite mode) | `~/.orion/sessions/...db`(視部署) | 同上,共用 |
+
+SQLite 走 WAL 模式 → 同時讀寫不 lock。User 在 Cowork 裝 skill,CLI 立刻看見;反之亦然。
+
+### 環境變數(Cowork-only)
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `ORION_COWORK_DATA_DIR` | `~/.orion` | 整個 Cowork data root override(e2e / 多實例隔離);內部仍走 `<root>/sessions/cowork.db` |
+
+---
+
 ## 3. Project(`<cwd>/.orion/`)
 
 **單一專案**內共用 — 通常 commit 進 git repo,跟程式碼一起 distribute。
