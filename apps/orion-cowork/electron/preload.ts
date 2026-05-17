@@ -37,6 +37,9 @@ const shellApi = {
   revealInFinder: async (path: string): Promise<null> => {
     return ipcRenderer.invoke('shell:revealInFinder', path)
   },
+  pathExists: async (path: string): Promise<boolean> => {
+    return ipcRenderer.invoke('fs:pathExists', path)
+  },
 }
 
 const agentApi = {

@@ -29,6 +29,52 @@ type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 /** Stable empty array reference — selector fallback 用,避免每 render 回新陣列。 */
 const EMPTY_FILES: readonly string[] = Object.freeze([])
 
+const ACTION_RANK: Record<'opened' | 'wrote' | 'edited', number> = {
+  opened: 3,
+  wrote: 2,
+  edited: 1,
+}
+
+/** Basename dedupe — 同檔名(無論在哪個目錄)只留一筆,優先級 opened > wrote > edited。
+ *  避免 model 在 message text 提到「相對路徑 + 絕對路徑」兩種寫法把同檔顯兩次。 */
+function dedupeByBasename<F extends { path: string; action: 'opened' | 'wrote' | 'edited' }>(
+  files: F[],
+): F[] {
+  const map = new Map<string, F>()
+  for (const f of files) {
+    const basename = f.path.split('/').pop() ?? f.path
+    const prev = map.get(basename)
+    if (!prev || ACTION_RANK[f.action] > ACTION_RANK[prev.action]) {
+      map.set(basename, f)
+    }
+  }
+  return Array.from(map.values())
+}
+
+/** Async filter out 路徑不存在的檔。Returns 過濾後 array(剛 mount 時暫回原陣列,
+ *  避免閃白;查完才更新)。 */
+function useExistingFiles<F extends { path: string }>(files: F[]): F[] {
+  const [existing, setExisting] = useState<F[]>(files)
+  const key = files.map((f) => f.path).join('|')
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(
+      files.map(async (f) => ({
+        f,
+        ok: await window.shellApi.pathExists(f.path).catch(() => false),
+      })),
+    ).then((results) => {
+      if (cancelled) return
+      setExisting(results.filter((r) => r.ok).map((r) => r.f))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return existing
+}
+
 function extractTodos(toolCalls: Array<{ toolName: string; input?: Record<string, unknown> }>): Todo[] {
   // 取最後一次 TodoWrite 的 input.todos 當當前狀態(每次 LLM 寫 todo 都會覆蓋整 list)
   for (let i = toolCalls.length - 1; i >= 0; i--) {
@@ -194,7 +240,7 @@ export function RightSidebar() {
     sessionIdForExtras ? s.extraOutputFiles[sessionIdForExtras] ?? EMPTY_FILES : EMPTY_FILES,
   )
   const todos = useMemo(() => extractTodos(allCalls), [allCalls])
-  const workingFiles = useMemo(() => {
+  const rawWorkingFiles = useMemo(() => {
     // 工作資料夾:只顯結果產物 — wrote/edited 過濾 script;再補上 text 內的 output paths
     const fromTools = extractWorkingFiles(allCalls).filter(
       (f) => f.action === 'opened' || isOutputFile(f.path),
@@ -213,8 +259,10 @@ export function RightSidebar() {
         seen.add(p)
       }
     }
-    return fromTools
+    return dedupeByBasename(fromTools)
   }, [allCalls, allAssistantText, extraOutputFiles])
+  // 再 filter 掉路徑不存在的(同檔名不同路徑也會挑出真實存在那個)
+  const workingFiles = useExistingFiles(rawWorkingFiles)
   const skills = useMemo(() => extractSkills(allCalls), [allCalls])
 
   return (
@@ -551,7 +599,7 @@ export function InlineFileCards({
   }>
   messageText?: string
 }) {
-  const files = useMemo(() => {
+  const rawFiles = useMemo(() => {
     const fromTools = extractWorkingFiles(toolCalls)
     // Inline card 嚴格只顯「結果產物」 — 過濾 wrote/edited 內非 output 的 path
     const filtered = fromTools.filter(
@@ -567,8 +615,10 @@ export function InlineFileCards({
         }
       }
     }
-    return filtered
+    return dedupeByBasename(filtered)
   }, [toolCalls, messageText])
+  // 過濾不存在的檔(IPC async,首 render 暫顯全部以免閃)
+  const files = useExistingFiles(rawFiles)
   if (files.length === 0) return null
   return (
     <div className="mt-2 flex flex-col gap-2">

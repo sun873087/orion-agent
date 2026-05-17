@@ -42,6 +42,8 @@ interface OrionDialogApi {
 interface OrionShellApi {
   openPath: (path: string) => Promise<string | null>
   revealInFinder: (path: string) => Promise<null>
+  /** 檢查路徑(檔或資料夾)是否實際存在於檔案系統。 */
+  pathExists: (path: string) => Promise<boolean>
 }
 
 declare global {

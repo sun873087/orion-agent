@@ -149,6 +149,17 @@ app.whenReady().then(async () => {
     return result.filePaths[0]
   })
 
+  // 檢查路徑是否實際存在 — RightSidebar / InlineFileCards 用,避免列出 model
+  // 提到但檔已不存在的孤兒路徑。
+  ipcMain.handle('fs:pathExists', async (_e, path: string) => {
+    try {
+      await fsPromises.access(path)
+      return true
+    } catch {
+      return false
+    }
+  })
+
   // 單檔寫入(/export 打包 .zip 走這個)— 寫進 {targetDir ?? ~/Downloads}/{filename},
   // encoding='utf8' 寫文字、'base64' 寫二進位。同名加 -1 / -2 後綴避碰。
   ipcMain.handle(
