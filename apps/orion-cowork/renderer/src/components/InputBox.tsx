@@ -151,7 +151,11 @@ export function InputBox({ onSend, onAbort }: Props) {
           setAttachError('還沒對話 — 先送一句話建立 session')
           return
         }
-        const report = await getContextBreakdown(sid)
+        // 把使用者 settings 內的 threshold 帶過去,sidecar 才能正確算 buffer
+        const threshold = useSettingsStore.getState().autoCompactThreshold
+        const report = await getContextBreakdown(sid, {
+          autoCompactThreshold: threshold,
+        })
         if (report) {
           useAgentStore.getState().appendContextReportCard(report)
         }

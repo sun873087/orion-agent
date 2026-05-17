@@ -1085,8 +1085,20 @@ class Handlers:
 
         # ─── 6/7) Buffer + Free ─────────────────────────────────────────
         max_context = conv.provider.capabilities.max_context_tokens
-        threshold = conv.auto_compact_threshold if conv.auto_compact_threshold else 0.8
-        autocompact_buffer_tokens = int(max_context * (1.0 - threshold))
+        # threshold 優先序:RPC params(renderer 帶當下 settings)
+        #   > conv.auto_compact_threshold(上輪 send 寫入的)
+        #   > 預設 0.8。
+        # 沒這 fallback 鏈,user 還沒送任何 prompt 就跑 /context 時 threshold 會
+        # 走預設值,跟 Settings 顯示的不一致(看起來像「亂寫」)。
+        threshold: float = 0.8
+        if conv.auto_compact_threshold:
+            threshold = conv.auto_compact_threshold
+        rpc_threshold = params.get("auto_compact_threshold")
+        if isinstance(rpc_threshold, (int, float)) and 0.1 <= rpc_threshold <= 0.99:
+            threshold = float(rpc_threshold)
+            conv.auto_compact_threshold = threshold  # 同時 sync 進 conv,下次 send 不會回退
+        # round 取代 int — 避免 1_000_000 * 0.2 因浮點落到 199_999
+        autocompact_buffer_tokens = round(max_context * (1.0 - threshold))
         used = (
             system_tokens
             + builtin_tools_tokens

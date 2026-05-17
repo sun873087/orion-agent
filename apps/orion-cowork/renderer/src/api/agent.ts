@@ -403,14 +403,21 @@ export type ContextBreakdown = {
   skillsDetail: ContextSkillDetail[]
 }
 
-/** /context — 拉當前 session 的 context window 分配(全 sidecar 本機計算,不打 LLM)。 */
+/** /context — 拉當前 session 的 context window 分配(全 sidecar 本機計算,不打 LLM)。
+ *  autoCompactThreshold 應由 caller 從 settings 帶進來,否則 sidecar 用 conv 內的
+ *  舊值或預設 0.8,跟 UI 顯示的可能不一致。 */
 export async function getContextBreakdown(
   sessionId: string,
+  opts?: { autoCompactThreshold?: number },
 ): Promise<ContextBreakdown | null> {
   let out: ContextBreakdown | null = null
+  const params: Record<string, unknown> = { session_id: sessionId }
+  if (typeof opts?.autoCompactThreshold === 'number') {
+    params.auto_compact_threshold = opts.autoCompactThreshold
+  }
   await window.agent.call(
     'conversation.context_breakdown',
-    { session_id: sessionId },
+    params,
     (frame) => {
       const f = frame as { event?: string; data?: Record<string, unknown> }
       if (f.event !== 'context_breakdown' || !f.data) return
