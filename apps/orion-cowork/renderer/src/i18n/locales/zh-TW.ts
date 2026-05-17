@@ -199,6 +199,7 @@ export default {
   'settings.section.permissions': '權限',
   'settings.section.memory': '記憶',
   'settings.section.skills': '技能',
+  'settings.section.tools': '工具',
 
   // Skills
   'skill.userDirLabel': '使用者技能目錄:',

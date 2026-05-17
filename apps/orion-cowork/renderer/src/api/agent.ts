@@ -384,6 +384,21 @@ export async function setPref(key: string, value: string | null): Promise<void> 
   await window.agent.call('prefs.set', { key, value }, () => {})
 }
 
+export type BuiltinToolDef = { name: string; description: string }
+export type BuiltinToolGroup = { group: string; tools: BuiltinToolDef[] }
+
+/** 列出所有 builtin tools 按組分(Settings → Tools 用)。 */
+export async function listBuiltinTools(): Promise<BuiltinToolGroup[]> {
+  let out: BuiltinToolGroup[] = []
+  await window.agent.call('tools.list_builtin', {}, (frame) => {
+    const f = frame as { event?: string; data?: { groups?: BuiltinToolGroup[] } }
+    if (f.event === 'tools_builtin' && f.data?.groups) {
+      out = f.data.groups
+    }
+  })
+  return out
+}
+
 export type Attachment = {
   media_type: string  // "image/png" / "image/jpeg" / ...
   data: string        // base64-encoded(no data: prefix)

@@ -281,6 +281,7 @@ class Handlers:
             "skill.delete": skill_handlers.skill_delete,
             "prefs.get_all": self.prefs_get_all,
             "prefs.set": self.prefs_set,
+            "tools.list_builtin": self.tools_list_builtin,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
@@ -1381,6 +1382,31 @@ class Handlers:
             ws = await storage.get_pref(engine, "default_workspace_dir")
         return Path(ws) if ws else None
 
+    async def tools_list_builtin(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """列出所有 builtin tools(按組分),給 Settings → Tools 區渲染用。
+
+        Browser group:若 system 沒裝 Chrome / playwright,SDK 那邊 build_browser_tools
+        仍能列名,只是實際 build_default_tool_set 註冊時會 skip。前端不需要區分。
+        """
+        from orion_sdk.tools.builtin_set import list_builtin_tool_groups
+
+        try:
+            groups = list_builtin_tool_groups()
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "LIST_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "tools_builtin",
+            "data": {"groups": groups},
+            "final": True,
+        }
+
     async def prefs_get_all(
         self, _params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
@@ -1402,9 +1428,9 @@ class Handlers:
             return
         engine = await self.ensure_engine()
         await storage.set_pref(engine, key, value)
-        # default_workspace_dir / user_instructions 變更 → 既有 cached conv
-        # 失效(下次 send 用新值,system_prompt / cwd 才會跟著刷新)
-        if key in ("default_workspace_dir", "user_instructions"):
+        # default_workspace_dir / user_instructions / disabled_tools 變更 →
+        # 既有 cached conv 失效(下次 send 用新值,system_prompt / tool list 刷新)
+        if key in ("default_workspace_dir", "user_instructions", "disabled_tools"):
             self._conversations.clear()
         yield {"event": "prefs_set", "data": {"key": key}, "final": True}
 
@@ -1431,8 +1457,11 @@ class Handlers:
 
         llm = get_provider(provider_name, model)
         mcp = await self.ensure_mcp()
+        # Disabled tools list 從 prefs 讀(CSV)— 讓使用者在 Settings 開關各組
+        disabled_raw = await storage.get_pref(engine, "disabled_tools") or ""
+        disabled_set = {t.strip() for t in disabled_raw.split(",") if t.strip()}
         tools = (
-            build_default_tool_set(asker=None)
+            build_default_tool_set(asker=None, disabled_tools=disabled_set)
             + [OpenUrlTool(), OpenPathTool()]
             + mcp.tools
         )

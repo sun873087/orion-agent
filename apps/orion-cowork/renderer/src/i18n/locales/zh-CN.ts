@@ -188,6 +188,7 @@ export default {
   'settings.section.permissions': '权限',
   'settings.section.memory': '记忆',
   'settings.section.skills': '技能',
+  'settings.section.tools': '工具',
 
   'skill.userDirLabel': '用户技能目录:',
   'skill.new': '新建技能',

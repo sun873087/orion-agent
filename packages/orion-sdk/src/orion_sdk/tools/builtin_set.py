@@ -46,6 +46,7 @@ def build_default_tool_set(
     asker: AskUserCallback | None = None,
     *,
     browser_enabled: bool = True,
+    disabled_tools: set[str] | None = None,
 ) -> list[Tool[Any]]:
     """組所有內建工具。
 
@@ -56,11 +57,14 @@ def build_default_tool_set(
         browser_enabled: 自動偵測 playwright + system Chrome 是否可用,可用就
             註冊 Browser* tools(Navigate / Click / Type / Screenshot 等)。
             False 強制不註冊,即使環境支援也不放。
+        disabled_tools: 名字在這 set 內的 tool 不會被註冊。
+            Cowork 從 user prefs 讀進來,讓使用者按組 / 個別關。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
     """
-    base: list[Tool[Any]] = [
+    disabled = disabled_tools or set()
+    all_candidates: list[Tool[Any]] = [
         # Phase 1 — 基礎
         FileReadTool(),
         FileWriteTool(),
@@ -99,13 +103,70 @@ def build_default_tool_set(
         try:
             from orion_sdk.tools.browser import build_browser_tools, is_browser_available
             if is_browser_available():
-                base.extend(build_browser_tools())  # type: ignore[arg-type]
+                all_candidates.extend(build_browser_tools())  # type: ignore[arg-type]
         except ImportError:
             pass
+    base: list[Tool[Any]] = [t for t in all_candidates if t.name not in disabled]
 
-    base.append(AskUserQuestionTool(asker=asker))
-    base.append(ToolSearchTool(all_tools=base))
+    # AskUserQuestion / ToolSearch 視為「核心 infra」— 也可被 disable,但通常不會
+    ask_tool = AskUserQuestionTool(asker=asker)
+    if ask_tool.name not in disabled:
+        base.append(ask_tool)
+    search_tool = ToolSearchTool(all_tools=base)
+    if search_tool.name not in disabled:
+        base.append(search_tool)
     return base
 
 
-__all__ = ["build_default_tool_set"]
+def list_builtin_tool_groups() -> list[dict[str, Any]]:
+    """回 builtin tools 的分組 metadata,給 settings UI 顯示「組別 + 展開個別」用。
+
+    結構:[{ group: str, tools: [{name, description}] }]。
+    Browser group 若 system 沒裝 Chrome / playwright 仍會回(disabled UI 自行
+    處理)。MCP tools 不在這 — 它們是動態 plug-in,UI 走另一個來源(mcp.list)。
+    """
+    from orion_sdk.tools.browser import build_browser_tools
+    from orion_sdk.tools.interactive.ask_user import AskUserQuestionTool
+
+    def to_dict(t: Any) -> dict[str, str]:
+        return {"name": t.name, "description": t.description}
+
+    groups: list[dict[str, Any]] = [
+        {
+            "group": "File",
+            "tools": [to_dict(t) for t in (FileReadTool(), FileWriteTool(), FileEditTool(), NotebookEditTool())],
+        },
+        {"group": "Shell", "tools": [to_dict(BashTool())]},
+        {"group": "Search", "tools": [to_dict(GlobTool()), to_dict(GrepTool())]},
+        {"group": "Web", "tools": [to_dict(WebFetchTool()), to_dict(WebSearchTool())]},
+        {"group": "Skill", "tools": [to_dict(SkillTool())]},
+        {"group": "Todo", "tools": [to_dict(TodoWriteTool())]},
+        {"group": "Workdir", "tools": [to_dict(EnterWorkdirTool()), to_dict(ExitWorkdirTool())]},
+        {
+            "group": "System",
+            "tools": [to_dict(SleepTool()), to_dict(SyntheticOutputTool()), to_dict(ConfigTool())],
+        },
+        {
+            "group": "Task",
+            "tools": [
+                to_dict(TaskCreateTool()), to_dict(TaskGetTool()), to_dict(TaskListTool()),
+                to_dict(TaskUpdateTool()), to_dict(TaskStopTool()), to_dict(TaskOutputTool()),
+            ],
+        },
+        {
+            "group": "Cron",
+            "tools": [to_dict(CronCreateTool()), to_dict(CronListTool()), to_dict(CronDeleteTool())],
+        },
+        {
+            "group": "Browser",
+            "tools": [to_dict(t) for t in build_browser_tools()],
+        },
+        {
+            "group": "Interactive",
+            "tools": [to_dict(AskUserQuestionTool(asker=None))],
+        },
+    ]
+    return groups
+
+
+__all__ = ["build_default_tool_set", "list_builtin_tool_groups"]

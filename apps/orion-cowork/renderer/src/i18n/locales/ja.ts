@@ -188,6 +188,7 @@ export default {
   'settings.section.permissions': '権限',
   'settings.section.memory': 'メモリ',
   'settings.section.skills': 'スキル',
+  'settings.section.tools': 'ツール',
 
   'skill.userDirLabel': 'ユーザースキルディレクトリ:',
   'skill.new': '新規スキル',

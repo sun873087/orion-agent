@@ -9,7 +9,7 @@
  * 也可以 openSettings('language') 直接跳到 Language section。
  */
 import type { ComponentType } from 'react'
-import { ArrowLeft, Brain, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, Brain, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
 
 import { useTranslation } from '../i18n'
 import { useSettingsStore } from '../store/settings'
@@ -21,6 +21,7 @@ import { MemorySection } from './settings/MemorySection'
 import { ModelsSection } from './settings/ModelsSection'
 import { PermissionsSection } from './settings/PermissionsSection'
 import { SkillsSection } from './settings/SkillsSection'
+import { ToolsSection } from './settings/ToolsSection'
 
 type SectionDef = {
   id: string
@@ -62,6 +63,13 @@ const SECTIONS: SectionDef[] = [
     groupKey: 'settings.group.desktop',
     icon: Sparkles,
     render: SkillsSection,
+  },
+  {
+    id: 'tools',
+    labelKey: 'settings.section.tools',
+    groupKey: 'settings.group.desktop',
+    icon: Wrench,
+    render: ToolsSection,
   },
   {
     id: 'mcp',

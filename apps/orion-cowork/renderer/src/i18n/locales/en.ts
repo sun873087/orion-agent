@@ -188,6 +188,7 @@ export default {
   'settings.section.permissions': 'Permissions',
   'settings.section.memory': 'Memory',
   'settings.section.skills': 'Skills',
+  'settings.section.tools': 'Tools',
 
   'skill.userDirLabel': 'User skills dir:',
   'skill.new': 'New skill',
