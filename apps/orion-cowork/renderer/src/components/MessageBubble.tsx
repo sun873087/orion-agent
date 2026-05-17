@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Check, ChevronDown, ChevronUp, Copy, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
+import type { ContextBreakdown } from '../api/agent'
 import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
@@ -23,6 +24,9 @@ export function MessageBubble({
   message: Message
   isLastAssistant?: boolean
 }) {
+  if (message.role === 'system' && message.kind === 'context-report' && message.contextReport) {
+    return <ContextReportCard report={message.contextReport} />
+  }
   if (message.role === 'system' && message.kind === 'compact-summary') {
     const beforeTokens = message.beforeTokens ?? 0
     // < 1K 顯精確 token 數;>= 1K 用 K 縮寫 — 避免短對話顯成「~0K tokens」
@@ -479,6 +483,122 @@ function LazyAttachment({ att }: { att: AttachmentPreview }) {
         className="h-24 max-w-[160px] rounded-lg border border-bg-hover object-cover"
       />
     </a>
+  )
+}
+
+/** /context 結果卡 — 全 sidecar 端本機算的 token 分配,沒打 LLM。 */
+function ContextReportCard({ report }: { report: ContextBreakdown }) {
+  const pct =
+    report.maxContextTokens > 0
+      ? (report.totalUsedTokens / report.maxContextTokens) * 100
+      : 0
+  return (
+    <div className="my-3 rounded-xl border border-bg-hover bg-bg-panel/60 px-4 py-3">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-fg-base">
+        <Info size={14} />
+        <span>Context Usage</span>
+      </div>
+      <div className="mb-3 space-y-1 text-xs text-fg-base">
+        <div>
+          <span className="text-fg-muted">Model:</span>{' '}
+          <span className="font-mono">{report.provider}/{report.model}</span>
+        </div>
+        <div>
+          <span className="text-fg-muted">Tokens:</span>{' '}
+          <span className="font-mono">
+            {report.totalUsedTokens.toLocaleString()} /{' '}
+            {report.maxContextTokens.toLocaleString()} ({pct.toFixed(1)}%)
+          </span>
+        </div>
+      </div>
+      <div className="mb-2 text-xs font-semibold text-fg-muted">
+        Estimated usage by category
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-bg-hover text-left text-fg-muted">
+            <th className="py-1 font-normal">Category</th>
+            <th className="py-1 text-right font-normal">Tokens</th>
+            <th className="py-1 text-right font-normal">Percentage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.categories.map((c) => {
+            const p =
+              report.maxContextTokens > 0
+                ? (c.tokens / report.maxContextTokens) * 100
+                : 0
+            return (
+              <tr key={c.name} className="border-b border-bg-hover/40 last:border-0">
+                <td className="py-1 text-fg-base">{c.name}</td>
+                <td className="py-1 text-right font-mono text-fg-base">
+                  {c.tokens.toLocaleString()}
+                </td>
+                <td className="py-1 text-right font-mono text-fg-muted">
+                  {p.toFixed(1)}%
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {report.mcpToolsDetail.length > 0 && (
+        <details className="mt-3 text-xs">
+          <summary className="cursor-pointer text-fg-muted hover:text-fg-base">
+            ▶ MCP Tools ({report.mcpToolsDetail.length})
+          </summary>
+          <table className="mt-2 w-full">
+            <thead>
+              <tr className="border-b border-bg-hover text-left text-fg-muted">
+                <th className="py-1 font-normal">Tool</th>
+                <th className="py-1 font-normal">Server</th>
+                <th className="py-1 text-right font-normal">Tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.mcpToolsDetail.map((t) => (
+                <tr key={t.name} className="border-b border-bg-hover/40 last:border-0">
+                  <td className="py-1 font-mono text-fg-base">{t.name}</td>
+                  <td className="py-1 text-fg-muted">{t.server}</td>
+                  <td className="py-1 text-right font-mono text-fg-base">
+                    {t.tokens.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+
+      {report.skillsDetail.length > 0 && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-fg-muted hover:text-fg-base">
+            ▶ Skills ({report.skillsDetail.length})
+          </summary>
+          <table className="mt-2 w-full">
+            <thead>
+              <tr className="border-b border-bg-hover text-left text-fg-muted">
+                <th className="py-1 font-normal">Skill</th>
+                <th className="py-1 font-normal">Source</th>
+                <th className="py-1 text-right font-normal">Tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.skillsDetail.map((s) => (
+                <tr key={s.name} className="border-b border-bg-hover/40 last:border-0">
+                  <td className="py-1 font-mono text-fg-base">{s.name}</td>
+                  <td className="py-1 text-fg-muted">{s.source}</td>
+                  <td className="py-1 text-right font-mono text-fg-base">
+                    {s.tokens.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </div>
   )
 }
 

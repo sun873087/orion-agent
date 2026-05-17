@@ -282,6 +282,7 @@ class Handlers:
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
             "conversation.stats": self.conversation_stats,
+            "conversation.context_breakdown": self.conversation_context_breakdown,
             "conversation.compact": self.conversation_compact,
             "permissions.get": self.permissions_get,
             "permissions.set": self.permissions_set,
@@ -927,6 +928,193 @@ class Handlers:
                 "context_used": context_used,
                 "context_max": context_max,
                 "cache_hit_rate": round(cache_hit_rate, 4),
+            },
+            "final": True,
+        }
+
+    async def conversation_context_breakdown(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """/context — 算當前 context window 各 category 的 token 佔比。
+
+        全 sidecar 端本機計算,不送 LLM。Token 估算用 char // 4(跟 compact 同一套標準)。
+
+        Categories:
+          - System prompt:fetch_system_prompt_parts + build_system_prompt_list 重 build
+          - System tools:builtin tools 各自 JSON schema 字符 // 4
+          - MCP tools:active MCP tools 各自 JSON schema(細項回 per-server)
+          - Skills:bundled / system / user / project skills 的 name+description
+          - Messages:estimate_token_count(state_messages)
+          - Autocompact buffer:max_context * (1 - threshold)
+          - Free space:max - 上述總和
+        """
+        import json as _json
+
+        from orion_sdk.compact.auto import estimate_token_count
+        from orion_sdk.prompt.assembler import (
+            build_system_prompt_list,
+            fetch_system_prompt_parts,
+        )
+
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        try:
+            UUID(sid)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": f"invalid UUID: {sid!r}"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        conv = self._conversations.get(sid)
+        if conv is None:
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        # ─── 1) System prompt ────────────────────────────────────────────
+        cwd = await self._resolve_session_cwd(sid, engine)
+        try:
+            parts = await fetch_system_prompt_parts(
+                cwd=cwd if conv.include_workspace_context else None,
+                user_id=conv.user_id,
+                conversation_messages=conv.state_messages,
+                provider=conv.provider if conv.memory_enabled else None,
+                mcp_manager=conv.mcp_manager,
+                custom_instructions_user=conv.custom_instructions_user,
+                custom_instructions_conversation=conv.custom_instructions_conversation,
+                output_style=conv.output_style,
+                include_workspace_context=conv.include_workspace_context,
+                include_env_info=conv.include_env_info,
+            )
+            system_segments = build_system_prompt_list(parts)
+        except Exception:  # noqa: BLE001 — fallback,不擋整個 RPC
+            system_segments = [conv.system_prompt] if conv.system_prompt else []
+        system_text = "\n\n".join(s for s in system_segments if s)
+        if conv.system_prompt and not any(conv.system_prompt in s for s in system_segments):
+            system_text = conv.system_prompt + "\n\n" + system_text
+        system_tokens = len(system_text) // 4
+
+        # ─── 2/3) Tools — 區分 builtin vs MCP ────────────────────────────
+        # MCP tools 名字慣例 "mcp__<server>__<tool>";其他都是 builtin
+        builtin_tools_tokens = 0
+        mcp_tools_detail: list[dict[str, Any]] = []
+        for tool in conv.tools:
+            tname = getattr(tool, "name", None)
+            if not isinstance(tname, str):
+                continue
+            try:
+                schema = tool.input_schema.model_json_schema()
+            except Exception:  # noqa: BLE001
+                schema = {}
+            schema_dict = {
+                "name": tname,
+                "description": getattr(tool, "description", "") or "",
+                "input_schema": schema,
+            }
+            tokens = len(_json.dumps(schema_dict, ensure_ascii=False)) // 4
+            if tname.startswith("mcp__"):
+                bits = tname.split("__", 2)
+                server = bits[1] if len(bits) >= 3 else "unknown"
+                mcp_tools_detail.append(
+                    {"name": tname, "server": server, "tokens": tokens}
+                )
+            else:
+                builtin_tools_tokens += tokens
+        mcp_tools_detail.sort(key=lambda d: (d["server"], d["name"]))
+        mcp_tools_tokens = sum(d["tokens"] for d in mcp_tools_detail)
+
+        # ─── 4) Skills ──────────────────────────────────────────────────
+        skills_detail: list[dict[str, Any]] = []
+        try:
+            from orion_sdk.skills.loader import (
+                _bundled_skills,
+                _system_skills_dir,
+                load_skills_dir,
+            )
+
+            from orion_cowork_sidecar.skill_handlers import (
+                _label_source,
+                _user_skills_dir,
+            )
+
+            by_name: dict[str, Any] = {}
+            # Project skills(優先 — 若 session 有 workspace 跟 project)
+            ext = await storage.get_session_ext(engine, sid)
+            if ext.get("project_id"):
+                proj = await storage.get_project(engine, ext["project_id"])
+                if proj is not None and proj.workspace_dir:
+                    pdir = Path(proj.workspace_dir) / ".orion-cowork" / "skills"
+                    if pdir.is_dir():
+                        for sk in load_skills_dir(pdir):
+                            by_name[sk.name] = sk
+            else:
+                for sk in _bundled_skills():
+                    by_name[sk.name] = sk
+                for sk in load_skills_dir(_system_skills_dir()):
+                    by_name[sk.name] = sk
+                for sk in load_skills_dir(_user_skills_dir()):
+                    by_name[sk.name] = sk
+            for sk in sorted(by_name.values(), key=lambda s: s.name.lower()):
+                text = (sk.name or "") + (sk.description or "")
+                source = _label_source(sk.source_path) if sk.source_path else "unknown"
+                skills_detail.append(
+                    {"name": sk.name, "source": source, "tokens": len(text) // 4}
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        skills_tokens = sum(d["tokens"] for d in skills_detail)
+
+        # ─── 5) Messages ────────────────────────────────────────────────
+        messages_tokens = estimate_token_count(conv.state_messages)
+
+        # ─── 6/7) Buffer + Free ─────────────────────────────────────────
+        max_context = conv.provider.capabilities.max_context_tokens
+        threshold = conv.auto_compact_threshold if conv.auto_compact_threshold else 0.8
+        autocompact_buffer_tokens = int(max_context * (1.0 - threshold))
+        used = (
+            system_tokens
+            + builtin_tools_tokens
+            + mcp_tools_tokens
+            + skills_tokens
+            + messages_tokens
+        )
+        free_space = max(0, max_context - used - autocompact_buffer_tokens)
+
+        yield {
+            "event": "context_breakdown",
+            "data": {
+                "session_id": sid,
+                "provider": conv.provider.name,
+                "model": conv.provider.model,
+                "max_context_tokens": max_context,
+                "total_used_tokens": used,
+                "categories": [
+                    {"name": "System prompt", "tokens": system_tokens},
+                    {"name": "System tools", "tokens": builtin_tools_tokens},
+                    {"name": "MCP tools", "tokens": mcp_tools_tokens},
+                    {"name": "Skills", "tokens": skills_tokens},
+                    {"name": "Messages", "tokens": messages_tokens},
+                    {"name": "Free space", "tokens": free_space},
+                    {"name": "Autocompact buffer", "tokens": autocompact_buffer_tokens},
+                ],
+                "mcp_tools_detail": mcp_tools_detail,
+                "skills_detail": skills_detail,
             },
             "final": True,
         }

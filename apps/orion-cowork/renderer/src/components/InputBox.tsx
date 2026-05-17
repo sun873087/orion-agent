@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Download,
   FastForward,
+  Gauge,
   Hand,
   Layers,
   Mic,
@@ -16,7 +17,12 @@ import {
 } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
-import { fetchModels, setPermissionMode as rpcSetPermissionMode, sttTranscribe } from '../api/agent'
+import {
+  fetchModels,
+  getContextBreakdown,
+  setPermissionMode as rpcSetPermissionMode,
+  sttTranscribe,
+} from '../api/agent'
 import { useCompactConversation } from '../hooks/useAgent'
 import { exportAllSessions } from '../lib/exportTranscript'
 import { useTranslation } from '../i18n'
@@ -53,6 +59,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: '/export',
     icon: Download,
     subtitle: '把全部對話匯出到 ~/Downloads (markdown + JSON + 附件)',
+  },
+  {
+    name: '/context',
+    icon: Gauge,
+    subtitle: '顯示當前 context window 用量分配',
   },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
@@ -132,6 +143,21 @@ export function InputBox({ onSend, onAbort }: Props) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         setAttachError(`匯出失敗:${msg}`)
+      }
+    } else if (name === '/context') {
+      try {
+        const sid = useAgentStore.getState().sessionId
+        if (!sid) {
+          setAttachError('還沒對話 — 先送一句話建立 session')
+          return
+        }
+        const report = await getContextBreakdown(sid)
+        if (report) {
+          useAgentStore.getState().appendContextReportCard(report)
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setAttachError(`/context 失敗:${msg}`)
       }
     }
   }

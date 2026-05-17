@@ -389,6 +389,56 @@ export async function sendPrompt(
   )
 }
 
+export type ContextCategory = { name: string; tokens: number }
+export type ContextToolDetail = { name: string; server: string; tokens: number }
+export type ContextSkillDetail = { name: string; source: string; tokens: number }
+export type ContextBreakdown = {
+  sessionId: string
+  provider: string
+  model: string
+  maxContextTokens: number
+  totalUsedTokens: number
+  categories: ContextCategory[]
+  mcpToolsDetail: ContextToolDetail[]
+  skillsDetail: ContextSkillDetail[]
+}
+
+/** /context — 拉當前 session 的 context window 分配(全 sidecar 本機計算,不打 LLM)。 */
+export async function getContextBreakdown(
+  sessionId: string,
+): Promise<ContextBreakdown | null> {
+  let out: ContextBreakdown | null = null
+  await window.agent.call(
+    'conversation.context_breakdown',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event !== 'context_breakdown' || !f.data) return
+      const d = f.data
+      const cats = Array.isArray(d.categories) ? (d.categories as ContextCategory[]) : []
+      const mcp = Array.isArray(d.mcp_tools_detail)
+        ? (d.mcp_tools_detail as ContextToolDetail[])
+        : []
+      const skills = Array.isArray(d.skills_detail)
+        ? (d.skills_detail as ContextSkillDetail[])
+        : []
+      out = {
+        sessionId: String(d.session_id ?? sessionId),
+        provider: String(d.provider ?? ''),
+        model: String(d.model ?? ''),
+        maxContextTokens:
+          typeof d.max_context_tokens === 'number' ? d.max_context_tokens : 0,
+        totalUsedTokens:
+          typeof d.total_used_tokens === 'number' ? d.total_used_tokens : 0,
+        categories: cats,
+        mcpToolsDetail: mcp,
+        skillsDetail: skills,
+      }
+    },
+  )
+  return out
+}
+
 /** 從指定 message_index 起 truncate;有 resendText 就重跑 send,沒給就純 delete。
  *  Cache 影響:被刪 message 以後的 prefix 變了 → BP3 / BP4 cache 失效,要重寫。 */
 export async function truncateConversation(

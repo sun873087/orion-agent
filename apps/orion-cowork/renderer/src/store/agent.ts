@@ -8,7 +8,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { AskQuestion } from '../api/agent'
+import type { AskQuestion, ContextBreakdown } from '../api/agent'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
@@ -70,10 +70,12 @@ export type Message = {
   attachments?: AttachmentPreview[]
   /** 若 streaming 還沒結束就 true,UI 用來顯示 cursor。 */
   streaming?: boolean
-  /** 系統訊息的特殊類型 — 'compact-summary' 表示這是壓縮摘要 card。 */
-  kind?: 'compact-summary'
+  /** 系統訊息的特殊類型。 */
+  kind?: 'compact-summary' | 'context-report'
   /** Compact summary card 才有:壓縮前的概略 token 數。 */
   beforeTokens?: number
+  /** Context report card 才有:context window 分配資料。 */
+  contextReport?: ContextBreakdown
   /** Compact 前的舊訊息 — UI 灰化,但仍 scroll 看得到(LLM 看不到)。 */
   compacted?: boolean
   /** 對齊 DB row 的 raw index — 由 _to_ui_messages_from_raw 給,edit/delete RPC 用。
@@ -114,6 +116,9 @@ type AgentState = {
    *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
   extraOutputFiles: Record<string, string[]>
   addExtraOutputFile: (sessionId: string, path: string) => void
+  /** /context — push user msg "/context" + system context-report card 到 messages。
+   *  不進 sidecar state_messages / DB,純 UI snapshot。 */
+  appendContextReportCard: (report: ContextBreakdown) => void
   /** 壓縮完成 — 把現有訊息標 compacted(灰化,不再 LLM 可見)+ 插入 summary card。
    *  `liveTailCount` 是要保留不標 compacted 的尾端訊息數
    *  (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
@@ -324,6 +329,30 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
 
   setCompacting: (v) => set({ compacting: v }),
+  appendContextReportCard: (report) =>
+    set((s) => {
+      const now = Date.now()
+      return {
+        messages: [
+          ...s.messages,
+          {
+            id: newId(),
+            role: 'user',
+            text: '/context',
+            createdAt: now,
+          },
+          {
+            id: newId(),
+            role: 'system',
+            text: '',
+            kind: 'context-report',
+            contextReport: report,
+            createdAt: now + 1,
+          },
+        ],
+      }
+    }),
+
   addExtraOutputFile: (sessionId, path) =>
     set((s) => {
       const cur = s.extraOutputFiles[sessionId] ?? []
