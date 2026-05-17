@@ -312,11 +312,20 @@ export function RightSidebar() {
           <ul className="flex flex-col gap-1">
             {workingFiles.map((f) => (
               <li key={f.path}>
-                <button
-                  type="button"
+                {/* div 不是 button — 避免兩個 <button> 互相巢套(DOM 不合法)。
+                 *  role=button + tabIndex 維持鍵盤可達性。 */}
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => window.shellApi.openPath(f.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      void window.shellApi.openPath(f.path)
+                    }
+                  }}
                   title={f.path}
-                  className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left hover:bg-bg-hover"
+                  className="flex w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left hover:bg-bg-hover"
                 >
                   <FileText size={12} className="mt-0.5 shrink-0 text-fg-muted" />
                   <div className="min-w-0 flex-1">
@@ -338,7 +347,7 @@ export function RightSidebar() {
                   >
                     <Folder size={11} />
                   </button>
-                </button>
+                </div>
               </li>
             ))}
           </ul>
