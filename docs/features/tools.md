@@ -118,9 +118,18 @@ Phase 31-H 後從 SDK 搬到 Cowork sidecar(`apps/orion-cowork/sidecar/src/orion
 
 詳見 [`cowork.md`](./cowork.md) §桌面 OS 整合。
 
+### Config(CLI-only)
+
+`Config` 讀 / 寫 `~/.orion/settings.json`(`tools/config/config_tool.py`)。Phase 31-I 後從 SDK 默認註冊拿掉,只 CLI 透過 `extra_tools=[ConfigTool()]` 注入:
+- **Cowork**:用 SQLite `cowork_prefs` 表存偏好,不讀 settings.json
+- **chat-api**:多租戶,LLM 不該改 global config(安全考量)
+- **CLI**:settings.json 是它的家,LLM 改 OK
+
 ### 雜項
 
-`ToolSearch`(deferred tool 載入)、`Sleep`、`SyntheticOutput`(僅內部)、`SettingsRead/Write`(`config_tool.py`)
+- `Sleep`(SDK 預設;autonomous CLI flow 用)
+- `ToolSearch`(SDK 預設,deferred tool 載入)
+- `SyntheticOutput`(SDK class 但**不**默認註冊;structured-output library tool — caller 動態建 `SyntheticOutputTool(schema=user_schema)` 進 `extra_tools`)
 
 ## 啟用 / 停用
 

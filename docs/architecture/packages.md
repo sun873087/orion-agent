@@ -70,7 +70,7 @@ async for event in conv.send("讀 /etc/hosts", ctx=ctx):
 | 子目錄 | 內容 |
 |---|---|
 | `core/` | Conversation、QueryLoop、StreamingExecutor、ToolOrchestration — 心臟 |
-| `tools/` | 20+ 共用內建工具(Bash / Read / Edit / Grep / WebFetch / Task / Skill / Schedule / ...);Browser → Cowork sidecar、Cron → CLI(host-specific 不在 SDK) |
+| `tools/` | 20+ 共用內建工具(Bash / Read / Edit / Grep / WebFetch / Task / Skill / Schedule / Sleep / ToolSearch / ...);host-specific 不默認註冊:Browser → Cowork sidecar、Cron / Config → CLI |
 | `mcp/` | MCP client(4 種 transport + OAuth + dynamic tool wrapping) |
 | `sandbox/` | Docker / local sandbox backend |
 | `permissions/` | Permission policy(`always_allow` / `ask` / DSL rules) |

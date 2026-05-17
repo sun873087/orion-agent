@@ -4,8 +4,13 @@
 透過 `chat.py` 把 ws asker 設到 tool.asker 上(per-connection late-bind)。
 asker 是 None 時呼叫 tool 會回 ErrorEvent(模型可看到 schema、知道工具存在)。
 
-Host-specific tools(Browser / Cron 等)不在這 — 由 host 透過 `extra_tools`
-注入,SDK 不背 playwright / apscheduler 這類 dep。
+Host-specific tools(Browser / Cron / Config 等)不在這 — 由 host 透過
+`extra_tools` 注入,SDK 不背 playwright / apscheduler 這類 dep。
+`Config` 寫 `~/.orion/settings.json` — Cowork 走 SQLite `cowork_prefs`、
+chat-api 多租戶不該讓 LLM 改 global config,只 CLI 註冊。
+`SyntheticOutput` 是 structured-output library tool — caller 動態建
+(`SyntheticOutputTool(schema=...)`),不適合默認註冊,有需要的 host
+自己加進 `extra_tools`。
 """
 
 from __future__ import annotations
@@ -14,7 +19,6 @@ from typing import Any
 
 from orion_sdk.core.tool import Tool
 from orion_sdk.tools.agent.skill_tool import SkillTool
-from orion_sdk.tools.config.config_tool import ConfigTool
 from orion_sdk.tools.file.edit import FileEditTool
 from orion_sdk.tools.file.notebook_edit import NotebookEditTool
 from orion_sdk.tools.file.read import FileReadTool
@@ -33,7 +37,6 @@ from orion_sdk.tools.search.glob import GlobTool
 from orion_sdk.tools.search.grep import GrepTool
 from orion_sdk.tools.shell.bash import BashTool
 from orion_sdk.tools.special.sleep import SleepTool
-from orion_sdk.tools.special.synthetic_output import SyntheticOutputTool
 from orion_sdk.tools.special.tool_search import ToolSearchTool
 from orion_sdk.tools.task.task_create import TaskCreateTool
 from orion_sdk.tools.task.task_get import TaskGetTool
@@ -91,9 +94,6 @@ def build_default_tool_set(
         ExitWorkdirTool(),
         # Phase 10 — special
         SleepTool(),
-        SyntheticOutputTool(),
-        # Phase 10 — config
-        ConfigTool(),
         # Phase 10 — notebook
         NotebookEditTool(),
         # Phase 10 — task
@@ -166,7 +166,7 @@ def list_builtin_tool_groups(
         {"group": "Workdir", "tools": [to_dict(EnterWorkdirTool()), to_dict(ExitWorkdirTool())]},
         {
             "group": "System",
-            "tools": [to_dict(SleepTool()), to_dict(SyntheticOutputTool()), to_dict(ConfigTool())],
+            "tools": [to_dict(SleepTool())],
         },
         {
             "group": "Task",
