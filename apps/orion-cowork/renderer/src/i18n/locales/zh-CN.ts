@@ -28,6 +28,13 @@ export default {
   'sidebar.allConversations': '全部对话',
   'sidebar.personalConversations': '个人对话',
   'sidebar.moveTo': '移到⋯',
+  'sidebar.starred': '已加星',
+  'sidebar.recents': '最近',
+  'sidebar.star': '加星标',
+  'sidebar.unstar': '取消星标',
+  'sidebar.rename': '重命名',
+  'sidebar.delete': '删除',
+  'sidebar.actionsTooltip': '更多操作',
   'sidebar.newProject': '新建项目',
   'sidebar.noProjects': '尚未创建任何项目',
 

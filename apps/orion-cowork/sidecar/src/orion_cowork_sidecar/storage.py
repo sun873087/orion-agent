@@ -176,6 +176,7 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
         for col_def in (
             "scheduled_by_id TEXT",
             "scheduled_by_name TEXT",
+            "starred INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 await conn.exec_driver_sql(
@@ -457,6 +458,44 @@ async def get_session_ext(
         "scheduled_by_id": row[2],
         "scheduled_by_name": row[3],
     }
+
+
+async def list_session_starred_ids(engine: AsyncEngine) -> set[str]:
+    """Batch 撈所有 starred=1 的 session_id(Sidebar list 用,一次 query 解 N+1)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id FROM cowork_session_ext WHERE starred = 1"
+        )
+        return {row[0] for row in result.all()}
+
+
+async def set_session_starred(
+    engine: AsyncEngine, session_id: str, starred: bool,
+) -> None:
+    """Upsert starred flag。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, starred)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET starred = excluded.starred
+            """,
+            (session_id, 1 if starred else 0),
+        )
+        await conn.commit()
+
+
+async def rename_session(
+    engine: AsyncEngine, session_id: str, title: str,
+) -> bool:
+    """強制 update conversation_metadata.title(覆蓋既有)。"""
+    async with db_session(engine) as s:
+        meta = await s.get(MetaRow, session_id)
+        if meta is None:
+            return False
+        meta.title = title[:200].strip()
+        await s.commit()
+    return True
 
 
 async def list_session_scheduled_by_map(

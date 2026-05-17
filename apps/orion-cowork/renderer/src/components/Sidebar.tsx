@@ -3,7 +3,9 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Edit3,
   Folder,
+  FolderPlus,
   Globe,
   Inbox,
   MessageSquare,
@@ -11,6 +13,7 @@ import {
   Plus,
   Search,
   Settings as SettingsIcon,
+  Star,
   Trash2,
   User,
   X,
@@ -18,14 +21,16 @@ import {
 
 import {
   getSessionWorkspace,
+  renameConversation,
   searchConversations,
   setSessionProject,
+  setSessionStarred,
   type SearchHit,
 } from '../api/agent'
 import { LOCALES, useTranslation, type Locale } from '../i18n'
 import { useDeleteConversation, useNewConversation, useSwitchConversation } from '../hooks/useAgent'
 import { useLoadProjectsOnce, useProjects } from '../hooks/useProjects'
-import { useAgentStore } from '../store/agent'
+import { useAgentStore, type SessionSummary } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
 
 /** 左側對話列表 + 底部 user popup menu(支援 nested submenu)。 */
@@ -172,27 +177,12 @@ export function Sidebar() {
         ) : baseSessions.length === 0 ? (
           <div className="px-3 py-2 text-xs text-fg-subtle">{t('sidebar.empty')}</div>
         ) : (
-          <ul className="flex flex-col gap-0.5">
-            {baseSessions.map((s) => {
-              const active = s.session_id === currentId
-              return (
-                <li key={s.session_id}>
-                  <SessionRow
-                    sessionId={s.session_id}
-                    title={s.title}
-                    scheduledBy={s.scheduled_by ?? null}
-                    active={active}
-                    onClick={() => switchTo(s.session_id)}
-                    onDelete={() => {
-                      if (window.confirm(t('sidebar.deleteConfirm'))) {
-                        del(s.session_id)
-                      }
-                    }}
-                  />
-                </li>
-              )
-            })}
-          </ul>
+          <SessionListGrouped
+            sessions={baseSessions}
+            currentId={currentId}
+            onSwitch={switchTo}
+            onDelete={del}
+          />
         )}
       </div>
 
@@ -201,9 +191,81 @@ export function Sidebar() {
   )
 }
 
+function SessionListGrouped({
+  sessions,
+  currentId,
+  onSwitch,
+  onDelete,
+}: {
+  sessions: SessionSummary[]
+  currentId: string | null
+  onSwitch: (sid: string) => void
+  onDelete: (sid: string) => void
+}) {
+  const { t } = useTranslation()
+  const starred = sessions.filter((s) => s.starred)
+  const recents = sessions.filter((s) => !s.starred)
+
+  return (
+    <>
+      {starred.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+            {t('sidebar.starred')}
+          </div>
+          <ul className="flex flex-col gap-0.5">
+            {starred.map((s) => (
+              <li key={s.session_id}>
+                <SessionRow
+                  sessionId={s.session_id}
+                  title={s.title}
+                  starred={true}
+                  scheduledBy={s.scheduled_by ?? null}
+                  active={s.session_id === currentId}
+                  onClick={() => onSwitch(s.session_id)}
+                  onDelete={() => {
+                    if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {recents.length > 0 && (
+        <div>
+          {starred.length > 0 && (
+            <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+              {t('sidebar.recents')}
+            </div>
+          )}
+          <ul className="flex flex-col gap-0.5">
+            {recents.map((s) => (
+              <li key={s.session_id}>
+                <SessionRow
+                  sessionId={s.session_id}
+                  title={s.title}
+                  starred={false}
+                  scheduledBy={s.scheduled_by ?? null}
+                  active={s.session_id === currentId}
+                  onClick={() => onSwitch(s.session_id)}
+                  onDelete={() => {
+                    if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
+}
+
 function SessionRow({
   sessionId,
   title,
+  starred,
   scheduledBy,
   active,
   onClick,
@@ -211,6 +273,7 @@ function SessionRow({
 }: {
   sessionId: string
   title: string | null
+  starred: boolean
   scheduledBy: { schedule_id: string; schedule_name: string } | null
   active: boolean
   onClick: () => void
@@ -218,13 +281,19 @@ function SessionRow({
 }) {
   const { t } = useTranslation()
   const projects = useProjects()
-  const refreshSidebar = useAgentStore((s) => s.setSessions)  // placeholder for refresh ref
-  // 用 useEffect refresh trigger;真正 refresh sessions 走 sidebar 既有的 useEffect chain
+  const refreshSidebar = useAgentStore((s) => s.setSessions)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [submenuOpen, setSubmenuOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(title ?? '')
   const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen) {
+      setSubmenuOpen(false)
+      return
+    }
     function onDocClick(e: MouseEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setMenuOpen(false)
@@ -234,97 +303,192 @@ function SessionRow({
     return () => window.removeEventListener('mousedown', onDocClick)
   }, [menuOpen])
 
+  useEffect(() => {
+    if (editing) {
+      setDraft(title ?? '')
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      })
+    }
+  }, [editing, title])
+
+  async function refresh() {
+    const { listConversations } = await import('../api/agent')
+    refreshSidebar(await listConversations())
+  }
+
   async function moveTo(projectId: string | null) {
     setMenuOpen(false)
     await setSessionProject(sessionId, projectId)
-    // 觸發 sidebar refresh — 既有 conversation_list 再拉一次
-    // 直接 refetch 走 store action 即可
-    const { listConversations } = await import('../api/agent')
-    const list = await listConversations()
-    refreshSidebar(list)
+    await refresh()
+  }
+
+  async function toggleStar() {
+    setMenuOpen(false)
+    await setSessionStarred(sessionId, !starred)
+    await refresh()
+  }
+
+  async function commitRename() {
+    const next = draft.trim()
+    setEditing(false)
+    if (!next || next === (title ?? '')) return
+    await renameConversation(sessionId, next)
+    await refresh()
   }
 
   return (
     <div
       ref={wrapRef}
-      className={`group relative flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer ${
+      className={`group relative flex items-center gap-2 rounded-md px-2 py-2 text-sm ${
+        editing ? '' : 'cursor-pointer'
+      } ${
         active ? 'bg-bg-hover text-fg-base' : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
       }`}
-      onClick={onClick}
+      onClick={editing ? undefined : onClick}
     >
-      {scheduledBy ? (
-        <Clock
-          size={14}
-          className="shrink-0 text-accent"
-        />
+      {starred ? (
+        <Star size={14} className="shrink-0 fill-current text-warning" />
+      ) : scheduledBy ? (
+        <Clock size={14} className="shrink-0 text-accent" />
       ) : (
         <MessageSquare size={14} className="shrink-0" />
       )}
-      <span
-        className="flex-1 truncate"
-        title={
-          scheduledBy
-            ? `${title ?? sessionId} — 排程觸發:${scheduledBy.schedule_name}`
-            : (title ?? sessionId)
-        }
-      >
-        {title || (
-          <span className="text-fg-subtle italic">{t('sidebar.newConversation')}</span>
-        )}
-      </span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen((o) => !o)
-        }}
-        title={t('sidebar.moveTo')}
-        className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
-      >
-        <MoreHorizontal size={12} />
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onDelete()
-        }}
-        title={t('sidebar.deleteTooltip')}
-        className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-error/20 hover:text-error"
-      >
-        <Trash2 size={12} />
-      </button>
+
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            else if (e.key === 'Escape') setEditing(false)
+          }}
+          onBlur={commitRename}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 min-w-0 rounded border border-accent/50 bg-bg-base px-1.5 py-0.5 text-sm text-fg-base focus:outline-none"
+        />
+      ) : (
+        <span
+          className="flex-1 truncate"
+          title={
+            scheduledBy
+              ? `${title ?? sessionId} — 排程觸發:${scheduledBy.schedule_name}`
+              : (title ?? sessionId)
+          }
+        >
+          {title || (
+            <span className="text-fg-subtle italic">{t('sidebar.newConversation')}</span>
+          )}
+        </span>
+      )}
+
+      {!editing && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen((o) => !o)
+          }}
+          title={t('sidebar.actionsTooltip')}
+          className="opacity-0 group-hover:opacity-100 rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      )}
+
       {menuOpen && (
         <div
           className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-bg-hover bg-bg-base p-1 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="mb-0.5 px-2 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
-            {t('sidebar.moveTo')}
-          </div>
-          <button
-            type="button"
-            onClick={() => moveTo(null)}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-fg-base hover:bg-bg-hover"
-          >
-            <Inbox size={11} />
-            <span>{t('sidebar.personalConversations')}</span>
-          </button>
-          {projects.length > 0 && <div className="my-1 border-t border-bg-hover/60" />}
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => moveTo(p.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-fg-base hover:bg-bg-hover"
-            >
-              <Folder size={11} />
-              <span className="truncate">{p.name}</span>
-            </button>
-          ))}
+          <MenuItem
+            icon={<Star size={13} className={starred ? 'fill-current' : ''} />}
+            label={starred ? t('sidebar.unstar') : t('sidebar.star')}
+            onClick={toggleStar}
+          />
+          <MenuItem
+            icon={<Edit3 size={13} />}
+            label={t('sidebar.rename')}
+            onClick={() => {
+              setMenuOpen(false)
+              setEditing(true)
+            }}
+          />
+          <MenuItem
+            icon={<FolderPlus size={13} />}
+            label={t('sidebar.moveTo')}
+            onClick={() => setSubmenuOpen((o) => !o)}
+            trailing={<ChevronRight size={11} className={submenuOpen ? 'rotate-90 transition' : 'transition'} />}
+          />
+          {submenuOpen && (
+            <div className="ml-2 border-l border-bg-hover pl-1">
+              <MenuItem
+                icon={<Inbox size={11} />}
+                label={t('sidebar.personalConversations')}
+                onClick={() => moveTo(null)}
+                small
+              />
+              {projects.map((p) => (
+                <MenuItem
+                  key={p.id}
+                  icon={<Folder size={11} />}
+                  label={p.name}
+                  onClick={() => moveTo(p.id)}
+                  small
+                />
+              ))}
+            </div>
+          )}
+          <div className="my-1 border-t border-bg-hover/60" />
+          <MenuItem
+            icon={<Trash2 size={13} />}
+            label={t('sidebar.delete')}
+            onClick={() => {
+              setMenuOpen(false)
+              onDelete()
+            }}
+            danger
+          />
         </div>
       )}
     </div>
+  )
+}
+
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+  small,
+  trailing,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  danger?: boolean
+  small?: boolean
+  trailing?: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded px-2 ${
+        small ? 'py-1' : 'py-1.5'
+      } text-xs ${
+        danger
+          ? 'text-error hover:bg-error/10'
+          : 'text-fg-base hover:bg-bg-hover'
+      }`}
+    >
+      {icon}
+      <span className="flex-1 truncate text-left">{label}</span>
+      {trailing}
+    </button>
   )
 }
 

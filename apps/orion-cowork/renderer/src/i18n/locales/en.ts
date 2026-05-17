@@ -28,6 +28,13 @@ export default {
   'sidebar.allConversations': 'All conversations',
   'sidebar.personalConversations': 'Personal chats',
   'sidebar.moveTo': 'Move to…',
+  'sidebar.starred': 'Starred',
+  'sidebar.recents': 'Recents',
+  'sidebar.star': 'Star',
+  'sidebar.unstar': 'Unstar',
+  'sidebar.rename': 'Rename',
+  'sidebar.delete': 'Delete',
+  'sidebar.actionsTooltip': 'More actions',
   'sidebar.newProject': 'New project',
   'sidebar.noProjects': 'No projects yet',
 

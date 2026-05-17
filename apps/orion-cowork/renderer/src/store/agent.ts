@@ -96,6 +96,7 @@ export type SessionSummary = {
   title: string | null
   created_at: number
   n_messages: number
+  starred?: boolean
   /** 排程觸發產生的 session 帶這個標記;手動建的 session 為 null。 */
   scheduled_by?: { schedule_id: string; schedule_name: string } | null
 }

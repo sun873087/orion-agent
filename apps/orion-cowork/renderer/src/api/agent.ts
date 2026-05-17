@@ -842,6 +842,26 @@ export type SessionSummary = {
   n_messages: number
 }
 
+export async function renameConversation(
+  sessionId: string, title: string,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.rename',
+    { session_id: sessionId, title },
+    () => {},
+  )
+}
+
+export async function setSessionStarred(
+  sessionId: string, starred: boolean,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_starred',
+    { session_id: sessionId, starred },
+    () => {},
+  )
+}
+
 export async function listConversations(): Promise<SessionSummary[]> {
   let result: SessionSummary[] = []
   await window.agent.call('conversation.list', {}, (frame) => {

@@ -28,6 +28,13 @@ export default {
   'sidebar.allConversations': 'すべての会話',
   'sidebar.personalConversations': '個人チャット',
   'sidebar.moveTo': '移動先⋯',
+  'sidebar.starred': 'スター付き',
+  'sidebar.recents': '最近',
+  'sidebar.star': 'スター',
+  'sidebar.unstar': 'スター解除',
+  'sidebar.rename': '名前変更',
+  'sidebar.delete': '削除',
+  'sidebar.actionsTooltip': 'その他',
   'sidebar.newProject': '新規プロジェクト',
   'sidebar.noProjects': 'プロジェクトがありません',
 

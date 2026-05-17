@@ -306,6 +306,8 @@ class Handlers:
             "conversation.list": self.conversation_list,
             "conversation.search": self.conversation_search,
             "conversation.delete": self.conversation_delete,
+            "conversation.rename": self.conversation_rename,
+            "conversation.set_starred": self.conversation_set_starred,
             "conversation.get_workspace": self.conversation_get_workspace,
             "conversation.set_workspace": self.conversation_set_workspace,
             "conversation.set_project": self.conversation_set_project,
@@ -1687,6 +1689,7 @@ class Handlers:
         engine = await self.ensure_engine()
         rows = await storage.list_sessions(engine)
         scheduled_map = await storage.list_session_scheduled_by_map(engine)
+        starred_ids = await storage.list_session_starred_ids(engine)
         yield {
             "event": "conversation_list",
             "data": {
@@ -1698,6 +1701,7 @@ class Handlers:
                         "title": r.title,
                         "created_at": r.created_at,
                         "n_messages": r.n_messages,
+                        "starred": r.session_id in starred_ids,
                         "scheduled_by": (
                             {
                                 "schedule_id": scheduled_map[r.session_id]["id"],
@@ -1712,6 +1716,44 @@ class Handlers:
             },
             "final": True,
         }
+
+    async def conversation_rename(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        title = params.get("title")
+        if not isinstance(sid, str) or not isinstance(title, str) or not title.strip():
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "session_id and non-empty title required"},
+                   "final": True}
+            return
+        engine = await self.ensure_engine()
+        ok = await storage.rename_session(engine, sid, title)
+        if not ok:
+            yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+            return
+        # title 改了 → 既有快取 conv 不必清(title 只在 metadata 表),但
+        # 把 _title_done 移除以防 auto-fill 行為被誤觸發
+        self._title_done.discard(sid)
+        yield {"event": "conversation_renamed",
+               "data": {"session_id": sid, "title": title.strip()},
+               "final": True}
+
+    async def conversation_set_starred(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        starred = params.get("starred")
+        if not isinstance(sid, str) or not isinstance(starred, bool):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                   "message": "session_id and starred(bool) required"},
+                   "final": True}
+            return
+        engine = await self.ensure_engine()
+        await storage.set_session_starred(engine, sid, starred)
+        yield {"event": "conversation_starred_set",
+               "data": {"session_id": sid, "starred": starred},
+               "final": True}
 
     async def conversation_search(
         self, params: dict[str, Any]

@@ -32,6 +32,13 @@ export default {
   'sidebar.moveTo': '移到⋯',
   'sidebar.newProject': '新增專案',
   'sidebar.noProjects': '尚未建立任何專案',
+  'sidebar.starred': '已標星',
+  'sidebar.recents': '最近',
+  'sidebar.star': '加入星標',
+  'sidebar.unstar': '取消星標',
+  'sidebar.rename': '重新命名',
+  'sidebar.delete': '刪除',
+  'sidebar.actionsTooltip': '更多動作',
 
   'project.modal.title': '新增專案',
   'project.field.name': '名稱',
