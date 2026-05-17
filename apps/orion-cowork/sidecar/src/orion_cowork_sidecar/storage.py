@@ -160,6 +160,7 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
        - cowork_session_ext:per-session workspace_dir(override) + project_id
        - cowork_projects:Project 定義
        - cowork_prefs:KV(default_workspace_dir 等 app 級偏好)
+       - cowork_schedules:排程任務(time-based 觸發 Skill / prompt)
     """
     async with engine.connect() as conn:
         await conn.exec_driver_sql(
@@ -171,6 +172,17 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             )
             """
         )
+        # Idempotent column additions for older DBs(SQLite 無 IF NOT EXISTS for ADD COLUMN)
+        for col_def in (
+            "scheduled_by_id TEXT",
+            "scheduled_by_name TEXT",
+        ):
+            try:
+                await conn.exec_driver_sql(
+                    f"ALTER TABLE cowork_session_ext ADD COLUMN {col_def}"
+                )
+            except Exception:  # noqa: BLE001
+                pass  # duplicate column — OK
         await conn.exec_driver_sql(
             """
             CREATE TABLE IF NOT EXISTS cowork_projects (
@@ -190,6 +202,38 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
                 value TEXT
             )
             """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_schedules (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT 'cowork-local',
+                project_id TEXT,
+                name TEXT NOT NULL,
+                cron_expr TEXT NOT NULL,
+                trigger_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_run_at REAL,
+                next_run_at REAL,
+                last_run_session_id TEXT,
+                last_run_status TEXT,
+                last_error TEXT,
+                model_provider TEXT,
+                model TEXT,
+                workspace_dir TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_schedules_enabled_idx "
+            "ON cowork_schedules(enabled, next_run_at)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_schedules_project_idx "
+            "ON cowork_schedules(project_id)"
         )
         await conn.commit()
 
@@ -394,16 +438,62 @@ async def cleanup_orphan_blobs(engine: AsyncEngine) -> dict[str, int]:
 async def get_session_ext(
     engine: AsyncEngine, session_id: str
 ) -> dict[str, str | None]:
-    """讀 cowork_session_ext row。沒 row 回 {workspace_dir: None, project_id: None}。"""
+    """讀 cowork_session_ext row。沒 row 回 dict with None values。"""
     async with engine.connect() as conn:
         result = await conn.exec_driver_sql(
-            "SELECT workspace_dir, project_id FROM cowork_session_ext WHERE session_id = ?",
+            "SELECT workspace_dir, project_id, scheduled_by_id, scheduled_by_name "
+            "FROM cowork_session_ext WHERE session_id = ?",
             (session_id,),
         )
         row = result.first()
     if row is None:
-        return {"workspace_dir": None, "project_id": None}
-    return {"workspace_dir": row[0], "project_id": row[1]}
+        return {
+            "workspace_dir": None, "project_id": None,
+            "scheduled_by_id": None, "scheduled_by_name": None,
+        }
+    return {
+        "workspace_dir": row[0],
+        "project_id": row[1],
+        "scheduled_by_id": row[2],
+        "scheduled_by_name": row[3],
+    }
+
+
+async def list_session_scheduled_by_map(
+    engine: AsyncEngine,
+) -> dict[str, dict[str, str]]:
+    """Batch 撈所有 session 的 scheduled_by 標記(Sidebar list 用,一次 query 解 N+1)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id, scheduled_by_id, scheduled_by_name "
+            "FROM cowork_session_ext WHERE scheduled_by_id IS NOT NULL"
+        )
+        return {
+            r[0]: {"id": r[1], "name": r[2] or ""}
+            for r in result.all()
+        }
+
+
+async def set_session_scheduled_by(
+    engine: AsyncEngine,
+    session_id: str,
+    *,
+    schedule_id: str,
+    schedule_name: str,
+) -> None:
+    """標記 session 為某 schedule 觸發產生(Sidebar 顯 badge 用)。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, scheduled_by_id, scheduled_by_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                scheduled_by_id = excluded.scheduled_by_id,
+                scheduled_by_name = excluded.scheduled_by_name
+            """,
+            (session_id, schedule_id, schedule_name),
+        )
+        await conn.commit()
 
 
 async def set_session_workspace(
@@ -945,6 +1035,231 @@ async def search_messages(
             ))
     hits.sort(key=lambda h: (-h.match_count, -h.created_at))
     return hits[:limit]
+
+
+@dataclass
+class Schedule:
+    id: str
+    user_id: str
+    project_id: str | None
+    name: str
+    cron_expr: str
+    trigger_type: str       # 'skill' | 'prompt'
+    payload: str
+    enabled: bool
+    last_run_at: float | None
+    next_run_at: float | None
+    last_run_session_id: str | None
+    last_run_status: str | None
+    last_error: str | None
+    model_provider: str | None
+    model: str | None
+    workspace_dir: str | None
+    created_at: float
+    updated_at: float
+
+
+def _schedule_from_row(r: Any) -> Schedule:
+    return Schedule(
+        id=r[0],
+        user_id=r[1],
+        project_id=r[2],
+        name=r[3],
+        cron_expr=r[4],
+        trigger_type=r[5],
+        payload=r[6],
+        enabled=bool(r[7]),
+        last_run_at=r[8],
+        next_run_at=r[9],
+        last_run_session_id=r[10],
+        last_run_status=r[11],
+        last_error=r[12],
+        model_provider=r[13],
+        model=r[14],
+        workspace_dir=r[15],
+        created_at=r[16],
+        updated_at=r[17],
+    )
+
+
+_SCHEDULE_COLS = (
+    "id, user_id, project_id, name, cron_expr, trigger_type, payload, enabled, "
+    "last_run_at, next_run_at, last_run_session_id, last_run_status, last_error, "
+    "model_provider, model, workspace_dir, created_at, updated_at"
+)
+
+
+async def list_schedules(
+    engine: AsyncEngine,
+    *,
+    scope: str = "all",          # 'user' | 'project' | 'all'
+    project_id: str | None = None,
+    enabled_only: bool = False,
+    due_before: float | None = None,
+) -> list[Schedule]:
+    """Filter:
+       - scope='user'      → project_id IS NULL
+       - scope='project'   → 指定 project_id;沒給 → 全部 project-scoped
+       - scope='all'       → 都拿
+       - enabled_only       → enabled = 1
+       - due_before         → next_run_at <= due_before(scheduler tick 用)
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    if scope == "user":
+        where.append("project_id IS NULL")
+    elif scope == "project":
+        if project_id is not None:
+            where.append("project_id = ?")
+            params.append(project_id)
+        else:
+            where.append("project_id IS NOT NULL")
+    if enabled_only:
+        where.append("enabled = 1")
+    if due_before is not None:
+        where.append("(next_run_at IS NOT NULL AND next_run_at <= ?)")
+        params.append(due_before)
+    sql = f"SELECT {_SCHEDULE_COLS} FROM cowork_schedules"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY created_at DESC"
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(sql, tuple(params))
+        return [_schedule_from_row(r) for r in result.all()]
+
+
+async def get_schedule(engine: AsyncEngine, schedule_id: str) -> Schedule | None:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            f"SELECT {_SCHEDULE_COLS} FROM cowork_schedules WHERE id = ?",
+            (schedule_id,),
+        )
+        r = result.first()
+    return _schedule_from_row(r) if r else None
+
+
+async def create_schedule(
+    engine: AsyncEngine,
+    *,
+    name: str,
+    cron_expr: str,
+    trigger_type: str,
+    payload: str,
+    project_id: str | None = None,
+    enabled: bool = True,
+    next_run_at: float | None = None,
+    model_provider: str | None = None,
+    model: str | None = None,
+    workspace_dir: str | None = None,
+) -> Schedule:
+    from uuid import uuid4
+    sid = str(uuid4())
+    now = time.time()
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            f"INSERT INTO cowork_schedules ({_SCHEDULE_COLS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                sid, LOCAL_USER_ID, project_id, name, cron_expr, trigger_type,
+                payload, 1 if enabled else 0,
+                None, next_run_at, None, None, None,
+                model_provider, model, workspace_dir,
+                now, now,
+            ),
+        )
+        await conn.commit()
+    got = await get_schedule(engine, sid)
+    assert got is not None
+    return got
+
+
+async def update_schedule(
+    engine: AsyncEngine,
+    schedule_id: str,
+    *,
+    name: str | None = None,
+    cron_expr: str | None = None,
+    trigger_type: str | None = None,
+    payload: str | None = None,
+    project_id: str | None = None,
+    enabled: bool | None = None,
+    next_run_at: float | None = None,
+    model_provider: str | None = None,
+    model: str | None = None,
+    workspace_dir: str | None = None,
+    _clear_project: bool = False,
+) -> bool:
+    """部分更新;None = 不動。`_clear_project=True` 把 project_id 設成 NULL。"""
+    fields: list[tuple[str, Any]] = []
+    if name is not None:
+        fields.append(("name", name))
+    if cron_expr is not None:
+        fields.append(("cron_expr", cron_expr))
+    if trigger_type is not None:
+        fields.append(("trigger_type", trigger_type))
+    if payload is not None:
+        fields.append(("payload", payload))
+    if _clear_project:
+        fields.append(("project_id", None))
+    elif project_id is not None:
+        fields.append(("project_id", project_id))
+    if enabled is not None:
+        fields.append(("enabled", 1 if enabled else 0))
+    if next_run_at is not None:
+        fields.append(("next_run_at", next_run_at))
+    if model_provider is not None:
+        fields.append(("model_provider", model_provider or None))
+    if model is not None:
+        fields.append(("model", model or None))
+    if workspace_dir is not None:
+        fields.append(("workspace_dir", workspace_dir or None))
+    if not fields:
+        return False
+    fields.append(("updated_at", time.time()))
+    set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
+    params = [v for _, v in fields] + [schedule_id]
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            f"UPDATE cowork_schedules SET {set_clause} WHERE id = ?",
+            tuple(params),
+        )
+        await conn.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def delete_schedule(engine: AsyncEngine, schedule_id: str) -> bool:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "DELETE FROM cowork_schedules WHERE id = ?", (schedule_id,),
+        )
+        await conn.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def record_schedule_run(
+    engine: AsyncEngine,
+    schedule_id: str,
+    *,
+    last_run_at: float,
+    next_run_at: float | None,
+    last_run_session_id: str | None,
+    status: str,                    # 'ok' | 'error' | 'skipped'
+    error: str | None = None,
+) -> None:
+    """寫一次 fire 結果。即使 status='error' 也要更新 next_run_at 往前推,
+    否則同一筆 schedule 會在每個 tick 重試到天荒地老。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            "UPDATE cowork_schedules SET "
+            "last_run_at = ?, next_run_at = ?, last_run_session_id = ?, "
+            "last_run_status = ?, last_error = ?, updated_at = ? "
+            "WHERE id = ?",
+            (
+                last_run_at, next_run_at, last_run_session_id,
+                status, error, time.time(), schedule_id,
+            ),
+        )
+        await conn.commit()
 
 
 async def migrate_inline_attachments_to_blobs(engine: AsyncEngine) -> dict[str, int]:

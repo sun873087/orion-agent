@@ -42,6 +42,24 @@ const shellApi = {
   },
 }
 
+type SchedulerFiredPayload = {
+  schedule_id: string
+  schedule_name: string
+  session_id: string | null
+  status: 'ok' | 'error' | 'skipped' | string
+  error: string | null
+  next_run_at: number | null
+}
+
+const schedulerApi = {
+  /** 訂閱 sidecar 推的 scheduler.fired 事件。回傳一個 unsubscribe fn。 */
+  onFired: (cb: (data: SchedulerFiredPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: SchedulerFiredPayload) => cb(data)
+    ipcRenderer.on('scheduler:fired', listener)
+    return () => ipcRenderer.removeListener('scheduler:fired', listener)
+  },
+}
+
 const agentApi = {
   /**
    * 呼叫 sidecar RPC。`onFrame` 每個 streaming frame 觸發一次。
@@ -72,11 +90,16 @@ const agentApi = {
 contextBridge.exposeInMainWorld('agent', agentApi)
 contextBridge.exposeInMainWorld('dialog', dialogApi)
 contextBridge.exposeInMainWorld('shellApi', shellApi)
+// 注意:不能用 'scheduler' — Chrome 91+ window.scheduler 是內建 Scheduler API
+// (postTask 那組),contextBridge 不能覆寫,會丟「Cannot bind an API on top of
+// an existing property」。改用 'schedulerApi' 跟 'shellApi' 對齊。
+contextBridge.exposeInMainWorld('schedulerApi', schedulerApi)
 
 declare global {
   interface Window {
     agent: typeof agentApi
     dialog: typeof dialogApi
     shellApi: typeof shellApi
+    schedulerApi: typeof schedulerApi
   }
 }

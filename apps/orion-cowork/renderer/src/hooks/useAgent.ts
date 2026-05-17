@@ -45,6 +45,35 @@ export function useInitConversation() {
 }
 
 /**
+ * 訂閱 sidecar 推的 scheduler.fired — 排程觸發生 session 後 refresh sidebar
+ * 讓使用者看到 scheduled badge。
+ */
+export function useScheduleNotifications() {
+  useEffect(() => {
+    if (!window.schedulerApi?.onFired) return
+    const off = window.schedulerApi.onFired((data) => {
+      // 排程剛建立的 session 還在跑 LLM,sidebar 應立刻顯示
+      refreshSessions()
+      // 對應 OS notification(若 user 授權)
+      try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const title = data.status === 'error'
+            ? `排程 "${data.schedule_name}" 失敗`
+            : `排程 "${data.schedule_name}" 已執行`
+          const body = data.status === 'error'
+            ? (data.error ?? '請查看詳細紀錄')
+            : '對話已加入側邊欄'
+          new Notification(title, { body, silent: true })
+        }
+      } catch {
+        // 沒 Notification API 也沒事
+      }
+    })
+    return off
+  }, [])
+}
+
+/**
  * "New chat" 按鈕。只清空 local state,不立即建 DB session。首次 send 時
  * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
  */

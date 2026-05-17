@@ -46,11 +46,28 @@ interface OrionShellApi {
   pathExists: (path: string) => Promise<boolean>
 }
 
+interface OrionSchedulerFiredPayload {
+  schedule_id: string
+  schedule_name: string
+  session_id: string | null
+  status: 'ok' | 'error' | 'skipped' | string
+  error: string | null
+  next_run_at: number | null
+}
+
+interface OrionSchedulerApi {
+  /** 訂閱 sidecar 推的 scheduler.fired 事件。回傳 unsubscribe fn。 */
+  onFired: (cb: (data: OrionSchedulerFiredPayload) => void) => () => void
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
     dialog: OrionDialogApi
     shellApi: OrionShellApi
+    /** 排程通知通道 — 不用 `scheduler` 因為跟 Chrome 91+ 內建
+     *  `window.scheduler` (Scheduler API) 衝突,contextBridge 會擋。 */
+    schedulerApi: OrionSchedulerApi
   }
 }
 

@@ -1057,3 +1057,87 @@ export async function regenerateLast(
     (frame) => onEvent(frame as unknown as SidecarEvent),
   )
 }
+
+// ─── Schedule(對話排程)─────────────────────────────────────────────
+export type ScheduleScope = 'user' | 'project'
+export type ScheduleTriggerType = 'skill' | 'prompt'
+export type ScheduleStatus = 'ok' | 'error' | 'skipped'
+
+export type Schedule = {
+  id: string
+  name: string
+  cron_expr: string
+  trigger_type: ScheduleTriggerType
+  payload: string
+  scope: ScheduleScope
+  project_id: string | null
+  enabled: boolean
+  last_run_at: number | null
+  next_run_at: number | null
+  last_run_session_id: string | null
+  last_run_status: ScheduleStatus | null
+  last_error: string | null
+  model_provider: string | null
+  model: string | null
+  workspace_dir: string | null
+  created_at: number
+  updated_at: number
+}
+
+export async function listSchedules(opts?: {
+  scope?: 'user' | 'project' | 'all'
+  projectId?: string | null
+}): Promise<Schedule[]> {
+  const params: Record<string, unknown> = {}
+  if (opts?.scope) params.scope = opts.scope
+  if (opts?.projectId) params.project_id = opts.projectId
+  let items: Schedule[] = []
+  await window.agent.call('schedule.list', params, (frame) => {
+    if (frame.event === 'schedule_list' && frame.data) {
+      items = (frame.data as { schedules: Schedule[] }).schedules ?? []
+    }
+  })
+  return items
+}
+
+export async function getSchedule(id: string): Promise<Schedule | null> {
+  let s: Schedule | null = null
+  await window.agent.call('schedule.get', { id }, (frame) => {
+    if (frame.event === 'schedule' && frame.data) {
+      s = (frame.data as { schedule: Schedule | null }).schedule
+    }
+  })
+  return s
+}
+
+export type WriteScheduleInput = {
+  id?: string | null
+  name: string
+  cron_expr: string
+  trigger_type: ScheduleTriggerType
+  payload: string
+  scope: ScheduleScope
+  project_id?: string | null
+  enabled: boolean
+  model_provider?: string | null
+  model?: string | null
+  workspace_dir?: string | null
+}
+
+export async function writeSchedule(input: WriteScheduleInput): Promise<Schedule | null> {
+  let s: Schedule | null = null
+  await window.agent.call('schedule.write', input as Record<string, unknown>, (frame) => {
+    if (frame.event === 'schedule_written' && frame.data) {
+      s = (frame.data as { schedule: Schedule }).schedule
+    }
+  })
+  return s
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  await window.agent.call('schedule.delete', { id }, () => {})
+}
+
+export async function runScheduleNow(id: string): Promise<void> {
+  await window.agent.call('schedule.run_now', { id }, () => {})
+}

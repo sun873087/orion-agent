@@ -8,6 +8,7 @@ dependencies = [
     "orion-sdk[browser]",
     "orion-model",
     "python-dotenv>=1.0",
+    "croniter>=2.0",
 ]
 
 [project.scripts]

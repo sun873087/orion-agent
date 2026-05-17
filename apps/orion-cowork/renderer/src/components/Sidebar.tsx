@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   ChevronRight,
+  Clock,
   Folder,
   Globe,
   Inbox,
@@ -179,6 +180,7 @@ export function Sidebar() {
                   <SessionRow
                     sessionId={s.session_id}
                     title={s.title}
+                    scheduledBy={s.scheduled_by ?? null}
                     active={active}
                     onClick={() => switchTo(s.session_id)}
                     onDelete={() => {
@@ -202,12 +204,14 @@ export function Sidebar() {
 function SessionRow({
   sessionId,
   title,
+  scheduledBy,
   active,
   onClick,
   onDelete,
 }: {
   sessionId: string
   title: string | null
+  scheduledBy: { schedule_id: string; schedule_name: string } | null
   active: boolean
   onClick: () => void
   onDelete: () => void
@@ -248,8 +252,22 @@ function SessionRow({
       }`}
       onClick={onClick}
     >
-      <MessageSquare size={14} className="shrink-0" />
-      <span className="flex-1 truncate" title={title ?? sessionId}>
+      {scheduledBy ? (
+        <Clock
+          size={14}
+          className="shrink-0 text-accent"
+        />
+      ) : (
+        <MessageSquare size={14} className="shrink-0" />
+      )}
+      <span
+        className="flex-1 truncate"
+        title={
+          scheduledBy
+            ? `${title ?? sessionId} — 排程觸發:${scheduledBy.schedule_name}`
+            : (title ?? sessionId)
+        }
+      >
         {title || (
           <span className="text-fg-subtle italic">{t('sidebar.newConversation')}</span>
         )}

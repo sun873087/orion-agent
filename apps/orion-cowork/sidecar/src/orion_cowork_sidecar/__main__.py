@@ -60,7 +60,11 @@ async def _serve() -> None:
     _install_test_provider_override()
     handlers = Handlers()
     server = RpcServer(handlers.methods())
+    # 讓背景事件(scheduler.fired 等)能推 frame 給 main process
+    handlers.set_notifier(server._write_frame)
     try:
+        # 排程要 sidecar 一啟動就 tick(不必等 user 開對話)
+        await handlers.ensure_scheduler_started()
         await server.serve()
     finally:
         await handlers.shutdown()

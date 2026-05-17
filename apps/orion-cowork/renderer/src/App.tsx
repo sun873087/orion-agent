@@ -6,12 +6,18 @@ import { ProjectSettingsPage } from './components/ProjectSettingsPage'
 import { RightSidebar } from './components/RightSidebar'
 import { SettingsPage } from './components/SettingsPage'
 import { Sidebar } from './components/Sidebar'
-import { useAbort, useInitConversation, useSendPrompt } from './hooks/useAgent'
+import {
+  useAbort,
+  useInitConversation,
+  useScheduleNotifications,
+  useSendPrompt,
+} from './hooks/useAgent'
 import { useAgentStore } from './store/agent'
 import { useSettingsStore } from './store/settings'
 
 export function App() {
   useInitConversation()
+  useScheduleNotifications()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)

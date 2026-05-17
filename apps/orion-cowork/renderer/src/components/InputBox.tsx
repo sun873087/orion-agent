@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
+  Clock,
   Download,
   FastForward,
   Gauge,
@@ -64,6 +65,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: '/context',
     icon: Gauge,
     subtitle: '顯示當前 context window 用量分配',
+  },
+  {
+    name: '/schedule',
+    icon: Clock,
+    subtitle: '管理排程任務(個人 / 專案)',
   },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
@@ -144,6 +150,8 @@ export function InputBox({ onSend, onAbort }: Props) {
         const msg = e instanceof Error ? e.message : String(e)
         setAttachError(`匯出失敗:${msg}`)
       }
+    } else if (name === '/schedule') {
+      useSettingsStore.getState().openSettings('schedules')
     } else if (name === '/context') {
       try {
         const sid = useAgentStore.getState().sessionId

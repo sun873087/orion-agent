@@ -23,6 +23,14 @@ from orion_sdk.tools.interactive.ask_user import (
     AskUserCallback,
     AskUserQuestionTool,
 )
+from orion_sdk.tools.schedule import (
+    ScheduleCreateTool,
+    ScheduleDeleteTool,
+    ScheduleListTool,
+)
+from orion_sdk.tools.schedule.schedule_create import ScheduleCreateCallback
+from orion_sdk.tools.schedule.schedule_delete import ScheduleDeleteCallback
+from orion_sdk.tools.schedule.schedule_list import ScheduleListCallback
 from orion_sdk.tools.search.glob import GlobTool
 from orion_sdk.tools.search.grep import GrepTool
 from orion_sdk.tools.shell.bash import BashTool
@@ -47,6 +55,7 @@ def build_default_tool_set(
     *,
     browser_enabled: bool = True,
     disabled_tools: set[str] | None = None,
+    schedule_callbacks: dict[str, Any] | None = None,
 ) -> list[Tool[Any]]:
     """組所有內建工具。
 
@@ -59,6 +68,9 @@ def build_default_tool_set(
             False 強制不註冊,即使環境支援也不放。
         disabled_tools: 名字在這 set 內的 tool 不會被註冊。
             Cowork 從 user prefs 讀進來,讓使用者按組 / 個別關。
+        schedule_callbacks: 給 Schedule* tools 用的 sidecar callback dict。
+            預期 keys: 'create' / 'list' / 'delete' — 對應的 async fn。
+            None 時 Schedule tools 不註冊(只有 Cowork 啟用)。
 
     Returns:
         Tool list,結尾自動加 ToolSearchTool(self-aware)。
@@ -106,6 +118,14 @@ def build_default_tool_set(
                 all_candidates.extend(build_browser_tools())  # type: ignore[arg-type]
         except ImportError:
             pass
+    # Schedule tools(對話排程) — 需要 host 提供 callbacks 才註冊
+    if schedule_callbacks:
+        if "create" in schedule_callbacks:
+            all_candidates.append(ScheduleCreateTool(callback=schedule_callbacks["create"]))
+        if "list" in schedule_callbacks:
+            all_candidates.append(ScheduleListTool(callback=schedule_callbacks["list"]))
+        if "delete" in schedule_callbacks:
+            all_candidates.append(ScheduleDeleteTool(callback=schedule_callbacks["delete"]))
     base: list[Tool[Any]] = [t for t in all_candidates if t.name not in disabled]
 
     # AskUserQuestion / ToolSearch 視為「核心 infra」— 也可被 disable,但通常不會
@@ -140,6 +160,14 @@ def list_builtin_tool_groups() -> list[dict[str, Any]]:
         {"group": "Search", "tools": [to_dict(GlobTool()), to_dict(GrepTool())]},
         {"group": "Web", "tools": [to_dict(WebFetchTool()), to_dict(WebSearchTool())]},
         {"group": "Skill", "tools": [to_dict(SkillTool())]},
+        {
+            "group": "Schedule",
+            "tools": [
+                to_dict(ScheduleCreateTool()),
+                to_dict(ScheduleListTool()),
+                to_dict(ScheduleDeleteTool()),
+            ],
+        },
         {"group": "Todo", "tools": [to_dict(TodoWriteTool())]},
         {"group": "Workdir", "tools": [to_dict(EnterWorkdirTool()), to_dict(ExitWorkdirTool())]},
         {

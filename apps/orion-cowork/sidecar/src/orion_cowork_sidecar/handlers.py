@@ -29,12 +29,14 @@ from orion_sdk.tools.builtin_set import build_default_tool_set
 from orion_cowork_sidecar import (
     memory_handlers,
     permissions as perm_mod,
+    schedule_handlers,
     skill_handlers,
     storage,
     stt_handlers,
 )
 from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
+from orion_cowork_sidecar.scheduler import SchedulerEngine
 from orion_cowork_sidecar.streaming import to_rpc_frame
 
 load_dotenv()
@@ -186,6 +188,13 @@ class Handlers:
         # Per-session 當前 permission_mode — turn 開始時寫入,can_use_tool 每次
         # invocation 都讀 live 值,讓 user 中途切 mode 立刻生效。
         self._session_modes: dict[str, str] = {}
+        # Notifier 由 __main__ 在 RpcServer build 後注入(寫 stdout 無 id frame)。
+        # SchedulerEngine.fire / record_compaction 等背景事件透過這個推給 main。
+        self._notifier: Any = None
+        # 背景排程引擎(sidecar 開著時跑;ensure_engine 完成後第一次 send 順手 start)
+        self._scheduler = SchedulerEngine(self)
+        self._scheduler_started = False
+        self._scheduler_start_lock = asyncio.Lock()
 
     async def ensure_engine(self) -> AsyncEngine:
         # 加 lock 避免兩個 concurrent task 都跑 init_db → "table already exists"
@@ -242,7 +251,11 @@ class Handlers:
             return self._mcp
 
     async def shutdown(self) -> None:
-        """sidecar 退出時清理 MCP + browser sessions。"""
+        """sidecar 退出時清理 scheduler + MCP + browser sessions。"""
+        try:
+            await self._scheduler.stop()
+        except Exception:  # noqa: BLE001
+            pass
         await self._mcp.shutdown()
         # Close 所有開著的 Chrome instance(若有)
         try:
@@ -251,9 +264,40 @@ class Handlers:
         except ImportError:
             pass
 
+    def set_notifier(self, notifier: Any) -> None:
+        """由 __main__ 注入 RpcServer._write_frame,讓背景事件能推 frame 給 main。"""
+        self._notifier = notifier
+
+    async def notify(self, frame: dict[str, Any]) -> None:
+        """推一個 notification frame 給 main(無 id)。fallback 走 stderr log。"""
+        if self._notifier is None:
+            print(
+                f"[handlers] no notifier — dropping frame {frame.get('event')}",
+                file=__import__('sys').stderr, flush=True,
+            )
+            return
+        await self._notifier(frame)
+
+    async def ensure_scheduler_started(self) -> None:
+        if self._scheduler_started:
+            return
+        async with self._scheduler_start_lock:
+            if self._scheduler_started:
+                return
+            try:
+                await self._scheduler.start()
+                self._scheduler_started = True
+            except Exception as e:  # noqa: BLE001
+                import sys
+                print(
+                    f"[handlers] scheduler start failed: {e}",
+                    file=sys.stderr, flush=True,
+                )
+
     # ─── Dispatch table ─────────────────────────────────────────────────
     def methods(self) -> dict[str, Any]:
         return {
+            **schedule_handlers.bind_schedule_handlers(self),
             "ping": self.ping,
             "models.list": self.models_list,
             "conversation.create": self.conversation_create,
@@ -1434,6 +1478,43 @@ class Handlers:
             self._conversations.clear()
         yield {"event": "prefs_set", "data": {"key": key}, "final": True}
 
+    def _build_schedule_callbacks(
+        self, *, project_id: str | None,
+    ) -> dict[str, Any]:
+        """包 schedule_handlers RPC handlers 成 SDK callback signature。
+
+        SDK Tool 期望:`async fn(params: dict) -> dict`(raise on error)。
+        我們的 RPC handler 是 AsyncIterator yielding frames — 走 helper 轉換。
+        """
+        sched_methods = schedule_handlers.bind_schedule_handlers(self)
+
+        async def _run(name: str, params: dict[str, Any]) -> dict[str, Any]:
+            handler = sched_methods[name]
+            data: dict[str, Any] = {}
+            async for frame in handler(params):
+                if frame.get("event") == "error":
+                    err = frame.get("data") or {}
+                    code = err.get("code", "ERR")
+                    msg = err.get("message", "unknown")
+                    raise ValueError(f"{code}: {msg}")
+                if isinstance(frame.get("data"), dict):
+                    data = frame["data"]
+            return data
+
+        async def create(params: dict[str, Any]) -> dict[str, Any]:
+            # LLM 沒法自己知 project_id;若當前對話在 project 內,自動補
+            if project_id and params.get("scope") == "project" and "project_id" not in params:
+                params = {**params, "project_id": project_id}
+            return await _run("schedule.write", params)
+
+        async def listing(params: dict[str, Any]) -> dict[str, Any]:
+            return await _run("schedule.list", params)
+
+        async def deleting(params: dict[str, Any]) -> dict[str, Any]:
+            return await _run("schedule.delete", params)
+
+        return {"create": create, "list": listing, "delete": deleting}
+
     async def _build_conversation(
         self,
         *,
@@ -1460,8 +1541,16 @@ class Handlers:
         # Disabled tools list 從 prefs 讀(CSV)— 讓使用者在 Settings 開關各組
         disabled_raw = await storage.get_pref(engine, "disabled_tools") or ""
         disabled_set = {t.strip() for t in disabled_raw.split(",") if t.strip()}
+        # Schedule callbacks — 讓 LLM 在對話中設定排程。
+        # 「對話 → SKILL.md」走既有 `skillify` bundled skill + Write tool,
+        # 不需要另一個 SkillWrite tool。
+        schedule_callbacks = self._build_schedule_callbacks(project_id=project_id)
         tools = (
-            build_default_tool_set(asker=None, disabled_tools=disabled_set)
+            build_default_tool_set(
+                asker=None,
+                disabled_tools=disabled_set,
+                schedule_callbacks=schedule_callbacks,
+            )
             + [OpenUrlTool(), OpenPathTool()]
             + mcp.tools
         )
@@ -1597,6 +1686,7 @@ class Handlers:
         """從 DB 列當前 user 所有對話(by created_at desc)。"""
         engine = await self.ensure_engine()
         rows = await storage.list_sessions(engine)
+        scheduled_map = await storage.list_session_scheduled_by_map(engine)
         yield {
             "event": "conversation_list",
             "data": {
@@ -1608,6 +1698,14 @@ class Handlers:
                         "title": r.title,
                         "created_at": r.created_at,
                         "n_messages": r.n_messages,
+                        "scheduled_by": (
+                            {
+                                "schedule_id": scheduled_map[r.session_id]["id"],
+                                "schedule_name": scheduled_map[r.session_id]["name"],
+                            }
+                            if r.session_id in scheduled_map
+                            else None
+                        ),
                     }
                     for r in rows
                 ],

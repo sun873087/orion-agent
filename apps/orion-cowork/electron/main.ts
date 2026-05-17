@@ -107,6 +107,19 @@ app.whenReady().then(async () => {
   await sidecar.waitReady()
   console.log('[main] sidecar ready')
 
+  // Forward sidecar background notifications (排程觸發等) 給所有 renderer windows。
+  // 用法:renderer 透過 preload `window.scheduler.onFired(cb)` 訂閱。
+  sidecar.onNotification((frame) => {
+    const evt = frame.event as string | undefined
+    if (!evt) return
+    if (evt === 'scheduler.fired') {
+      const data = frame.data as Record<string, unknown> | undefined
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('scheduler:fired', data ?? {})
+      }
+    }
+  })
+
   // 2. 註冊 IPC
   ipcMain.on('agent:call', async (event, msg: { callId: string; method: string; params: Record<string, unknown> }) => {
     const channel = `agent-frame:${msg.callId}`
