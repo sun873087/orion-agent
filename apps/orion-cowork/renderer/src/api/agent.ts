@@ -80,10 +80,18 @@ export type SessionExt = {
   session_id: string
   workspace_dir: string | null
   project_id: string | null
+  /** Session 的最終 cwd(session override > project > app default)。
+   *  /export 等想實際寫檔到對話工作目錄的 caller 用這個。 */
+  resolved_cwd: string | null
 }
 
 export async function getSessionWorkspace(sessionId: string): Promise<SessionExt> {
-  let ext: SessionExt = { session_id: sessionId, workspace_dir: null, project_id: null }
+  let ext: SessionExt = {
+    session_id: sessionId,
+    workspace_dir: null,
+    project_id: null,
+    resolved_cwd: null,
+  }
   await window.agent.call(
     'conversation.get_workspace',
     { session_id: sessionId },

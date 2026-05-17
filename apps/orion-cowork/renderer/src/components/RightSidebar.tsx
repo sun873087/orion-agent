@@ -26,6 +26,9 @@ import { useSettingsStore } from '../store/settings'
 
 type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
+/** Stable empty array reference — selector fallback 用,避免每 render 回新陣列。 */
+const EMPTY_FILES: readonly string[] = Object.freeze([])
+
 function extractTodos(toolCalls: Array<{ toolName: string; input?: Record<string, unknown> }>): Todo[] {
   // 取最後一次 TodoWrite 的 input.todos 當當前狀態(每次 LLM 寫 todo 都會覆蓋整 list)
   for (let i = toolCalls.length - 1; i >= 0; i--) {
@@ -184,6 +187,12 @@ export function RightSidebar() {
     [messages],
   )
 
+  const sessionIdForExtras = useAgentStore((s) => s.sessionId)
+  // 常數 fallback:避免 selector 每次回新 []。Zustand 用 Object.is 比 reference,
+  // 新陣列每 render 都不同 → infinite re-render(Maximum update depth exceeded)。
+  const extraOutputFiles = useAgentStore((s) =>
+    sessionIdForExtras ? s.extraOutputFiles[sessionIdForExtras] ?? EMPTY_FILES : EMPTY_FILES,
+  )
   const todos = useMemo(() => extractTodos(allCalls), [allCalls])
   const workingFiles = useMemo(() => {
     // 工作資料夾:只顯結果產物 — wrote/edited 過濾 script;再補上 text 內的 output paths
@@ -197,8 +206,15 @@ export function RightSidebar() {
         seen.add(p)
       }
     }
+    // /export 等 UI 動作直接 push 進來的(非 tool 產生)— 也加進列表
+    for (const p of extraOutputFiles) {
+      if (!seen.has(p)) {
+        fromTools.push({ path: p, action: 'wrote' })
+        seen.add(p)
+      }
+    }
     return fromTools
-  }, [allCalls, allAssistantText])
+  }, [allCalls, allAssistantText, extraOutputFiles])
   const skills = useMemo(() => extractSkills(allCalls), [allCalls])
 
   return (

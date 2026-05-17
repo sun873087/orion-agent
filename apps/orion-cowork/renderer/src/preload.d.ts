@@ -21,6 +21,22 @@ interface OrionAgentApi {
 
 interface OrionDialogApi {
   selectFolder: () => Promise<string | null>
+  /** 寫 N 個檔到 {targetDir ?? ~/Downloads}/{bundleName}/ 下,自動 mkdir。
+   *  encoding='utf8' 寫文字、'base64' 寫二進位(decode 後)。
+   *  同名 bundleName 自動加 -1/-2 後綴。回 bundle 完整路徑(失敗回 null)。 */
+  saveBundle: (
+    bundleName: string,
+    files: Array<{ relPath: string; content: string; encoding: 'utf8' | 'base64' }>,
+    targetDir?: string,
+  ) => Promise<string | null>
+  /** 單檔寫入到 {targetDir ?? ~/Downloads}/{filename}。同名加 -1/-2 後綴。
+   *  encoding='utf8' 寫文字、'base64' 寫二進位。回實際寫入完整路徑。 */
+  saveFile: (
+    filename: string,
+    content: string,
+    encoding: 'utf8' | 'base64',
+    targetDir?: string,
+  ) => Promise<string | null>
 }
 
 interface OrionShellApi {

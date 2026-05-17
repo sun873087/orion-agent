@@ -1428,12 +1428,16 @@ class Handlers:
             return
         engine = await self.ensure_engine()
         ext = await storage.get_session_ext(engine, sid)
+        # Resolved cwd 走完整 fallback 鏈(session > project > app default),給
+        # /export 等需要實際路徑的 caller 用
+        resolved = await self._resolve_session_cwd(sid, engine)
         yield {
             "event": "session_ext",
             "data": {
                 "session_id": sid,
                 "workspace_dir": ext["workspace_dir"],
                 "project_id": ext["project_id"],
+                "resolved_cwd": str(resolved) if resolved else None,
             },
             "final": True,
         }

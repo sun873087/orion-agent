@@ -7,8 +7,8 @@
  */
 
 import { BrowserWindow, app, dialog, ipcMain, nativeImage, session, shell } from 'electron'
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, promises as fsPromises } from 'node:fs'
+import { join, parse, resolve } from 'node:path'
 
 /**
  * Dev mode 載 build/icon.png — 讓 Dock(macOS)/ taskbar(Win/Linux)顯
@@ -148,6 +148,69 @@ app.whenReady().then(async () => {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  // 單檔寫入(/export 打包 .zip 走這個)— 寫進 {targetDir ?? ~/Downloads}/{filename},
+  // encoding='utf8' 寫文字、'base64' 寫二進位。同名加 -1 / -2 後綴避碰。
+  ipcMain.handle(
+    'dialog:saveFile',
+    async (
+      _e,
+      filename: string,
+      content: string,
+      encoding: 'utf8' | 'base64',
+      targetDir?: string,
+    ) => {
+      const base = targetDir && targetDir.trim() ? targetDir : app.getPath('downloads')
+      await fsPromises.mkdir(base, { recursive: true })
+      let dest = join(base, filename)
+      let i = 1
+      while (existsSync(dest)) {
+        const { name, ext } = parse(filename)
+        dest = join(base, `${name}-${i}${ext}`)
+        i++
+      }
+      if (encoding === 'base64') {
+        await fsPromises.writeFile(dest, Buffer.from(content, 'base64'))
+      } else {
+        await fsPromises.writeFile(dest, content, 'utf-8')
+      }
+      return dest
+    },
+  )
+
+  // Export 資料夾(舊版 — 留著未用,未來可刪)— 一次寫 N 個檔到 {targetDir}/{bundleName}/。
+  // files 結構:[{ relPath: 'sub/dir/file.ext', content: '...', encoding: 'utf8'|'base64' }]
+  ipcMain.handle(
+    'dialog:saveBundle',
+    async (
+      _e,
+      bundleName: string,
+      files: Array<{ relPath: string; content: string; encoding: 'utf8' | 'base64' }>,
+      targetDir?: string,
+    ) => {
+      // 預設 ~/Downloads;caller 給了 targetDir(例:對話的 workspace_dir)就寫去那
+      const base = targetDir && targetDir.trim() ? targetDir : app.getPath('downloads')
+      // 確保 base dir 存在(workspace_dir 可能剛建還沒實體化)
+      await fsPromises.mkdir(base, { recursive: true })
+      let bundleDir = join(base, bundleName)
+      let i = 1
+      while (existsSync(bundleDir)) {
+        bundleDir = join(base, `${bundleName}-${i}`)
+        i++
+      }
+      await fsPromises.mkdir(bundleDir, { recursive: true })
+      for (const f of files) {
+        const fullPath = join(bundleDir, f.relPath)
+        await fsPromises.mkdir(parse(fullPath).dir, { recursive: true })
+        if (f.encoding === 'base64') {
+          await fsPromises.writeFile(fullPath, Buffer.from(f.content, 'base64'))
+        } else {
+          await fsPromises.writeFile(fullPath, f.content, 'utf-8')
+        }
+      }
+      return bundleDir
+    },
+  )
 
   // 3. 開窗
   await createWindow()

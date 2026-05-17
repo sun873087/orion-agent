@@ -13,6 +13,21 @@ const dialogApi = {
   selectFolder: async (): Promise<string | null> => {
     return ipcRenderer.invoke('dialog:selectFolder')
   },
+  saveBundle: async (
+    bundleName: string,
+    files: Array<{ relPath: string; content: string; encoding: 'utf8' | 'base64' }>,
+    targetDir?: string,
+  ): Promise<string | null> => {
+    return ipcRenderer.invoke('dialog:saveBundle', bundleName, files, targetDir)
+  },
+  saveFile: async (
+    filename: string,
+    content: string,
+    encoding: 'utf8' | 'base64',
+    targetDir?: string,
+  ): Promise<string | null> => {
+    return ipcRenderer.invoke('dialog:saveFile', filename, content, encoding, targetDir)
+  },
 }
 
 const shellApi = {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
+  Download,
   FastForward,
   Hand,
   Layers,
@@ -17,6 +18,7 @@ import {
 import type { Attachment } from '../api/agent'
 import { fetchModels, setPermissionMode as rpcSetPermissionMode, sttTranscribe } from '../api/agent'
 import { useCompactConversation } from '../hooks/useAgent'
+import { exportAllSessions } from '../lib/exportTranscript'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore, type PermissionMode } from '../store/settings'
@@ -41,6 +43,16 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: '/compact',
     icon: Layers,
     subtitle: '壓縮對話歷史,釋出 context tokens',
+  },
+  {
+    name: '/add-files',
+    icon: Paperclip,
+    subtitle: '開啟檔案選擇器加 attachments',
+  },
+  {
+    name: '/export',
+    icon: Download,
+    subtitle: '把全部對話匯出到 ~/Downloads (markdown + JSON + 附件)',
   },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
@@ -97,19 +109,45 @@ export function InputBox({ onSend, onAbort }: Props) {
   const canSend =
     !busy && !compacting && inputReady && (text.trim().length > 0 || attachments.length > 0)
 
+  /** Slash command 分派 — 不送 prompt,直接執行對應動作。Tab 補字 + Enter
+   *  popover 選 + handleSubmit 精準匹配三個入口都走這。 */
+  async function executeSlashCommand(name: string): Promise<void> {
+    setText('')
+    setAttachError(null)
+    if (textareaRef.current) textareaRef.current.value = ''
+    autoResize()
+    if (name === '/compact') {
+      await triggerCompact()
+    } else if (name === '/add-files') {
+      fileInputRef.current?.click()
+    } else if (name === '/export') {
+      try {
+        const sid = useAgentStore.getState().sessionId
+        const savedPath = await exportAllSessions(sid)
+        if (savedPath && sid) {
+          console.log('[export] saved to', savedPath)
+          // Per-session 紀錄到 RightSidebar 工作資料夾
+          useAgentStore.getState().addExtraOutputFile(sid, savedPath)
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setAttachError(`匯出失敗:${msg}`)
+      }
+    }
+  }
+
   async function handleSubmit() {
     if (!canSend) return
     const payload = text
     const att = attachments
-    // /compact slash command — 不送 prompt,直接觸發壓縮
     const trimmed = payload.trim()
-    if (trimmed === '/compact' && !att.length) {
-      setText('')
-      setAttachError(null)
-      if (textareaRef.current) textareaRef.current.value = ''
-      autoResize()
-      await triggerCompact()
-      return
+    // 精準匹配 slash command(無 attachment 時)— 例:user 打完整 /compact 按 Enter
+    if (!att.length && trimmed.startsWith('/')) {
+      const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed)
+      if (cmd) {
+        await executeSlashCommand(cmd.name)
+        return
+      }
     }
     setText('')
     setAttachments([])
@@ -351,6 +389,13 @@ export function InputBox({ onSend, onAbort }: Props) {
                 if (e.key === 'Tab') {
                   e.preventDefault()
                   pickSlash(slashMatches[slashIdx])
+                  return
+                }
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  // Popover 內 Enter = 執行 highlighted 命令(不是送 prompt)
+                  e.preventDefault()
+                  const cmd = slashMatches[slashIdx]
+                  if (cmd) void executeSlashCommand(cmd.name)
                   return
                 }
                 if (e.key === 'Escape') {

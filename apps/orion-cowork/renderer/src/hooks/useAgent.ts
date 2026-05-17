@@ -151,6 +151,7 @@ export function useRegenerate() {
       useAgentStore.getState().endAssistantMessage(assistantId)
       useAgentStore.getState().setBusy(false)
       refreshSessions()
+      if (sid) void backfillMessageIndices(sid)
     }
   }, [])
 }
@@ -241,6 +242,8 @@ export function useSendPrompt() {
         state.setPendingQuestion(null)
       }
       refreshSessions()
+      // 補新訊息的 messageIndex,讓 edit / delete 立刻可用,不必等切換對話
+      if (sid) void backfillMessageIndices(sid)
     }
   }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel])
 }
@@ -411,6 +414,41 @@ async function reloadCurrentMessages(sid: string): Promise<void> {
   }
 }
 
+/** Turn 結束後給 streaming-new 訊息補 messageIndex / compacted / kind。
+ *
+ *  跟 reloadCurrentMessages 不同 — 不重建整個 messages 陣列(避免訊息物件
+ *  identity 改變,造成 React 重 mount + 圖片 lazy reload 閃爍)。只 patch
+ *  缺欄位,讓 streaming 出來的 user / assistant 也能取得 DB row index,
+ *  之後 edit / delete 按鈕就會出現。
+ *
+ *  Positional merge:第 i 筆 current ↔ 第 i 筆 loaded。長度不齊就略過尾段。 */
+async function backfillMessageIndices(sid: string): Promise<void> {
+  try {
+    const loaded = await loadMessages(sid)
+    const current = useAgentStore.getState().messages
+    const updated = current.map((m, i) => {
+      const l = loaded[i]
+      if (!l) return m
+      if (
+        typeof m.messageIndex === 'number' &&
+        m.compacted === (l.compacted || undefined) &&
+        m.kind === l.kind
+      ) {
+        return m
+      }
+      return {
+        ...m,
+        messageIndex: typeof m.messageIndex === 'number' ? m.messageIndex : l.message_index,
+        compacted: m.compacted ?? l.compacted ?? undefined,
+        kind: m.kind ?? l.kind,
+      }
+    })
+    useAgentStore.setState({ messages: updated })
+  } catch {
+    // 失敗略過 — 下次 reload 還有機會;不擋 UI
+  }
+}
+
 /** 刪除指定 messageIndex(含)以後的對話。Cache 影響:被刪 prefix 後段 cache 失效。 */
 export function useDeleteFrom() {
   return useCallback(async (messageIndex: number) => {
@@ -480,6 +518,7 @@ export function useEditAndResend() {
         st.endAssistantMessage(assistantId)
         st.setBusy(false)
         refreshSessions()
+        if (sid) void backfillMessageIndices(sid)
       }
     },
     [permissionMode, locale],

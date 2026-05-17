@@ -108,6 +108,11 @@ type AgentState = {
   /** 對話壓縮進行中(UI 顯 banner)。 */
   compacting: boolean
   setCompacting: (v: boolean) => void
+  /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
+   *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
+   *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
+  extraOutputFiles: Record<string, string[]>
+  addExtraOutputFile: (sessionId: string, path: string) => void
   /** 壓縮完成 — 把現有訊息標 compacted(灰化,不再 LLM 可見)+ 插入 summary card。
    *  `liveTailCount` 是要保留不標 compacted 的尾端訊息數
    *  (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
@@ -163,6 +168,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   sessions: [],
   pendingQuestion: null,
   compacting: false,
+  extraOutputFiles: {},
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -317,6 +323,17 @@ export const useAgentStore = create<AgentState>((set) => ({
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
 
   setCompacting: (v) => set({ compacting: v }),
+  addExtraOutputFile: (sessionId, path) =>
+    set((s) => {
+      const cur = s.extraOutputFiles[sessionId] ?? []
+      if (cur.includes(path)) return s
+      return {
+        extraOutputFiles: {
+          ...s.extraOutputFiles,
+          [sessionId]: [...cur, path],
+        },
+      }
+    }),
   applyCompactComplete: (summary, beforeTokens, liveTailCount) => {
     set((s) => {
       const all = s.messages
