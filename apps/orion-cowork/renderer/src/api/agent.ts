@@ -43,6 +43,10 @@ export type SidecarEvent =
         skipped?: boolean
       }
     }
+  | {
+      event: 'truncate_complete'
+      data: { session_id: string; removed: number; resend: boolean }
+    }
   | { event: string; data?: unknown; final?: boolean }
 
 export type AskOption = { label: string; description?: string }
@@ -375,6 +379,37 @@ export async function sendPrompt(
       onEvent(frame as unknown as SidecarEvent)
     },
   )
+}
+
+/** 從指定 message_index 起 truncate;有 resendText 就重跑 send,沒給就純 delete。
+ *  Cache 影響:被刪 message 以後的 prefix 變了 → BP3 / BP4 cache 失效,要重寫。 */
+export async function truncateConversation(
+  sessionId: string,
+  messageIndex: number,
+  onEvent: (ev: SidecarEvent) => void,
+  opts?: {
+    resendText?: string
+    resendImages?: Attachment[]
+    permissionMode?: PermissionMode
+    locale?: string
+  },
+): Promise<void> {
+  const params: Record<string, unknown> = {
+    session_id: sessionId,
+    message_index: messageIndex,
+  }
+  if (opts?.resendText) params.resend_text = opts.resendText
+  if (opts?.resendImages?.length) {
+    params.resend_images = opts.resendImages.map((a) => ({
+      media_type: a.media_type,
+      data: a.data,
+    }))
+  }
+  if (opts?.permissionMode) params.permission_mode = opts.permissionMode
+  if (opts?.locale) params.locale = opts.locale
+  await window.agent.call('conversation.truncate', params, (frame) => {
+    onEvent(frame as unknown as SidecarEvent)
+  })
 }
 
 /** 手動觸發對話壓縮 — UI 攔到 /compact 後呼叫。force=true 跳過 threshold 直接壓。

@@ -277,6 +277,7 @@ class Handlers:
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
             "conversation.regenerate": self.conversation_regenerate,
+            "conversation.truncate": self.conversation_truncate,
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
@@ -1937,6 +1938,137 @@ class Handlers:
             "final": True,
         }
 
+    async def conversation_truncate(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """從指定 message_index(含)起 truncate 對話 — edit / delete 都走這。
+
+        Params:
+          session_id: 必填
+          message_index: raw row index(對齊 load_raw_messages 順序);
+                         renderer 的 message.messageIndex
+          resend_text (optional): 給了就 truncate 後重跑 send(=edit & resend)
+          resend_images (optional): 同上,attachments
+          permission_mode (optional): resend 時帶的模式
+
+        Pre-conditions:
+          - message_index 對應的 row 不能是 compacted_out=true(renderer 端 UI
+            應禁止;這裡也防一層)
+
+        Cache impact:
+          - state_messages 從該 idx 起被砍,prefix 改變 → BP3 / BP4 cache 全失效
+          - BP1(tools+system_E0)、BP2(system_E1)不變
+        """
+        sid = params.get("session_id")
+        msg_idx = params.get("message_index")
+        if sid is None or not isinstance(msg_idx, int):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id + message_index required"},
+                "final": True,
+            }
+            return
+        try:
+            UUID(sid)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": f"invalid UUID: {sid!r}"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        # DB layer truncate(只刪 raw_index 以後 row)
+        try:
+            removed = await storage.truncate_messages_from(
+                engine, sid, raw_index=msg_idx,
+            )
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "TRUNCATE_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+
+        # 同步 in-memory conv:用 active loader 重建 state_messages
+        conv = self._conversations.get(sid)
+        if conv is not None:
+            conv.state_messages = await storage.load_active_messages_for_llm(engine, sid)
+
+        # 沒 resend_text → 純 delete,emit ack 給 renderer reload UI
+        resend_text = params.get("resend_text")
+        if not isinstance(resend_text, str) or not resend_text.strip():
+            yield {
+                "event": "truncate_complete",
+                "data": {"session_id": sid, "removed": removed, "resend": False},
+                "final": True,
+            }
+            return
+
+        # 有 resend_text → 走 send 流程
+        if conv is None:
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        # 重組 images(沿用 conversation_send 邏輯)
+        from orion_model.types import ImageBlock
+        images: list[Any] = []
+        raw_atts = params.get("resend_images") or []
+        if isinstance(raw_atts, list):
+            for a in raw_atts:
+                if not isinstance(a, dict):
+                    continue
+                media_type = a.get("media_type") or "image/png"
+                data = a.get("data")
+                if not isinstance(data, str) or not data:
+                    continue
+                try:
+                    images.append(ImageBlock(media_type=media_type, data=data))
+                except Exception:  # noqa: BLE001
+                    continue
+
+        # 先發 truncate_complete 讓 UI 清舊訊息,再 send 串流新 turn
+        yield {
+            "event": "truncate_complete",
+            "data": {"session_id": sid, "removed": removed, "resend": True},
+        }
+
+        permission_mode = params.get("permission_mode", "act")
+        self._session_modes[sid] = permission_mode
+
+        before_count = len(conv.state_messages)
+        ctx_cwd = await self._resolve_session_cwd(sid, engine)
+        ctx_kwargs: dict[str, Any] = dict(
+            feature_flags=load_feature_flags(),
+            user_id=storage.LOCAL_USER_ID,
+        )
+        if ctx_cwd is not None:
+            ctx_kwargs["cwd"] = ctx_cwd
+        ctx = AgentContext(**ctx_kwargs)
+        self._aborts[sid] = ctx
+        try:
+            async for ev in conv.send(resend_text, ctx=ctx, images=images or None):
+                frame = to_rpc_frame(ev)
+                if frame is not None:
+                    yield frame
+        finally:
+            self._aborts.pop(sid, None)
+            new_msgs = conv.state_messages[before_count:]
+            if new_msgs:
+                try:
+                    await storage.append_messages(engine, sid, new_msgs)
+                except Exception:  # noqa: BLE001
+                    pass
+
     async def conversation_regenerate(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
@@ -2281,6 +2413,19 @@ def _to_ui_messages_from_raw(
                 "message_index": first_idx,
                 "compacted": merged_compacted,
             })
+
+    # ─── Position-based 防呆 ──────────────────────────────────────────────
+    # 任何在最後一張 compact-summary card 之前的 user / assistant message,
+    # 一律標 compacted=True。萬一 metadata_json.compacted_out 沒寫好(舊資料
+    # 或 update race),UI 仍能正確淡化 + 隱藏 edit/delete。
+    last_summary_idx = -1
+    for idx, msg in enumerate(out):
+        if msg.get("kind") == "compact-summary":
+            last_summary_idx = idx
+    if last_summary_idx > 0:
+        for idx in range(last_summary_idx):
+            if out[idx].get("role") in ("user", "assistant"):
+                out[idx]["compacted"] = True
     return out
 
 

@@ -17,6 +17,7 @@ import {
   loadMessages,
   regenerateLast,
   sendPrompt as rpcSendPrompt,
+  truncateConversation as rpcTruncate,
   type Attachment,
   type LoadedMessage,
   type SidecarEvent,
@@ -114,6 +115,7 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
     compacted: m.compacted || undefined,
     kind: m.kind,
     beforeTokens: m.before_tokens,
+    messageIndex: m.message_index,
     createdAt: Date.now(),
   }))
   useAgentStore.setState({ messages })
@@ -396,6 +398,92 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
       break
     }
   }
+}
+
+/** 從 DB 重新載入當前 session 的訊息(delete 後 / 編輯後同步 UI 用)。 */
+async function reloadCurrentMessages(sid: string): Promise<void> {
+  try {
+    const loaded = await loadMessages(sid)
+    _hydrateMessages(sid, loaded)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    useAgentStore.getState().setError(msg)
+  }
+}
+
+/** 刪除指定 messageIndex(含)以後的對話。Cache 影響:被刪 prefix 後段 cache 失效。 */
+export function useDeleteFrom() {
+  return useCallback(async (messageIndex: number) => {
+    const store = useAgentStore.getState()
+    const sid = store.sessionId
+    if (!sid || store.busy || store.compacting) return
+    // Optimistic UI:先把該 message 含以後砍掉
+    const cut = store.messages.findIndex((m) => m.messageIndex === messageIndex)
+    if (cut >= 0) {
+      useAgentStore.setState({ messages: store.messages.slice(0, cut) })
+    }
+    try {
+      await rpcTruncate(sid, messageIndex, () => {
+        /* 純 delete 不需要 streaming events */
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(msg)
+    }
+    // Reload 對齊 DB 真實狀態 + 補上其他訊息的 messageIndex
+    await reloadCurrentMessages(sid)
+    refreshSessions()
+  }, [])
+}
+
+/** 編輯 user 訊息並重送 — truncate + resend。前段保留,後段重新生成。 */
+export function useEditAndResend() {
+  const permissionMode = useSettingsStore((s) => s.permissionMode)
+  const locale = useSettingsStore((s) => s.locale)
+  return useCallback(
+    async (messageIndex: number, newText: string, attachments?: Attachment[]) => {
+      const store = useAgentStore.getState()
+      const sid = store.sessionId
+      if (!sid || store.busy || store.compacting) return
+      // Optimistic UI:砍舊 → push 新 user msg + assistant skeleton
+      const cut = store.messages.findIndex((m) => m.messageIndex === messageIndex)
+      const head = cut >= 0 ? store.messages.slice(0, cut) : store.messages
+      useAgentStore.setState({ messages: head })
+      store.appendUserMessage(
+        newText,
+        (attachments ?? []).map((a) => ({
+          previewUrl: a.preview_url || `data:${a.media_type};base64,${a.data}`,
+          filename: a.filename || 'image',
+          media_type: a.media_type,
+        })),
+      )
+      const assistantId = store.beginAssistantMessage()
+      store.setError(null)
+      store.setBusy(true)
+      try {
+        await rpcTruncate(
+          sid,
+          messageIndex,
+          (ev: SidecarEvent) => applyEvent(assistantId, ev),
+          {
+            resendText: newText,
+            resendImages: attachments,
+            permissionMode,
+            locale,
+          },
+        )
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        useAgentStore.getState().setError(msg)
+      } finally {
+        const st = useAgentStore.getState()
+        st.endAssistantMessage(assistantId)
+        st.setBusy(false)
+        refreshSessions()
+      }
+    },
+    [permissionMode, locale],
+  )
 }
 
 /** /compact 攔截 — InputBox 偵測到輸入文字是 /compact 時呼叫。

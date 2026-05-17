@@ -481,22 +481,30 @@ async def record_compaction(
     (給 LLM 看的版本會 filter 掉)。`tombstone_msg`:role=user 含單一 TombstoneBlock
     的訊息,append 在最後當分隔線。
 
+    Tombstone 的 created_at 會被刻意設成「最後一筆 compacted row」和「第一筆 kept
+    row」之間,讓 chronological 排序剛好夾在中間 — UI / LLM resume 都依
+    created_at 排,這樣 summary card 才會出現在壓縮點上,不會跑到最後。
+
     image blob 故意不 GC — 舊訊息 row 仍存在,UI scroll 回去要能看到原圖。
     """
+    from datetime import timedelta
+
     from sqlalchemy import update
 
     blob = get_blob_store()
     async with db_session(engine) as s:
-        # 取前 compacted_count 筆 row id(chronological 順序)
+        # 取前 compacted_count 筆 row id + 它們的 created_at
         stmt = (
-            select(MessageRow.id, MessageRow.metadata_json)
+            select(MessageRow.id, MessageRow.metadata_json, MessageRow.created_at)
             .where(MessageRow.session_id == session_id)
             .order_by(MessageRow.created_at, MessageRow.id)
             .limit(compacted_count)
         )
         rows = list(await s.execute(stmt))
 
-        for row_id, meta in rows:
+        last_compacted_at = None
+        for row_id, meta, created_at in rows:
+            last_compacted_at = created_at
             new_meta = dict(meta) if isinstance(meta, dict) else {}
             new_meta["compacted_out"] = True
             await s.execute(
@@ -505,6 +513,28 @@ async def record_compaction(
                 .values(metadata_json=new_meta)
             )
 
+        # 第 (compacted_count+1) 筆 row 的 created_at = 第一筆 kept(若有)
+        first_kept_at = None
+        if last_compacted_at is not None:
+            first_kept_stmt = (
+                select(MessageRow.created_at)
+                .where(MessageRow.session_id == session_id)
+                .order_by(MessageRow.created_at, MessageRow.id)
+                .offset(compacted_count)
+                .limit(1)
+            )
+            row = (await s.execute(first_kept_stmt)).first()
+            first_kept_at = row[0] if row else None
+
+        # 算 tombstone 的 created_at
+        tombstone_at = None
+        if last_compacted_at is not None and first_kept_at is not None:
+            # 夾在中間
+            tombstone_at = last_compacted_at + (first_kept_at - last_compacted_at) / 2
+        elif last_compacted_at is not None:
+            # 沒 kept(全壓掉,理論上 SDK 會擋,保險加)→ last_compacted 後 1µs
+            tombstone_at = last_compacted_at + timedelta(microseconds=1)
+
         # Append tombstone row(role=user, content=[TombstoneBlock dict])
         content = tombstone_msg.content
         if isinstance(content, str):
@@ -512,12 +542,58 @@ async def record_compaction(
         else:
             content_value = [b.model_dump(mode="json") for b in content]
             content_value = _persist_image_blocks(content_value, blob)
-        s.add(MessageRow(
+        row_kwargs: dict[str, Any] = dict(
             session_id=session_id,
             role=tombstone_msg.role,
             content_json=content_value,
-        ))
+        )
+        if tombstone_at is not None:
+            row_kwargs["created_at"] = tombstone_at
+        s.add(MessageRow(**row_kwargs))
         await s.commit()
+
+
+async def truncate_messages_from(
+    engine: AsyncEngine,
+    session_id: str,
+    *,
+    raw_index: int,
+) -> int:
+    """從 chronological 第 N 筆 row 開始,把那筆與之後的全部 delete。
+
+    `raw_index` 對齊 `load_raw_messages` 回傳順序(create_at + id),也就是
+    `_to_ui_messages_from_raw` 給每筆 UI 訊息標的 message_index。
+
+    Compacted_out=true 的 row 永遠在前面(壓縮點之前),所以從合理的 raw_index
+    truncate 不會誤刪它們。Caller 端 UI 也應禁止對 compacted 訊息按刪除。
+
+    回傳被刪 row 數;順便 unlink 被刪 row 引用的 image blob。
+    """
+    async with db_session(engine) as s:
+        stmt = (
+            select(MessageRow.id)
+            .where(MessageRow.session_id == session_id)
+            .order_by(MessageRow.created_at, MessageRow.id)
+        )
+        all_ids: list[str] = [row_id for (row_id,) in await s.execute(stmt)]
+        if raw_index < 0 or raw_index >= len(all_ids):
+            return 0
+        to_delete = all_ids[raw_index:]
+        # 撈 blob_ids 再 unlink
+        old_rows = await s.execute(
+            select(MessageRow.content_json).where(MessageRow.id.in_(to_delete))
+        )
+        blob_ids = _collect_blob_ids([cj for (cj,) in old_rows])
+        for row_id in to_delete:
+            await s.execute(delete(MessageRow).where(MessageRow.id == row_id))
+        await s.commit()
+    blob = get_blob_store()
+    for bid in blob_ids:
+        try:
+            blob.delete(bid)
+        except Exception:  # noqa: BLE001
+            pass
+    return len(to_delete)
 
 
 async def load_active_messages_for_llm(

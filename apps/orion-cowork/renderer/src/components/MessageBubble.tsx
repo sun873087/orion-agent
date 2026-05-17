@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, ChevronDown, ChevronUp, Copy, User, Sparkles, Info, ImageIcon, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
-import { useRegenerate } from '../hooks/useAgent'
+import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
@@ -61,10 +61,21 @@ export function MessageBubble({
   // user 或 assistant
   const isUser = message.role === 'user'
   // Compact 前的舊訊息 — UI 灰化、淡化,讓使用者知道「LLM 已看不到這段」,
-  // 但仍 scroll 看得到原始內容。title attribute 在 hover 時提示。
+  // 但仍 scroll 看得到原始內容。grayscale 抹掉藍色 user bubble,opacity-60
+  // 讓對比降下來;hover 時恢復一些讓 user 看得清。title 提供 tooltip 解釋。
   const compactedClass = message.compacted
-    ? 'opacity-50 grayscale-[0.4] transition-opacity hover:opacity-80'
+    ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
+  const [editing, setEditing] = useState(false)
+  const busy = useAgentStore((s) => s.busy)
+  const editResend = useEditAndResend()
+  const deleteFrom = useDeleteFrom()
+  // 能編輯/刪除的條件:有 DB index、非 compacted、非 streaming 中、整體沒在跑
+  const canMutate =
+    typeof message.messageIndex === 'number' &&
+    !message.compacted &&
+    !message.streaming &&
+    !busy
 
   return (
     <div
@@ -82,7 +93,20 @@ export function MessageBubble({
           </div>
         )}
         {isUser
-          ? message.text && <UserMessageBubble text={message.text} />
+          ? editing && typeof message.messageIndex === 'number'
+            ? (
+                <EditableUserBubble
+                  initialText={message.text}
+                  onCancel={() => setEditing(false)}
+                  onSave={async (newText) => {
+                    setEditing(false)
+                    if (newText.trim() && newText !== message.text) {
+                      await editResend(message.messageIndex!, newText)
+                    }
+                  }}
+                />
+              )
+            : message.text && <UserMessageBubble text={message.text} />
           : message.blocks && message.blocks.length > 0
             ? // 新版:依 LLM emit 順序 inline render text + tool groups
               message.blocks.map((b, i) => {
@@ -149,12 +173,30 @@ export function MessageBubble({
             messageText={message.text}
           />
         )}
-        {/* Action row(Copy + optional Regenerate)— streaming 中不顯,避免閃 */}
-        {message.text && !message.streaming && (
+        {/* Action row(Copy + Edit + Delete + 可能 Regenerate)— streaming 中 / 編輯中不顯 */}
+        {message.text && !message.streaming && !editing && (
           <div className={`mt-1 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <CopyButton text={message.text} />
-            {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。
-             *  Compacted 訊息 LLM context 已抽掉原 user prompt,點重新生成沒意義。 */}
+            {isUser && canMutate && (
+              <ActionButton
+                icon={<Pencil size={12} />}
+                label="編輯"
+                onClick={() => setEditing(true)}
+              />
+            )}
+            {canMutate && (
+              <ActionButton
+                icon={<Trash2 size={12} />}
+                label="刪除"
+                onClick={async () => {
+                  if (confirm('刪除這條訊息以及之後所有對話?(無法復原)')) {
+                    await deleteFrom(message.messageIndex!)
+                  }
+                }}
+                danger
+              />
+            )}
+            {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
         )}
@@ -167,12 +209,37 @@ function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   async function copy() {
+    // 1) 優先用 navigator.clipboard API
     try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+        return
+      }
     } catch {
-      // 罕見:剪貼簿被拒(non-secure context 等);無提示但不炸
+      // fall through to textarea fallback
+    }
+    // 2) Fallback:離畫面 textarea + execCommand
+    //    某些 Electron build / file:// 載入下 navigator.clipboard 不可用,
+    //    或 reject 沒 user gesture(雖然是 onClick 本身就是 gesture)
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      ta.style.pointerEvents = 'none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }
+    } catch {
+      // 兩種都失敗就放棄,不炸
     }
   }
   return (
@@ -226,6 +293,114 @@ function UserMessageBubble({ text }: { text: string }) {
           <span>{expanded ? t('message.collapse') : t('message.expand')}</span>
         </button>
       )}
+    </div>
+  )
+}
+
+function ActionButton({
+  icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void | Promise<void>
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void onClick()
+      }}
+      title={label}
+      className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover ${
+        danger ? 'hover:text-error' : 'hover:text-fg-base'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  )
+}
+
+/** 編輯模式的 user message bubble — textarea + Save/Cancel。Enter 送出,Shift+Enter 換行。 */
+function EditableUserBubble({
+  initialText,
+  onSave,
+  onCancel,
+}: {
+  initialText: string
+  onSave: (newText: string) => void | Promise<void>
+  onCancel: () => void
+}) {
+  const [text, setText] = useState(initialText)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const composingRef = useRef(false)
+
+  useEffect(() => {
+    // 進編輯模式自動 focus + cursor 移到尾
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 300) + 'px'
+  }, [])
+
+  function autoResize() {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 300) + 'px'
+  }
+
+  return (
+    <div className="flex w-full flex-col gap-2 rounded-2xl rounded-tr-sm bg-accent/90 p-3">
+      <textarea
+        ref={ref}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          autoResize()
+        }}
+        onCompositionStart={() => { composingRef.current = true }}
+        onCompositionEnd={() => { composingRef.current = false }}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || composingRef.current) return
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+            return
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            void onSave(text)
+          }
+        }}
+        rows={1}
+        className="scrollbar-thin max-h-[300px] w-full resize-none bg-transparent text-sm text-white placeholder:text-white/60 focus:outline-none"
+      />
+      <div className="flex items-center justify-end gap-2 text-xs">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-white/80 hover:bg-white/10 hover:text-white"
+        >
+          <XIcon size={12} />
+          <span>取消</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void onSave(text)}
+          disabled={!text.trim()}
+          className="flex items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-white hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Check size={12} />
+          <span>送出</span>
+        </button>
+      </div>
     </div>
   )
 }

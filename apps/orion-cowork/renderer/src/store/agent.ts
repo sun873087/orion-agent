@@ -75,6 +75,9 @@ export type Message = {
   beforeTokens?: number
   /** Compact 前的舊訊息 — UI 灰化,但仍 scroll 看得到(LLM 看不到)。 */
   compacted?: boolean
+  /** 對齊 DB row 的 raw index — 由 _to_ui_messages_from_raw 給,edit/delete RPC 用。
+   *  Live 串流出來的 message 沒有,要 reload 才會填上。 */
+  messageIndex?: number
   createdAt: number
 }
 
