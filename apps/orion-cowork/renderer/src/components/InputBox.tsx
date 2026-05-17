@@ -12,6 +12,7 @@ import {
   Paperclip,
   Repeat,
   Send,
+  Target,
   Sparkles,
   Square,
   X,
@@ -95,6 +96,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
     subtitle: '在此對話定期重跑 — 例:/loop 5m 檢查 PR',
     argsHint: '[interval] <prompt>',
   },
+  {
+    name: '/goal',
+    icon: Target,
+    subtitle: '持續推進到達標自動停 — 例:/goal 把測試跑到全綠',
+    argsHint: '<objective>',
+  },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
 // Provider 限制(最嚴的是 Anthropic 5 MB base64);壓到 base64 < 4 MB 留 safety margin
@@ -129,11 +136,15 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [skillSlashes, setSkillSlashes] = useState<SlashCommand[]>([])
   useEffect(() => {
     let cancelled = false
+    // Client slash 已寫死 /loop /goal 等(自帶 argsHint 跟更精準的 subtitle),
+    // 同名 skill 從動態列表過濾掉避免 popover key 撞、UX 重複。
+    const clientNames = new Set(SLASH_COMMANDS.map((c) => c.name))
     listSkills(null)
       .then((r) => {
         if (cancelled) return
         const cmds: SlashCommand[] = r.skills
           .filter((s) => (s as SkillListItem & { cowork_visible?: boolean }).cowork_visible !== false)
+          .filter((s) => !clientNames.has('/' + s.name))
           .map((s) => ({
             name: '/' + s.name,
             icon: Sparkles,
