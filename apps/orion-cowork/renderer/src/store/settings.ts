@@ -89,6 +89,13 @@ type SettingsState = {
   setSidebarSearchQuery: (q: string) => void
   toggleRightSidebar: () => void
 
+  /** 自動壓縮對話歷史 — context 用量超過 threshold 時觸發。 */
+  autoCompactEnabled: boolean
+  /** Auto-compact 觸發比例(0.1~0.99,預設 0.8 = 80%)。 */
+  autoCompactThreshold: number
+  setAutoCompactEnabled: (v: boolean) => void
+  setAutoCompactThreshold: (v: number) => void
+
   /** 當前選中的 project filter。null = 不 filter(顯所有 sessions)。 */
   activeProjectId: string | null
   /** New Project modal 開關。 */
@@ -124,6 +131,8 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarSearchOpen: false,
       sidebarSearchQuery: '',
       rightSidebarOpen: false,
+      autoCompactEnabled: true,
+      autoCompactThreshold: 0.8,
       activeProjectId: null,
       newProjectOpen: false,
       editingProjectId: null,
@@ -170,6 +179,12 @@ export const useSettingsStore = create<SettingsState>()(
       toggleRightSidebar: () =>
         set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen })),
 
+      setAutoCompactEnabled: (v) => set({ autoCompactEnabled: v }),
+      setAutoCompactThreshold: (v) => {
+        const clamped = Math.min(0.99, Math.max(0.1, v))
+        set({ autoCompactThreshold: Math.round(clamped * 100) / 100 })
+      },
+
       setActiveProjectId: (id) => set({ activeProjectId: id }),
       openNewProject: () => set({ newProjectOpen: true }),
       closeNewProject: () => set({ newProjectOpen: false }),
@@ -189,6 +204,8 @@ export const useSettingsStore = create<SettingsState>()(
         openaiSttModel: s.openaiSttModel,
         sidebarCollapsed: s.sidebarCollapsed,
         rightSidebarOpen: s.rightSidebarOpen,
+        autoCompactEnabled: s.autoCompactEnabled,
+        autoCompactThreshold: s.autoCompactThreshold,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

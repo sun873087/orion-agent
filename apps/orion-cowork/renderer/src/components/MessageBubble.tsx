@@ -23,6 +23,25 @@ export function MessageBubble({
   message: Message
   isLastAssistant?: boolean
 }) {
+  if (message.role === 'system' && message.kind === 'compact-summary') {
+    const beforeTokens = message.beforeTokens ?? 0
+    return (
+      <div className="my-3 rounded-xl border border-bg-hover bg-bg-panel/60 px-4 py-3">
+        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-fg-muted">
+          <Info size={12} />
+          <span>對話已壓縮</span>
+          {beforeTokens > 0 && (
+            <span className="font-mono text-[10px] text-fg-subtle">
+              · 釋出 ~{Math.round(beforeTokens / 1000)}K tokens
+            </span>
+          )}
+        </div>
+        <div className="prose-orion text-sm text-fg-base">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+        </div>
+      </div>
+    )
+  }
   if (message.role === 'system' || message.role === 'tool') {
     return (
       <div className="my-2 flex items-center gap-2 text-xs text-fg-muted">

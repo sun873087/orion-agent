@@ -69,6 +69,10 @@ export type Message = {
   attachments?: AttachmentPreview[]
   /** 若 streaming 還沒結束就 true,UI 用來顯示 cursor。 */
   streaming?: boolean
+  /** 系統訊息的特殊類型 — 'compact-summary' 表示這是壓縮摘要 card。 */
+  kind?: 'compact-summary'
+  /** Compact summary card 才有:壓縮前的概略 token 數。 */
+  beforeTokens?: number
   createdAt: number
 }
 
@@ -96,6 +100,11 @@ type AgentState = {
   sessions: SessionSummary[]
   /** 當前等使用者回答的 AskUserQuestion(同時間只會有一個)。 */
   pendingQuestion: PendingQuestion | null
+  /** 對話壓縮進行中(UI 顯 banner)。 */
+  compacting: boolean
+  setCompacting: (v: boolean) => void
+  /** 壓縮完成 — 清空訊息列、push 一張 system summary card。 */
+  applyCompactComplete: (summary: string, beforeTokens: number) => void
 
   // mutators
   setSessionId: (sid: string) => void
@@ -141,6 +150,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   initError: null,
   sessions: [],
   pendingQuestion: null,
+  compacting: false,
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -293,6 +303,24 @@ export const useAgentStore = create<AgentState>((set) => ({
     })),
 
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
+
+  setCompacting: (v) => set({ compacting: v }),
+  applyCompactComplete: (summary, beforeTokens) => {
+    const id = newId()
+    set({
+      messages: [
+        {
+          id,
+          role: 'system',
+          text: summary,
+          kind: 'compact-summary',
+          beforeTokens,
+          createdAt: Date.now(),
+        },
+      ],
+      compacting: false,
+    })
+  },
 
   finishLoop: (status) => set({ lastLoopStatus: status }),
 

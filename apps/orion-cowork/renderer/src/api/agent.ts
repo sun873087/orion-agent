@@ -32,6 +32,17 @@ export type SidecarEvent =
       event: 'ask_user_question'
       data: { request_id: string; questions: AskQuestion[] }
     }
+  | { event: 'compact_started'; data: { session_id: string } }
+  | {
+      event: 'compact_complete'
+      data: {
+        summary: string
+        before_tokens: number
+        after_tokens: number
+        auto?: boolean
+        skipped?: boolean
+      }
+    }
   | { event: string; data?: unknown; final?: boolean }
 
 export type AskOption = { label: string; description?: string }
@@ -336,6 +347,7 @@ export async function sendPrompt(
   onEvent: (ev: SidecarEvent) => void,
   attachments?: Attachment[],
   permissionMode?: PermissionMode,
+  opts?: { autoCompactEnabled?: boolean; autoCompactThreshold?: number },
 ): Promise<void> {
   await window.agent.call(
     'conversation.send',
@@ -343,11 +355,28 @@ export async function sendPrompt(
       session_id: sessionId,
       prompt,
       permission_mode: permissionMode ?? 'act',
+      auto_compact_enabled: opts?.autoCompactEnabled ?? true,
+      auto_compact_threshold: opts?.autoCompactThreshold ?? 0.8,
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,
       })),
     },
+    (frame) => {
+      onEvent(frame as unknown as SidecarEvent)
+    },
+  )
+}
+
+/** 手動觸發對話壓縮 — UI 攔到 /compact 後呼叫。force=true 跳過 threshold 直接壓。 */
+export async function compactConversation(
+  sessionId: string,
+  onEvent: (ev: SidecarEvent) => void,
+  force = true,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.compact',
+    { session_id: sessionId, force },
     (frame) => {
       onEvent(frame as unknown as SidecarEvent)
     },

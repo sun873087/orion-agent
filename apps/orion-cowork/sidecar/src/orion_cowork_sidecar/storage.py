@@ -468,6 +468,56 @@ async def append_messages(
         await s.commit()
 
 
+async def replace_with_compacted(
+    engine: AsyncEngine,
+    session_id: str,
+    state_messages: list[NormalizedMessage],
+) -> None:
+    """Compact 後 atomic 取代 session 訊息 — 刪所有舊 message row,再 append 壓縮後 list。
+
+    壓縮後 state_messages 的第一張通常是 TombstoneBlock(role=user),後面接保留段。
+    為避免半完成狀態,整段在單一 transaction 內 delete + insert。
+
+    同時 GC 被壓掉訊息引用的 image blob(那些 blob_id 不會再有 row 指向)。
+    """
+    blob = get_blob_store()
+    async with db_session(engine) as s:
+        # 先撈所有現存 row 的 content_json 算出之前用的 blob_ids,然後 diff 出新
+        # 內容仍引用的 blob_ids → 差集就是要 unlink 的孤兒。
+        old_rows = await s.execute(
+            select(MessageRow.content_json).where(MessageRow.session_id == session_id)
+        )
+        old_blob_ids = set(_collect_blob_ids([cj for (cj,) in old_rows]))
+
+        # 全刪後 append 新 state
+        await s.execute(delete(MessageRow).where(MessageRow.session_id == session_id))
+
+        new_blob_ids: set[str] = set()
+        for msg in state_messages:
+            content_value: Any
+            content = msg.content
+            if isinstance(content, str):
+                content_value = content
+            else:
+                content_value = [b.model_dump(mode="json") for b in content]
+                content_value = _persist_image_blocks(content_value, blob)
+                new_blob_ids.update(_collect_blob_ids([content_value]))
+            s.add(MessageRow(
+                session_id=session_id,
+                role=msg.role,
+                content_json=content_value,
+            ))
+        await s.commit()
+
+    # Orphan blobs:被壓掉的訊息引用、新 state 不再用的
+    orphans = old_blob_ids - new_blob_ids
+    for bid in orphans:
+        try:
+            blob.delete(bid)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 async def load_messages(
     engine: AsyncEngine,
     session_id: str,

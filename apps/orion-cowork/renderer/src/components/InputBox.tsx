@@ -4,16 +4,19 @@ import {
   ChevronDown,
   FastForward,
   Hand,
+  Layers,
   Mic,
   Paperclip,
   Send,
   Sparkles,
   Square,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 
 import type { Attachment } from '../api/agent'
 import { fetchModels, setPermissionMode as rpcSetPermissionMode, sttTranscribe } from '../api/agent'
+import { useCompactConversation } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore, type PermissionMode } from '../store/settings'
@@ -24,6 +27,22 @@ type Props = {
 }
 
 const SUPPORTED_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+
+/** Slash command 註冊表 — InputBox 偵測 / 開頭時顯示 autocomplete popover。
+ *  之後加新指令在這 list 加一筆即可。 */
+type SlashCommand = {
+  name: string
+  icon: LucideIcon
+  /** 短副標題(popover 內每筆下方顯示)。 */
+  subtitle: string
+}
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    name: '/compact',
+    icon: Layers,
+    subtitle: '壓縮對話歷史,釋出 context tokens',
+  },
+]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
 // Provider 限制(最嚴的是 Anthropic 5 MB base64);壓到 base64 < 4 MB 留 safety margin
 const TARGET_BASE64_BYTES = 4 * 1024 * 1024
@@ -38,6 +57,8 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const busy = useAgentStore((s) => s.busy)
+  const compacting = useAgentStore((s) => s.compacting)
+  const triggerCompact = useCompactConversation()
   // sidecar 啟動後一直可輸入;sessionId 為 null(New chat 後)時由 useSendPrompt
   // lazy create。只有 initError(sidecar 連不上)才完全 disable。
   const initError = useAgentStore((s) => s.initError)
@@ -49,13 +70,47 @@ export function InputBox({ onSend, onAbort }: Props) {
   // IME composition tracking — 注音 / 拼音中 Enter 確認候選詞時不要送出。
   const composingRef = useRef(false)
 
+  // ─── Slash command autocomplete ────────────────────────────────────
+  // popover 開條件:單行 / 開頭(text 內無換行),user 還在打或文字仍以 / 開頭
+  const slashMatches = (() => {
+    if (!text.startsWith('/')) return []
+    if (text.includes('\n')) return []
+    const query = text.toLowerCase()
+    return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().startsWith(query))
+  })()
+  const showSlash = slashMatches.length > 0
+  const [slashIdx, setSlashIdx] = useState(0)
+  // text 變動把 idx 拉回有效範圍
+  useEffect(() => {
+    if (slashIdx >= slashMatches.length) setSlashIdx(0)
+  }, [slashMatches.length, slashIdx])
+
+  function pickSlash(cmd: SlashCommand) {
+    setText(cmd.name + ' ')
+    // 不立即送出 — 給 user 看一眼,Enter 才真的觸發
+    setSlashIdx(0)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+    })
+  }
+
   const canSend =
-    !busy && inputReady && (text.trim().length > 0 || attachments.length > 0)
+    !busy && !compacting && inputReady && (text.trim().length > 0 || attachments.length > 0)
 
   async function handleSubmit() {
     if (!canSend) return
     const payload = text
     const att = attachments
+    // /compact slash command — 不送 prompt,直接觸發壓縮
+    const trimmed = payload.trim()
+    if (trimmed === '/compact' && !att.length) {
+      setText('')
+      setAttachError(null)
+      if (textareaRef.current) textareaRef.current.value = ''
+      autoResize()
+      await triggerCompact()
+      return
+    }
     setText('')
     setAttachments([])
     setAttachError(null)
@@ -225,6 +280,43 @@ export function InputBox({ onSend, onAbort }: Props) {
           <p className="mb-1 px-2 text-xs text-error">⚠ {attachError}</p>
         )}
 
+        {/* Slash command autocomplete popover — / 開頭時顯示在輸入框上方 */}
+        {showSlash && (
+          <div className="mb-2 overflow-hidden rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
+            {slashMatches.map((cmd, i) => {
+              const active = i === slashIdx
+              const Icon = cmd.icon
+              return (
+                <button
+                  key={cmd.name}
+                  type="button"
+                  onMouseDown={(e) => {
+                    // mousedown 比 click 早 — 避免 blur 把 popover 收起
+                    e.preventDefault()
+                    pickSlash(cmd)
+                  }}
+                  onMouseEnter={() => setSlashIdx(i)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                    active ? 'bg-bg-hover' : 'bg-transparent hover:bg-bg-hover/50'
+                  }`}
+                >
+                  <Icon size={18} className="shrink-0 text-fg-muted" />
+                  <div className="flex min-w-0 flex-col">
+                    <span className="font-mono text-sm text-fg-base">{cmd.name.slice(1)}</span>
+                    <span className="truncate text-xs text-fg-muted">{cmd.subtitle}</span>
+                  </div>
+                </button>
+              )
+            })}
+            <div className="mt-1 border-t border-bg-hover px-3 pt-1.5 text-[10px] text-fg-subtle">
+              Type to filter · <kbd className="font-mono">↑↓</kbd> 切換 ·{' '}
+              <kbd className="font-mono">Tab</kbd> 填入 ·{' '}
+              <kbd className="font-mono">Enter</kbd> 執行 ·{' '}
+              <kbd className="font-mono">Esc</kbd> 取消
+            </div>
+          </div>
+        )}
+
         {/* 主框:上方 textarea,下方 toolbar(+ / Ask pill / spacer / Model pill / mic / send) */}
         <div className="flex flex-col gap-2 rounded-2xl bg-bg-input p-3">
           <textarea
@@ -244,6 +336,30 @@ export function InputBox({ onSend, onAbort }: Props) {
               // IME 在組字中(注音/拼音)按 Enter 是確認候選詞,不是送出。
               // e.nativeEvent.isComposing 是現代瀏覽器 spec;composingRef 雙保險。
               if (e.nativeEvent.isComposing || composingRef.current) return
+              // Slash command popover 開時,方向鍵 / Tab / Enter / Esc 給 popover 處理
+              if (showSlash) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setSlashIdx((i) => (i + 1) % slashMatches.length)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSlashIdx((i) => (i - 1 + slashMatches.length) % slashMatches.length)
+                  return
+                }
+                if (e.key === 'Tab') {
+                  e.preventDefault()
+                  pickSlash(slashMatches[slashIdx])
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setText('')
+                  if (textareaRef.current) textareaRef.current.value = ''
+                  return
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()

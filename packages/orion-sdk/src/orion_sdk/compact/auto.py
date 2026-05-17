@@ -44,6 +44,14 @@ def _get_threshold() -> float:
     return AUTO_COMPACT_THRESHOLD_DEFAULT
 
 
+def _clamp_threshold(value: float) -> float:
+    if value < 0.1:
+        return 0.1
+    if value > 0.99:
+        return 0.99
+    return value
+
+
 def estimate_token_count(messages: list[NormalizedMessage]) -> int:
     """概略 token 估算。1 token ≈ 4 chars(英文 / 中文混雜的偏保守值)。"""
     total_chars = 0
@@ -74,6 +82,7 @@ async def auto_compact_if_needed(
     *,
     provider: LLMProvider,
     strategy: CompactionStrategy | None = None,
+    threshold: float | None = None,
 ) -> tuple[list[NormalizedMessage], bool]:
     """進 API 前檢查並可能 compact。
 
@@ -81,6 +90,8 @@ async def auto_compact_if_needed(
         messages: 當前 state_messages
         provider: 用 capabilities.max_context_tokens + 給 strategy 摘要用
         strategy: 預設 SonnetSummaryStrategy,可注入 TruncateStrategy 給測試
+        threshold: 觸發比例,優先於 ORION_AUTO_COMPACT_THRESHOLD env。
+            傳 None → 用 env / 預設 0.8。
 
     Returns:
         (new_messages, was_compacted):若無需 compact,new_messages 原樣回 + False
@@ -89,19 +100,40 @@ async def auto_compact_if_needed(
         # 太少 messages 沒意義 compact
         return messages, False
 
-    threshold = _get_threshold()
+    eff_threshold = _clamp_threshold(threshold) if threshold is not None else _get_threshold()
     max_context = provider.capabilities.max_context_tokens
     used = estimate_token_count(messages)
 
-    if used < int(max_context * threshold):
+    if used < int(max_context * eff_threshold):
         return messages, False
 
-    # 需要 compact:選前 50%(從 index 0 起算)
-    cutoff = max(2, int(len(messages) * AUTO_COMPACT_RANGE_RATIO))
-    # 確保 cutoff 不切到「assistant 後面跟著的 tool_result」中間
+    return await compact_messages_now(
+        messages,
+        provider=provider,
+        strategy=strategy,
+    ), True
+
+
+async def compact_messages_now(
+    messages: list[NormalizedMessage],
+    *,
+    provider: LLMProvider,
+    strategy: CompactionStrategy | None = None,
+    range_ratio: float = AUTO_COMPACT_RANGE_RATIO,
+) -> list[NormalizedMessage]:
+    """強制壓縮(跳過 threshold 檢查)— 給手動 /compact 用。
+
+    Messages < 2 直接回原 list(沒東西可壓)。Cutoff 同樣會被
+    `_adjust_cutoff_to_safe_boundary` 校正,避免切到 tool_use/tool_result 配對。
+    """
+    if len(messages) < 2:
+        return messages
+
+    cutoff = max(2, int(len(messages) * range_ratio))
     cutoff = _adjust_cutoff_to_safe_boundary(messages, cutoff)
-    if cutoff < 1:
-        return messages, False
+    if cutoff < 1 or cutoff >= len(messages):
+        # 全壓也不對(沒人說話的 assistant 卡在最後),保守不動
+        return messages
 
     strat = strategy or SonnetSummaryStrategy()
     try:
@@ -109,17 +141,14 @@ async def auto_compact_if_needed(
     except Exception:  # noqa: BLE001 — 摘要失敗 fallback truncate
         summary = TruncateStrategy().summarize_sync(messages[:cutoff])
 
-    pre_chunk = messages[:cutoff]
-    pre_token_estimate = estimate_token_count(pre_chunk)
-
-    new_messages = replace_range_with_tombstone(
+    pre_token_estimate = estimate_token_count(messages[:cutoff])
+    return replace_range_with_tombstone(
         messages,
         start=0,
         end=cutoff - 1,
         summary=summary,
         original_token_count=pre_token_estimate,
     )
-    return new_messages, True
 
 
 def _adjust_cutoff_to_safe_boundary(

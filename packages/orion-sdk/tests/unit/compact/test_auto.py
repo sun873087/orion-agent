@@ -6,7 +6,9 @@ import pytest
 
 from orion_sdk.compact.auto import (
     AUTO_COMPACT_THRESHOLD_DEFAULT,
+    _clamp_threshold,
     auto_compact_if_needed,
+    compact_messages_now,
     estimate_token_count,
 )
 from orion_sdk.compact.strategies import TruncateStrategy
@@ -114,3 +116,80 @@ async def test_cutoff_safe_boundary_keeps_tool_pair_together(monkeypatch) -> Non
     tombstone = out[0].content[0]
     # range 應該到 index >= 2(把 tool_result 一起壓掉)
     assert tombstone.range_end_msg_index >= 2
+
+
+def test_clamp_threshold() -> None:
+    assert _clamp_threshold(0.05) == 0.1
+    assert _clamp_threshold(0.5) == 0.5
+    assert _clamp_threshold(1.5) == 0.99
+
+
+@pytest.mark.asyncio
+async def test_threshold_param_overrides_env(monkeypatch) -> None:  # noqa: ANN001
+    """傳 threshold=0.99 即使 env=0.1 也不該觸發(因為 99% 才壓)。"""
+    monkeypatch.setenv("ORION_AUTO_COMPACT_THRESHOLD", "0.1")
+    msgs: list[NormalizedMessage] = []
+    for i in range(10):
+        msgs.append(NormalizedMessage(role="user", content="a" * 1000))
+        msgs.append(NormalizedMessage(role="assistant", content=f"reply {i}"))
+    provider = MockProvider()
+    out, was = await auto_compact_if_needed(
+        msgs, provider=provider,  # type: ignore[arg-type]
+        threshold=0.99,
+        strategy=TruncateStrategy(),
+    )
+    # 20K chars ≈ 5K tokens,200K * 0.99 = 198K 上限,沒到
+    assert was is False
+    assert out == msgs
+
+
+@pytest.mark.asyncio
+async def test_threshold_param_lower_triggers(monkeypatch) -> None:  # noqa: ANN001
+    """傳低 threshold(會被 clamp 到 0.1)+ 大 messages 應該觸發。
+
+    Threshold floor 0.1 × 200K tokens = 20K。製造 ~25K tokens 內容。
+    """
+    monkeypatch.delenv("ORION_AUTO_COMPACT_THRESHOLD", raising=False)
+    msgs: list[NormalizedMessage] = []
+    for i in range(10):
+        msgs.append(NormalizedMessage(role="user", content="a" * 10000))
+        msgs.append(NormalizedMessage(role="assistant", content="b" * 10000))
+    provider = MockProvider()
+    _, was = await auto_compact_if_needed(
+        msgs, provider=provider,  # type: ignore[arg-type]
+        threshold=0.1,
+        strategy=TruncateStrategy(),
+    )
+    assert was is True
+
+
+@pytest.mark.asyncio
+async def test_compact_messages_now_force_compacts() -> None:
+    """compact_messages_now 跳過 threshold,只要 messages >=2 就壓。"""
+    msgs: list[NormalizedMessage] = [
+        NormalizedMessage(role="user", content="hi"),
+        NormalizedMessage(role="assistant", content="hello"),
+        NormalizedMessage(role="user", content="bye"),
+        NormalizedMessage(role="assistant", content="see ya"),
+    ]
+    provider = MockProvider()
+    new = await compact_messages_now(
+        msgs, provider=provider,  # type: ignore[arg-type]
+        strategy=TruncateStrategy(),
+    )
+    # 第一張是 tombstone,後面剩半
+    assert len(new) < len(msgs)
+    assert isinstance(new[0].content, list)
+    assert isinstance(new[0].content[0], TombstoneBlock)
+
+
+@pytest.mark.asyncio
+async def test_compact_messages_now_too_few() -> None:
+    """< 2 messages 直接回原 list。"""
+    msgs = [NormalizedMessage(role="user", content="only one")]
+    provider = MockProvider()
+    new = await compact_messages_now(
+        msgs, provider=provider,  # type: ignore[arg-type]
+        strategy=TruncateStrategy(),
+    )
+    assert new is msgs

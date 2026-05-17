@@ -281,6 +281,7 @@ class Handlers:
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
             "conversation.stats": self.conversation_stats,
+            "conversation.compact": self.conversation_compact,
             "permissions.get": self.permissions_get,
             "permissions.set": self.permissions_set,
             "stt.transcribe": stt_handlers.stt_transcribe,
@@ -497,6 +498,39 @@ class Handlers:
         conv.custom_instructions_conversation = (
             _ASK_MODE_INSTRUCTIONS if permission_mode == "ask" else _ACT_MODE_INSTRUCTIONS
         )
+
+        # ─── Auto-compact gate ─────────────────────────────────────────────
+        # Renderer 把使用者設定值連 send 一起送上來:enabled + threshold(0.1~0.99)。
+        # threshold 沒給走 SDK 預設(env 或 0.8)。
+        auto_compact_enabled = bool(params.get("auto_compact_enabled", True))
+        ac_threshold_raw = params.get("auto_compact_threshold")
+        if isinstance(ac_threshold_raw, (int, float)):
+            conv.auto_compact_threshold = float(ac_threshold_raw)
+        if auto_compact_enabled:
+            try:
+                pre_result = await conv.compact(force=False)
+            except Exception as e:  # noqa: BLE001
+                pre_result = None
+                print(f"[sidecar] auto-compact failed: {e}", file=sys.stderr, flush=True)
+            if pre_result is not None and pre_result.was_compacted:
+                # 同步 DB:刪舊 messages,寫 tombstone(state_messages 已被 SDK mutate)
+                try:
+                    await storage.replace_with_compacted(
+                        engine, sid, list(conv.state_messages),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    print(f"[sidecar] auto-compact DB sync failed: {e}", file=sys.stderr, flush=True)
+                # before_count 跟著歸零 — 後續 turn append 對齊新 DB 狀態
+                before_count = len(conv.state_messages)
+                yield {
+                    "event": "compact_complete",
+                    "data": {
+                        "summary": pre_result.summary,
+                        "before_tokens": pre_result.before_tokens,
+                        "after_tokens": pre_result.after_tokens,
+                        "auto": True,
+                    },
+                }
 
         async def _producer() -> None:
             try:
@@ -877,6 +911,86 @@ class Handlers:
                 "context_used": context_used,
                 "context_max": context_max,
                 "cache_hit_rate": round(cache_hit_rate, 4),
+            },
+            "final": True,
+        }
+
+    async def conversation_compact(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """手動觸發對話壓縮 — 把 state_messages 前段摘要成單一 TombstoneBlock。
+
+        force=True(預設):跳過 threshold,直接壓。
+        force=False:走 SDK auto threshold(用 conv.auto_compact_threshold)。
+
+        事件序列:compact_started → (LLM 摘要 ~3~5s) → compact_complete
+        DB 端同步:替換成 [tombstone, ...保留段]。
+        """
+        sid = params.get("session_id")
+        force = bool(params.get("force", True))
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        conv = self._conversations.get(sid)
+        if conv is None:
+            conv = await self._resume_from_db(sid, engine)
+            if conv is None:
+                yield {
+                    "event": "error",
+                    "data": {"code": "UNKNOWN_SESSION", "message": f"session {sid!r} not found"},
+                    "final": True,
+                }
+                return
+            self._conversations[sid] = conv
+
+        yield {"event": "compact_started", "data": {"session_id": sid}}
+
+        try:
+            result = await conv.compact(force=force)
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "COMPACT_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+
+        if not result.was_compacted:
+            yield {
+                "event": "compact_complete",
+                "data": {
+                    "summary": "",
+                    "before_tokens": 0,
+                    "after_tokens": result.after_tokens,
+                    "skipped": True,
+                    "auto": False,
+                },
+                "final": True,
+            }
+            return
+
+        # 同步 DB
+        try:
+            await storage.replace_with_compacted(
+                engine, sid, list(conv.state_messages),
+            )
+        except Exception as e:  # noqa: BLE001
+            import sys
+            print(f"[sidecar] compact DB sync failed: {e}", file=sys.stderr, flush=True)
+
+        yield {
+            "event": "compact_complete",
+            "data": {
+                "summary": result.summary,
+                "before_tokens": result.before_tokens,
+                "after_tokens": result.after_tokens,
+                "skipped": False,
+                "auto": False,
             },
             "final": True,
         }

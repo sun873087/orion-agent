@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Mic } from 'lucide-react'
+import { AlertCircle, Check, Layers, Mic } from 'lucide-react'
 
 import {
   fetchModels,
@@ -94,6 +94,58 @@ export function ModelsSection() {
       ))}
       </div>
       <SttPicker />
+      <AutoCompactPicker />
+    </div>
+  )
+}
+
+/** 對話壓縮設定 — context 用量超過 threshold 時自動摘要前段。可關閉 + 手動 /compact 隨時用。 */
+function AutoCompactPicker() {
+  const enabled = useSettingsStore((s) => s.autoCompactEnabled)
+  const setEnabled = useSettingsStore((s) => s.setAutoCompactEnabled)
+  const threshold = useSettingsStore((s) => s.autoCompactThreshold)
+  const setThreshold = useSettingsStore((s) => s.setAutoCompactThreshold)
+  const pct = Math.round(threshold * 100)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-fg-muted">
+        <Layers size={14} />
+        對話壓縮
+      </h3>
+      <p className="text-[11px] text-fg-subtle">
+        當對話累積到模型 context window 的設定比例時,自動把前半段摘要成一張卡,釋出 token 額度。
+        也可以隨時在輸入框打 <code className="rounded bg-bg-hover px-1 font-mono text-[10px]">/compact</code> 手動觸發。
+      </p>
+      <label className="mt-1 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-bg-hover bg-bg-panel px-3 py-1.5 text-sm hover:border-accent/40 hover:bg-bg-hover">
+        <input
+          type="checkbox"
+          className="accent-accent"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>啟用自動壓縮</span>
+      </label>
+      <div className={`mt-1 flex flex-col gap-1 ${enabled ? '' : 'opacity-40'}`}>
+        <label className="text-[11px] font-medium text-fg-muted">
+          觸發閾值:<span className="font-mono text-fg-base">{pct}%</span>
+        </label>
+        <input
+          type="range"
+          min={50}
+          max={95}
+          step={5}
+          value={pct}
+          disabled={!enabled}
+          onChange={(e) => setThreshold(Number(e.target.value) / 100)}
+          className="w-64 accent-accent disabled:cursor-not-allowed"
+        />
+        <div className="flex w-64 justify-between text-[10px] text-fg-subtle">
+          <span>50%</span>
+          <span>80%(預設)</span>
+          <span>95%</span>
+        </div>
+      </div>
     </div>
   )
 }

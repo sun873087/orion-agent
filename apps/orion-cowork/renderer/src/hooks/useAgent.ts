@@ -10,6 +10,7 @@ import { useCallback, useEffect } from 'react'
 
 import {
   abort as rpcAbort,
+  compactConversation as rpcCompact,
   createConversation,
   deleteConversation as rpcDelete,
   listConversations,
@@ -172,6 +173,8 @@ export function useSendPrompt() {
   const model = useSettingsStore((s) => s.selectedModel)
   const activeProjectId = useSettingsStore((s) => s.activeProjectId)
   const permissionMode = useSettingsStore((s) => s.permissionMode)
+  const autoCompactEnabled = useSettingsStore((s) => s.autoCompactEnabled)
+  const autoCompactThreshold = useSettingsStore((s) => s.autoCompactThreshold)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
@@ -208,6 +211,7 @@ export function useSendPrompt() {
         (ev: SidecarEvent) => applyEvent(assistantId, ev),
         attachments,
         permissionMode,
+        { autoCompactEnabled, autoCompactThreshold },
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -224,7 +228,7 @@ export function useSendPrompt() {
       }
       refreshSessions()
     }
-  }, [provider, model, activeProjectId, permissionMode])
+  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold])
 }
 
 export function useAbort() {
@@ -357,5 +361,48 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
       s.finishLoop({ reason: data.reason, turns: data.total_turns })
       break
     }
+    case 'compact_started': {
+      s.setCompacting(true)
+      break
+    }
+    case 'compact_complete': {
+      const data = ev.data as {
+        summary: string
+        before_tokens: number
+        skipped?: boolean
+      }
+      if (data.skipped) {
+        s.setCompacting(false)
+      } else {
+        s.applyCompactComplete(data.summary, data.before_tokens)
+      }
+      break
+    }
   }
+}
+
+/** /compact 攔截 — InputBox 偵測到輸入文字是 /compact 時呼叫。
+ *  不送 prompt,直接觸發 sidecar 的 conversation.compact RPC。 */
+export function useCompactConversation() {
+  return useCallback(async () => {
+    const store = useAgentStore.getState()
+    const sid = store.sessionId
+    if (!sid || store.busy || store.compacting) return
+    store.setCompacting(true)
+    store.setError(null)
+    try {
+      await rpcCompact(sid, (ev: SidecarEvent) => {
+        // 用 dummy assistantId — compact 不會 emit text_delta / tool 事件
+        applyEvent('compact-rpc', ev)
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(msg)
+      useAgentStore.getState().setCompacting(false)
+    } finally {
+      // 萬一 sidecar 沒推 compact_complete(stale session 等)— 兜底清 flag
+      const st = useAgentStore.getState()
+      if (st.compacting) st.setCompacting(false)
+    }
+  }, [])
 }

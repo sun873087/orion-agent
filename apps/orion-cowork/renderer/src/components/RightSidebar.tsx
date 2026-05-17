@@ -22,6 +22,7 @@ import {
 import { getConversationStats, type ConversationStats } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
+import { useSettingsStore } from '../store/settings'
 
 type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
@@ -449,13 +450,25 @@ function UsageSection() {
                 style={{ width: `${Math.min(100, contextPct).toFixed(1)}%` }}
               />
             </div>
-            <div className="mt-0.5 text-right font-mono text-[10px] text-fg-subtle">
-              {contextPct.toFixed(1)}%
+            <div className="mt-0.5 flex items-center justify-between font-mono text-[10px] text-fg-subtle">
+              <AutoCompactHint />
+              <span>{contextPct.toFixed(1)}%</span>
             </div>
           </div>
         )}
       </div>
     </Section>
+  )
+}
+
+function AutoCompactHint() {
+  const enabled = useSettingsStore((s) => s.autoCompactEnabled)
+  const threshold = useSettingsStore((s) => s.autoCompactThreshold)
+  if (!enabled) return <span className="text-fg-subtle/60">auto-compact off</span>
+  return (
+    <span className="text-fg-subtle/80">
+      auto-compact at {Math.round(threshold * 100)}%
+    </span>
   )
 }
 

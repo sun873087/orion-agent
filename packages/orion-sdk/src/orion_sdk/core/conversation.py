@@ -102,6 +102,27 @@ def pick_max_tokens_per_turn(provider: str, model: str) -> int:
 
 
 @dataclass
+class CompactResult:
+    """Conversation.compact() 的回傳結果。"""
+
+    was_compacted: bool
+    """True → state_messages 已被替換為含 TombstoneBlock 的新版。
+    False → 沒到 threshold(auto 模式)或 messages 太少,沒做事。"""
+
+    summary: str
+    """LLM 摘要文字。was_compacted=False 時為空字串。"""
+
+    before_tokens: int
+    """被壓縮段落的概略 token 數。was_compacted=False 時為 0。"""
+
+    after_tokens: int
+    """壓縮後整個 state_messages 的概略 token 數(僅 was_compacted=True 時計)。"""
+
+    kept_message_count: int
+    """壓縮後 state_messages 的長度(含 tombstone 那一張)。"""
+
+
+@dataclass
 class ConversationStats:
     """累積統計,給 telemetry / cost tracking。"""
 
@@ -217,6 +238,10 @@ class Conversation:
     output_style: str | None = None
     """選用的 output style 名(從 `output-styles/<name>.md` 載)。
     `/output-style <name>` 命令會 mutate 此欄位。"""
+
+    auto_compact_threshold: float | None = None
+    """Auto-compact 觸發比例(0.1~0.99)。None → 用 ORION_AUTO_COMPACT_THRESHOLD
+    env 或預設 0.8。Cowork sidecar 把使用者設定值寫進來。"""
 
     # ─── Phase 27 ─────────────────────────────────────────────────────────
     db_engine: object | None = None
@@ -466,6 +491,90 @@ class Conversation:
                         )
                         self._pending_extract_tasks.add(task)
                         task.add_done_callback(self._pending_extract_tasks.discard)
+
+    async def compact(self, *, force: bool = False) -> CompactResult:
+        """壓縮 `self.state_messages` — 用 LLM 把前段對話摘要成單一 TombstoneBlock。
+
+        force=True → 立刻壓(手動 /compact),跳過 threshold。
+        force=False → 看 `self.auto_compact_threshold`(或 env / 預設)再決定。
+
+        直接 mutate `self.state_messages`。回傳 CompactResult 含摘要文字 + token
+        前後估算,呼叫方可推 event / 顯示 UI。
+        """
+        from orion_sdk.compact.auto import (
+            compact_messages_now,
+            estimate_token_count,
+        )
+        from orion_sdk.compact.auto import (
+            auto_compact_if_needed,
+        )
+
+        original = self.state_messages
+        original_count = len(original)
+        if original_count < 2:
+            return CompactResult(
+                was_compacted=False,
+                summary="",
+                before_tokens=0,
+                after_tokens=estimate_token_count(original),
+                kept_message_count=original_count,
+            )
+
+        if force:
+            new_messages = await compact_messages_now(
+                original, provider=self.provider,
+            )
+            was_compacted = new_messages is not original and len(new_messages) < original_count
+        else:
+            new_messages, was_compacted = await auto_compact_if_needed(
+                original,
+                provider=self.provider,
+                threshold=self.auto_compact_threshold,
+            )
+
+        if not was_compacted:
+            return CompactResult(
+                was_compacted=False,
+                summary="",
+                before_tokens=0,
+                after_tokens=estimate_token_count(original),
+                kept_message_count=original_count,
+            )
+
+        # 從新 messages 抽出 tombstone 的 summary / before tokens(就是替換進去那張)
+        summary = ""
+        before_tokens = 0
+        # 替換規則:前段 [0..cutoff-1] → 單一 user role tombstone(index 0)
+        first = new_messages[0] if new_messages else None
+        if first is not None and isinstance(first.content, list):
+            from orion_model.types import TombstoneBlock
+            for b in first.content:
+                if isinstance(b, TombstoneBlock):
+                    summary = b.summary
+                    before_tokens = b.original_token_count
+                    break
+
+        before_state = self.state_messages
+        self.state_messages = new_messages
+        # 更新 replacement_state — 整段前綴被 tombstone 替換,那些 tool_use_id
+        # 也跟著失效,後續 turn 不該再 reference。直接重置 set / dict。
+        self.replacement_state.seen_ids.clear()
+        self.replacement_state.replacements.clear()
+        _log.info(
+            "conversation %s compacted: %d → %d messages (before_tokens=%d)",
+            self.session_id,
+            len(before_state),
+            len(new_messages),
+            before_tokens,
+        )
+
+        return CompactResult(
+            was_compacted=True,
+            summary=summary,
+            before_tokens=before_tokens,
+            after_tokens=estimate_token_count(new_messages),
+            kept_message_count=len(new_messages),
+        )
 
     async def _extract_memories_safely(
         self, messages: list[NormalizedMessage]
