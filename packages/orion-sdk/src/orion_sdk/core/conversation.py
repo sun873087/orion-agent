@@ -243,6 +243,15 @@ class Conversation:
     """Auto-compact 觸發比例(0.1~0.99)。None → 用 ORION_AUTO_COMPACT_THRESHOLD
     env 或預設 0.8。Cowork sidecar 把使用者設定值寫進來。"""
 
+    compact_summary_locale: str | None = None
+    """摘要要用的語系(zh-TW / zh-CN / ja / en)。None → 英文。Cowork sidecar
+    從 user UI locale 傳進來,讓摘要 card 跟使用者母語一致。"""
+
+    compact_summary_provider: LLMProvider | None = None
+    """摘要要用的 provider override。None → 用 self.provider(跟對話同一個 model)。
+    Caller(例如 Cowork sidecar)可注入一個便宜模型的 provider(Haiku /
+    gpt-4o-mini 等),把每次壓縮的 LLM cost 降到 1/5~1/10。"""
+
     # ─── Phase 27 ─────────────────────────────────────────────────────────
     db_engine: object | None = None
     """AsyncEngine instance(避免循環 import,object 型別)。
@@ -520,16 +529,23 @@ class Conversation:
                 kept_message_count=original_count,
             )
 
+        # 摘要 provider:有 override 用便宜 model;沒設用對話本身的 provider
+        summary_provider = self.compact_summary_provider or self.provider
         if force:
             new_messages = await compact_messages_now(
-                original, provider=self.provider,
+                original,
+                provider=summary_provider,
+                locale=self.compact_summary_locale,
             )
             was_compacted = new_messages is not original and len(new_messages) < original_count
         else:
+            # threshold 判斷用 chat provider 的 context window;摘要 LLM call 用 summary_provider
             new_messages, was_compacted = await auto_compact_if_needed(
                 original,
                 provider=self.provider,
+                summary_provider=summary_provider,
                 threshold=self.auto_compact_threshold,
+                locale=self.compact_summary_locale,
             )
 
         if not was_compacted:

@@ -25,14 +25,21 @@ export function MessageBubble({
 }) {
   if (message.role === 'system' && message.kind === 'compact-summary') {
     const beforeTokens = message.beforeTokens ?? 0
+    // < 1K 顯精確 token 數;>= 1K 用 K 縮寫 — 避免短對話顯成「~0K tokens」
+    const tokensLabel =
+      beforeTokens >= 1000
+        ? `~${Math.round(beforeTokens / 1000)}K tokens`
+        : beforeTokens > 0
+          ? `~${beforeTokens} tokens`
+          : null
     return (
       <div className="my-3 rounded-xl border border-bg-hover bg-bg-panel/60 px-4 py-3">
         <div className="mb-2 flex items-center gap-2 text-xs font-medium text-fg-muted">
           <Info size={12} />
           <span>對話已壓縮</span>
-          {beforeTokens > 0 && (
+          {tokensLabel && (
             <span className="font-mono text-[10px] text-fg-subtle">
-              · 釋出 ~{Math.round(beforeTokens / 1000)}K tokens
+              · 釋出 {tokensLabel}
             </span>
           )}
         </div>
@@ -53,9 +60,17 @@ export function MessageBubble({
 
   // user 或 assistant
   const isUser = message.role === 'user'
+  // Compact 前的舊訊息 — UI 灰化、淡化,讓使用者知道「LLM 已看不到這段」,
+  // 但仍 scroll 看得到原始內容。title attribute 在 hover 時提示。
+  const compactedClass = message.compacted
+    ? 'opacity-50 grayscale-[0.4] transition-opacity hover:opacity-80'
+    : ''
 
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div
+      className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${compactedClass}`}
+      title={message.compacted ? '此訊息已被壓縮,LLM 看不到原文(只看到上方摘要)' : undefined}
+    >
       <Avatar role={message.role} />
       <div className={`flex min-w-0 max-w-[85%] flex-1 flex-col ${isUser ? 'items-end' : 'items-stretch'}`}>
         {/* 附件圖(只 user 訊息會帶) — 歷史 attachment 用 ref lazy load。 */}
@@ -138,7 +153,9 @@ export function MessageBubble({
         {message.text && !message.streaming && (
           <div className={`mt-1 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <CopyButton text={message.text} />
-            {!isUser && isLastAssistant && <RegenerateButton />}
+            {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。
+             *  Compacted 訊息 LLM context 已抽掉原 user prompt,點重新生成沒意義。 */}
+            {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
         )}
       </div>

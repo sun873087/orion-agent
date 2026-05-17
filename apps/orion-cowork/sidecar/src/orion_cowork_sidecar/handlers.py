@@ -500,23 +500,37 @@ class Handlers:
         )
 
         # ─── Auto-compact gate ─────────────────────────────────────────────
-        # Renderer 把使用者設定值連 send 一起送上來:enabled + threshold(0.1~0.99)。
-        # threshold 沒給走 SDK 預設(env 或 0.8)。
+        # Renderer 把使用者設定值連 send 一起送上來:enabled + threshold(0.1~0.99)
+        # + locale(摘要要用的語系,讓 summary card 跟 UI 一致)。
         auto_compact_enabled = bool(params.get("auto_compact_enabled", True))
         ac_threshold_raw = params.get("auto_compact_threshold")
         if isinstance(ac_threshold_raw, (int, float)):
             conv.auto_compact_threshold = float(ac_threshold_raw)
+        locale_raw = params.get("locale")
+        if isinstance(locale_raw, str) and locale_raw:
+            conv.compact_summary_locale = locale_raw
+        # Summary model override:若有,build 便宜 model 的 provider 給 SDK 用
+        # (跟 chat provider 區隔,讓摘要 cost 降下來)。建失敗 fallback chat model。
+        _apply_summary_provider(conv, params)
         if auto_compact_enabled:
+            pre_compact_state_count = len(conv.state_messages)
             try:
                 pre_result = await conv.compact(force=False)
             except Exception as e:  # noqa: BLE001
                 pre_result = None
                 print(f"[sidecar] auto-compact failed: {e}", file=sys.stderr, flush=True)
             if pre_result is not None and pre_result.was_compacted:
-                # 同步 DB:刪舊 messages,寫 tombstone(state_messages 已被 SDK mutate)
+                # DB soft-delete:把前 N 筆 row 標 compacted_out + append tombstone。
+                # 舊訊息 row 留著,UI scroll 回頭仍看得到(灰化顯示),LLM resume 跳過。
+                # N = 原 state_messages 長度 - (新長度 - 1)  // -1 扣掉 tombstone 本身
+                kept = pre_result.kept_message_count
+                compacted_count = pre_compact_state_count - (kept - 1)
+                tombstone_msg = conv.state_messages[0]
                 try:
-                    await storage.replace_with_compacted(
-                        engine, sid, list(conv.state_messages),
+                    await storage.record_compaction(
+                        engine, sid,
+                        compacted_count=compacted_count,
+                        tombstone_msg=tombstone_msg,
                     )
                 except Exception as e:  # noqa: BLE001
                     print(f"[sidecar] auto-compact DB sync failed: {e}", file=sys.stderr, flush=True)
@@ -528,6 +542,7 @@ class Handlers:
                         "summary": pre_result.summary,
                         "before_tokens": pre_result.before_tokens,
                         "after_tokens": pre_result.after_tokens,
+                        "compacted_count": compacted_count,
                         "auto": True,
                     },
                 }
@@ -948,8 +963,16 @@ class Handlers:
                 return
             self._conversations[sid] = conv
 
+        # 把 UI locale 寫進 conv,SDK 摘要會用該語系生成
+        locale_raw = params.get("locale")
+        if isinstance(locale_raw, str) and locale_raw:
+            conv.compact_summary_locale = locale_raw
+        # Summary model override:同 conversation_send 邏輯
+        _apply_summary_provider(conv, params)
+
         yield {"event": "compact_started", "data": {"session_id": sid}}
 
+        pre_compact_state_count = len(conv.state_messages)
         try:
             result = await conv.compact(force=force)
         except Exception as e:  # noqa: BLE001
@@ -967,6 +990,7 @@ class Handlers:
                     "summary": "",
                     "before_tokens": 0,
                     "after_tokens": result.after_tokens,
+                    "compacted_count": 0,
                     "skipped": True,
                     "auto": False,
                 },
@@ -974,10 +998,14 @@ class Handlers:
             }
             return
 
-        # 同步 DB
+        # DB soft-delete + append tombstone(同 auto 路徑)
+        compacted_count = pre_compact_state_count - (result.kept_message_count - 1)
+        tombstone_msg = conv.state_messages[0]
         try:
-            await storage.replace_with_compacted(
-                engine, sid, list(conv.state_messages),
+            await storage.record_compaction(
+                engine, sid,
+                compacted_count=compacted_count,
+                tombstone_msg=tombstone_msg,
             )
         except Exception as e:  # noqa: BLE001
             import sys
@@ -989,6 +1017,7 @@ class Handlers:
                 "summary": result.summary,
                 "before_tokens": result.before_tokens,
                 "after_tokens": result.after_tokens,
+                "compacted_count": compacted_count,
                 "skipped": False,
                 "auto": False,
             },
@@ -1278,7 +1307,9 @@ class Handlers:
         if match is None:
             return None
         ext = await storage.get_session_ext(engine, sid)
-        state_messages = await storage.load_messages(engine, sid)
+        # LLM 看的版本跳過 compacted_out=true 的舊訊息(只看 tombstone + 之後)。
+        # UI 端走 load_raw_messages 拿全量,自己按 metadata 標 compacted 淡化。
+        state_messages = await storage.load_active_messages_for_llm(engine, sid)
         conv, _ = await self._build_conversation(
             provider_name=match.provider,
             model=match.model,
@@ -2038,6 +2069,29 @@ class Handlers:
                     pass
 
 
+def _apply_summary_provider(conv: Conversation, params: dict[str, Any]) -> None:
+    """從 RPC params 讀 summary_provider / summary_model,build provider 注入 conv。
+
+    沒給 / 建失敗 → 不動 conv.compact_summary_provider(SDK 自動 fallback 到
+    conv.provider,跟 chat 同一個 model)。失敗 silent ignore — 摘要還是會跑,
+    只是用貴的 model。
+    """
+    sp_name = params.get("summary_provider")
+    sp_model = params.get("summary_model")
+    if not isinstance(sp_name, str) or not sp_name:
+        return
+    if not isinstance(sp_model, str) or not sp_model:
+        return
+    try:
+        conv.compact_summary_provider = get_provider(sp_name, sp_model)
+    except Exception as e:  # noqa: BLE001
+        import sys
+        print(
+            f"[sidecar] summary provider build failed ({sp_name}/{sp_model}): {e}",
+            file=sys.stderr, flush=True,
+        )
+
+
 def _is_user_prompt_row(content_json: Any) -> bool:
     """role=user 但 content 不全 tool_result(亦即真的 user prompt)。"""
     if isinstance(content_json, str):
@@ -2052,16 +2106,30 @@ def _is_user_prompt_row(content_json: Any) -> bool:
     return has_non_tool_result
 
 
-def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, Any]]:
-    """Raw (role, content_json) → UI dict,不 hydrate image blob bytes。
+def _row_is_tombstone(content_json: Any) -> bool:
+    """偵測 row 是否是 compact 留下的 tombstone(role=user content=[TombstoneBlock])。"""
+    if not isinstance(content_json, list) or len(content_json) != 1:
+        return False
+    b = content_json[0]
+    return isinstance(b, dict) and b.get("type") == "tombstone"
+
+
+def _to_ui_messages_from_raw(
+    rows: "list[tuple[str, Any, Any]]",
+) -> list[dict[str, Any]]:
+    """Raw (role, content_json, metadata_json) → UI dict,不 hydrate image blob bytes。
 
     把連續 assistant + tool_result(role=user)合併成單一 UI assistant turn —
     跟 streaming 時 RightSidebar / ToolCallGroup 看到的形狀一致(整 turn 工具
     收進同一個 group),歷史對話 reload 後不會散成多個小 group。
+
+    特別處理:
+    - metadata_json.compacted_out=True 的 row → UI 加上 compacted=True 旗標,前端淡化
+    - content 是單一 TombstoneBlock → 翻成 system kind=compact-summary card
     """
     # 第一 pass:tool_use_id → {text, is_error}
     result_map: dict[str, dict[str, Any]] = {}
-    for _, content_json in rows:
+    for _, content_json, _ in rows:
         if not isinstance(content_json, list):
             continue
         for b in content_json:
@@ -2089,7 +2157,25 @@ def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, An
     out: list[dict[str, Any]] = []
     i = 0
     while i < len(rows):
-        role, content_json = rows[i]
+        role, content_json, meta = rows[i]
+        is_compacted = isinstance(meta, dict) and bool(meta.get("compacted_out"))
+
+        # Tombstone row → 單獨 emit 一張 compact-summary card,然後跳過
+        if _row_is_tombstone(content_json):
+            tb = content_json[0]
+            out.append({
+                "role": "system",
+                "text": str(tb.get("summary", "")),
+                "attachments": [],
+                "tool_calls": [],
+                "blocks": [],
+                "message_index": i,
+                "kind": "compact-summary",
+                "before_tokens": int(tb.get("original_token_count", 0) or 0),
+            })
+            i += 1
+            continue
+
         # 純 user prompt → emit user message + 收 attachments(若有)
         if role == "user" and _is_user_prompt_row(content_json):
             text = ""
@@ -2120,18 +2206,24 @@ def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, An
                     "tool_calls": [],
                     "blocks": [],
                     "message_index": i,
+                    "compacted": is_compacted,
                 })
             i += 1
             continue
-        # 從這裡到下一個 user prompt(或 EOF)合併成單一 assistant turn
+        # 從這裡到下一個 user prompt / tombstone(或 EOF)合併成單一 assistant turn
         merged_text = ""
         merged_tool_calls: list[dict[str, Any]] = []
         merged_blocks: list[dict[str, Any]] = []
         merged_attachments: list[dict[str, Any]] = []
         tools_buffer: list[str] = []
         first_idx = i
+        merged_compacted = is_compacted
         while i < len(rows):
-            r2, cj2 = rows[i]
+            r2, cj2, meta2 = rows[i]
+            if _row_is_tombstone(cj2):
+                break
+            if r2 == "user" and _is_user_prompt_row(cj2):
+                break  # 進入下個 turn
             if r2 == "user" and _is_user_prompt_row(cj2):
                 break  # 進入下個 turn
             if isinstance(cj2, list):
@@ -2187,6 +2279,7 @@ def _to_ui_messages_from_raw(rows: "list[tuple[str, Any]]") -> list[dict[str, An
                 "tool_calls": merged_tool_calls,
                 "blocks": merged_blocks,
                 "message_index": first_idx,
+                "compacted": merged_compacted,
             })
     return out
 

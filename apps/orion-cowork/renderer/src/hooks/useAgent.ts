@@ -111,6 +111,9 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
             : { type: 'tools' as const, toolUseIds: b.tool_use_ids },
         )
       : undefined,
+    compacted: m.compacted || undefined,
+    kind: m.kind,
+    beforeTokens: m.before_tokens,
     createdAt: Date.now(),
   }))
   useAgentStore.setState({ messages })
@@ -175,6 +178,9 @@ export function useSendPrompt() {
   const permissionMode = useSettingsStore((s) => s.permissionMode)
   const autoCompactEnabled = useSettingsStore((s) => s.autoCompactEnabled)
   const autoCompactThreshold = useSettingsStore((s) => s.autoCompactThreshold)
+  const locale = useSettingsStore((s) => s.locale)
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
@@ -211,7 +217,13 @@ export function useSendPrompt() {
         (ev: SidecarEvent) => applyEvent(assistantId, ev),
         attachments,
         permissionMode,
-        { autoCompactEnabled, autoCompactThreshold },
+        {
+          autoCompactEnabled,
+          autoCompactThreshold,
+          locale,
+          summaryProvider,
+          summaryModel,
+        },
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -228,7 +240,7 @@ export function useSendPrompt() {
       }
       refreshSessions()
     }
-  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold])
+  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel])
 }
 
 export function useAbort() {
@@ -370,11 +382,16 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         summary: string
         before_tokens: number
         skipped?: boolean
+        auto?: boolean
       }
       if (data.skipped) {
         s.setCompacting(false)
       } else {
-        s.applyCompactComplete(data.summary, data.before_tokens)
+        // Auto 路徑:剛 appendUserMessage + beginAssistantMessage,後 2 筆是
+        //          這次 send 的 live tail,不該被標 compacted。
+        // 手動 /compact:全部既存 messages 都進 compacted 區。
+        const tail = data.auto ? 2 : 0
+        s.applyCompactComplete(data.summary, data.before_tokens, tail)
       }
       break
     }
@@ -384,6 +401,9 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
 /** /compact 攔截 — InputBox 偵測到輸入文字是 /compact 時呼叫。
  *  不送 prompt,直接觸發 sidecar 的 conversation.compact RPC。 */
 export function useCompactConversation() {
+  const locale = useSettingsStore((s) => s.locale)
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
   return useCallback(async () => {
     const store = useAgentStore.getState()
     const sid = store.sessionId
@@ -391,10 +411,14 @@ export function useCompactConversation() {
     store.setCompacting(true)
     store.setError(null)
     try {
-      await rpcCompact(sid, (ev: SidecarEvent) => {
-        // 用 dummy assistantId — compact 不會 emit text_delta / tool 事件
-        applyEvent('compact-rpc', ev)
-      })
+      await rpcCompact(
+        sid,
+        (ev: SidecarEvent) => {
+          // 用 dummy assistantId — compact 不會 emit text_delta / tool 事件
+          applyEvent('compact-rpc', ev)
+        },
+        { locale, summaryProvider, summaryModel },
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(msg)
@@ -404,5 +428,5 @@ export function useCompactConversation() {
       const st = useAgentStore.getState()
       if (st.compacting) st.setCompacting(false)
     }
-  }, [])
+  }, [locale, summaryProvider, summaryModel])
 }

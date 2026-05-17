@@ -96,6 +96,12 @@ type SettingsState = {
   setAutoCompactEnabled: (v: boolean) => void
   setAutoCompactThreshold: (v: number) => void
 
+  /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
+   *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-4o-mini)。 */
+  compactSummaryProvider: string | null
+  compactSummaryModel: string | null
+  setCompactSummary: (provider: string | null, model: string | null) => void
+
   /** 當前選中的 project filter。null = 不 filter(顯所有 sessions)。 */
   activeProjectId: string | null
   /** New Project modal 開關。 */
@@ -133,6 +139,10 @@ export const useSettingsStore = create<SettingsState>()(
       rightSidebarOpen: false,
       autoCompactEnabled: true,
       autoCompactThreshold: 0.8,
+      // 預設用便宜 model 摘要(Anthropic 端 Haiku),省 cost ~5x。
+      // 跟 chat provider 對齊在 dispatch 時挑;User 也可手動改成任何 model。
+      compactSummaryProvider: 'anthropic',
+      compactSummaryModel: 'claude-haiku-4-5',
       activeProjectId: null,
       newProjectOpen: false,
       editingProjectId: null,
@@ -184,6 +194,8 @@ export const useSettingsStore = create<SettingsState>()(
         const clamped = Math.min(0.99, Math.max(0.1, v))
         set({ autoCompactThreshold: Math.round(clamped * 100) / 100 })
       },
+      setCompactSummary: (provider, model) =>
+        set({ compactSummaryProvider: provider, compactSummaryModel: model }),
 
       setActiveProjectId: (id) => set({ activeProjectId: id }),
       openNewProject: () => set({ newProjectOpen: true }),
@@ -206,6 +218,8 @@ export const useSettingsStore = create<SettingsState>()(
         rightSidebarOpen: s.rightSidebarOpen,
         autoCompactEnabled: s.autoCompactEnabled,
         autoCompactThreshold: s.autoCompactThreshold,
+        compactSummaryProvider: s.compactSummaryProvider,
+        compactSummaryModel: s.compactSummaryModel,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

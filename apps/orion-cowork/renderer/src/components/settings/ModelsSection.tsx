@@ -105,7 +105,12 @@ function AutoCompactPicker() {
   const setEnabled = useSettingsStore((s) => s.setAutoCompactEnabled)
   const threshold = useSettingsStore((s) => s.autoCompactThreshold)
   const setThreshold = useSettingsStore((s) => s.setAutoCompactThreshold)
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+  const setSummary = useSettingsStore((s) => s.setCompactSummary)
+  const providers = useSettingsStore((s) => s.providers)
   const pct = Math.round(threshold * 100)
+  const summaryValue = summaryProvider && summaryModel ? `${summaryProvider}/${summaryModel}` : ''
 
   return (
     <div className="flex flex-col gap-2">
@@ -145,6 +150,39 @@ function AutoCompactPicker() {
           <span>80%(預設)</span>
           <span>95%</span>
         </div>
+      </div>
+      <div className="mt-2 flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-fg-muted">
+          摘要 model
+        </label>
+        <p className="text-[10px] text-fg-subtle">
+          壓縮本身打的 LLM call。預設 Haiku 比用對話 model 便宜 ~5x;
+          可選擇任一已設 API key 的 provider × model。
+        </p>
+        <select
+          value={summaryValue}
+          onChange={(e) => {
+            const v = e.target.value
+            if (!v) {
+              setSummary(null, null)
+              return
+            }
+            const [p, ...rest] = v.split('/')
+            setSummary(p, rest.join('/'))
+          }}
+          className="w-64 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs focus:border-accent focus:outline-none"
+        >
+          <option value="">跟對話用同一個 model</option>
+          {providers
+            .filter((p) => p.api_key_configured)
+            .flatMap((p) =>
+              p.models.map((m) => (
+                <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>
+                  {p.label} · {m.label}
+                </option>
+              )),
+            )}
+        </select>
       </div>
     </div>
   )

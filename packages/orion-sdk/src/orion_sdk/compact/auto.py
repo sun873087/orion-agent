@@ -83,15 +83,22 @@ async def auto_compact_if_needed(
     provider: LLMProvider,
     strategy: CompactionStrategy | None = None,
     threshold: float | None = None,
+    locale: str | None = None,
+    summary_provider: LLMProvider | None = None,
 ) -> tuple[list[NormalizedMessage], bool]:
     """進 API 前檢查並可能 compact。
 
     Args:
         messages: 當前 state_messages
-        provider: 用 capabilities.max_context_tokens + 給 strategy 摘要用
+        provider: 用 capabilities.max_context_tokens 做 threshold 判斷
+            (這該是 chat model 的 context window,不是 summary model 的)
         strategy: 預設 SonnetSummaryStrategy,可注入 TruncateStrategy 給測試
         threshold: 觸發比例,優先於 ORION_AUTO_COMPACT_THRESHOLD env。
             傳 None → 用 env / 預設 0.8。
+        locale: 摘要要用的語系
+        summary_provider: 摘要 LLM call 用的 provider。None → 用 `provider`
+            (跟 chat 同一個);通常 caller 注入便宜 model(Haiku / 4o-mini)
+            把 compact cost 降下來
 
     Returns:
         (new_messages, was_compacted):若無需 compact,new_messages 原樣回 + False
@@ -109,8 +116,9 @@ async def auto_compact_if_needed(
 
     return await compact_messages_now(
         messages,
-        provider=provider,
+        provider=summary_provider or provider,
         strategy=strategy,
+        locale=locale,
     ), True
 
 
@@ -120,6 +128,7 @@ async def compact_messages_now(
     provider: LLMProvider,
     strategy: CompactionStrategy | None = None,
     range_ratio: float = AUTO_COMPACT_RANGE_RATIO,
+    locale: str | None = None,
 ) -> list[NormalizedMessage]:
     """強制壓縮(跳過 threshold 檢查)— 給手動 /compact 用。
 
@@ -137,7 +146,7 @@ async def compact_messages_now(
 
     strat = strategy or SonnetSummaryStrategy()
     try:
-        summary = await strat.summarize(messages[:cutoff], provider=provider)
+        summary = await strat.summarize(messages[:cutoff], provider=provider, locale=locale)
     except Exception:  # noqa: BLE001 — 摘要失敗 fallback truncate
         summary = TruncateStrategy().summarize_sync(messages[:cutoff])
 

@@ -468,54 +468,84 @@ async def append_messages(
         await s.commit()
 
 
-async def replace_with_compacted(
+async def record_compaction(
     engine: AsyncEngine,
     session_id: str,
-    state_messages: list[NormalizedMessage],
+    *,
+    compacted_count: int,
+    tombstone_msg: NormalizedMessage,
 ) -> None:
-    """Compact 後 atomic 取代 session 訊息 — 刪所有舊 message row,再 append 壓縮後 list。
+    """記錄一次壓縮 — soft delete(舊訊息留在 DB 給 UI history 看)+ append tombstone。
 
-    壓縮後 state_messages 的第一張通常是 TombstoneBlock(role=user),後面接保留段。
-    為避免半完成狀態,整段在單一 transaction 內 delete + insert。
+    `compacted_count`:從本 session 訊息頭算起,前 N 筆要被標記成 `compacted_out`
+    (給 LLM 看的版本會 filter 掉)。`tombstone_msg`:role=user 含單一 TombstoneBlock
+    的訊息,append 在最後當分隔線。
 
-    同時 GC 被壓掉訊息引用的 image blob(那些 blob_id 不會再有 row 指向)。
+    image blob 故意不 GC — 舊訊息 row 仍存在,UI scroll 回去要能看到原圖。
+    """
+    from sqlalchemy import update
+
+    blob = get_blob_store()
+    async with db_session(engine) as s:
+        # 取前 compacted_count 筆 row id(chronological 順序)
+        stmt = (
+            select(MessageRow.id, MessageRow.metadata_json)
+            .where(MessageRow.session_id == session_id)
+            .order_by(MessageRow.created_at, MessageRow.id)
+            .limit(compacted_count)
+        )
+        rows = list(await s.execute(stmt))
+
+        for row_id, meta in rows:
+            new_meta = dict(meta) if isinstance(meta, dict) else {}
+            new_meta["compacted_out"] = True
+            await s.execute(
+                update(MessageRow)
+                .where(MessageRow.id == row_id)
+                .values(metadata_json=new_meta)
+            )
+
+        # Append tombstone row(role=user, content=[TombstoneBlock dict])
+        content = tombstone_msg.content
+        if isinstance(content, str):
+            content_value: Any = content
+        else:
+            content_value = [b.model_dump(mode="json") for b in content]
+            content_value = _persist_image_blocks(content_value, blob)
+        s.add(MessageRow(
+            session_id=session_id,
+            role=tombstone_msg.role,
+            content_json=content_value,
+        ))
+        await s.commit()
+
+
+async def load_active_messages_for_llm(
+    engine: AsyncEngine,
+    session_id: str,
+) -> list[NormalizedMessage]:
+    """LLM-facing 載入:跳過 metadata.compacted_out=True 的舊訊息。
+
+    Resume 時用這個取代 `load_messages`,LLM context 只看 tombstone + 之後。
+    UI 端走 `load_raw_messages`(回所有 rows,前端自己判斷誰是 compacted 來淡化)。
     """
     blob = get_blob_store()
     async with db_session(engine) as s:
-        # 先撈所有現存 row 的 content_json 算出之前用的 blob_ids,然後 diff 出新
-        # 內容仍引用的 blob_ids → 差集就是要 unlink 的孤兒。
-        old_rows = await s.execute(
-            select(MessageRow.content_json).where(MessageRow.session_id == session_id)
+        stmt = (
+            select(MessageRow.role, MessageRow.content_json, MessageRow.metadata_json)
+            .where(MessageRow.session_id == session_id)
+            .order_by(MessageRow.created_at, MessageRow.id)
         )
-        old_blob_ids = set(_collect_blob_ids([cj for (cj,) in old_rows]))
-
-        # 全刪後 append 新 state
-        await s.execute(delete(MessageRow).where(MessageRow.session_id == session_id))
-
-        new_blob_ids: set[str] = set()
-        for msg in state_messages:
-            content_value: Any
-            content = msg.content
-            if isinstance(content, str):
-                content_value = content
-            else:
-                content_value = [b.model_dump(mode="json") for b in content]
-                content_value = _persist_image_blocks(content_value, blob)
-                new_blob_ids.update(_collect_blob_ids([content_value]))
-            s.add(MessageRow(
-                session_id=session_id,
-                role=msg.role,
-                content_json=content_value,
-            ))
-        await s.commit()
-
-    # Orphan blobs:被壓掉的訊息引用、新 state 不再用的
-    orphans = old_blob_ids - new_blob_ids
-    for bid in orphans:
-        try:
-            blob.delete(bid)
-        except Exception:  # noqa: BLE001
-            pass
+        rows = list(await s.execute(stmt))
+    out: list[NormalizedMessage] = []
+    for role, content_json, meta in rows:
+        if isinstance(meta, dict) and meta.get("compacted_out"):
+            continue
+        hydrated = _hydrate_image_blocks(content_json, blob)
+        msg = _msg_from_dict({"role": role, "content": hydrated})
+        if msg is not None:
+            out.append(msg)
+    return out
 
 
 async def load_messages(
@@ -546,19 +576,20 @@ async def load_messages(
 async def load_raw_messages(
     engine: AsyncEngine,
     session_id: str,
-) -> list[tuple[str, Any]]:
-    """UI lightweight 載入:不 hydrate blob,只回 (role, content_json) 原樣。
+) -> list[tuple[str, Any, Any]]:
+    """UI lightweight 載入:不 hydrate blob,只回 (role, content_json, metadata_json) 原樣。
 
     切歷史時不會把 N × MB 的圖讀進記憶體,UI 拿到 ref dict 再 lazy 撈單張。
+    metadata_json 帶回給 caller 判斷 compacted_out / 其他標記。
     """
     async with db_session(engine) as s:
         stmt = (
-            select(MessageRow.role, MessageRow.content_json)
+            select(MessageRow.role, MessageRow.content_json, MessageRow.metadata_json)
             .where(MessageRow.session_id == session_id)
             .order_by(MessageRow.created_at, MessageRow.id)
         )
         rows = list(await s.execute(stmt))
-    return [(role, content_json) for role, content_json in rows]
+    return [(role, content_json, meta) for role, content_json, meta in rows]
 
 
 async def read_attachment_data_url(
@@ -574,7 +605,7 @@ async def read_attachment_data_url(
     rows = await load_raw_messages(engine, session_id)
     if message_index < 0 or message_index >= len(rows):
         raise IndexError(f"message_index {message_index} out of range")
-    _, content_json = rows[message_index]
+    _, content_json, _ = rows[message_index]
     if not isinstance(content_json, list):
         raise ValueError("message has no attachments")
     images = [
@@ -812,7 +843,7 @@ async def search_messages(
         match_count = title_lower.count(q) if title_lower else 0
         snippet = ""
         rows = await load_raw_messages(engine, sess.session_id)
-        for _role, content_json in rows:
+        for _role, content_json, _ in rows:
             text = _extract_text_from_content(content_json)
             if not text:
                 continue

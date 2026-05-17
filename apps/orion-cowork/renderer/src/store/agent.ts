@@ -73,6 +73,8 @@ export type Message = {
   kind?: 'compact-summary'
   /** Compact summary card 才有:壓縮前的概略 token 數。 */
   beforeTokens?: number
+  /** Compact 前的舊訊息 — UI 灰化,但仍 scroll 看得到(LLM 看不到)。 */
+  compacted?: boolean
   createdAt: number
 }
 
@@ -103,8 +105,15 @@ type AgentState = {
   /** 對話壓縮進行中(UI 顯 banner)。 */
   compacting: boolean
   setCompacting: (v: boolean) => void
-  /** 壓縮完成 — 清空訊息列、push 一張 system summary card。 */
-  applyCompactComplete: (summary: string, beforeTokens: number) => void
+  /** 壓縮完成 — 把現有訊息標 compacted(灰化,不再 LLM 可見)+ 插入 summary card。
+   *  `liveTailCount` 是要保留不標 compacted 的尾端訊息數
+   *  (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
+   *   手動 /compact 為 0)。 */
+  applyCompactComplete: (
+    summary: string,
+    beforeTokens: number,
+    liveTailCount: number,
+  ) => void
 
   // mutators
   setSessionId: (sid: string) => void
@@ -305,20 +314,27 @@ export const useAgentStore = create<AgentState>((set) => ({
   setPendingQuestion: (q) => set({ pendingQuestion: q }),
 
   setCompacting: (v) => set({ compacting: v }),
-  applyCompactComplete: (summary, beforeTokens) => {
-    const id = newId()
-    set({
-      messages: [
-        {
-          id,
-          role: 'system',
-          text: summary,
-          kind: 'compact-summary',
-          beforeTokens,
-          createdAt: Date.now(),
-        },
-      ],
-      compacting: false,
+  applyCompactComplete: (summary, beforeTokens, liveTailCount) => {
+    set((s) => {
+      const all = s.messages
+      const cut = Math.max(0, all.length - Math.max(0, liveTailCount))
+      // 已是 compact-summary 的 row 不重複標,維持原 kind / compacted
+      const compactedPrev = all.slice(0, cut).map((m) =>
+        m.kind === 'compact-summary' ? m : { ...m, compacted: true },
+      )
+      const tail = all.slice(cut)
+      const card: Message = {
+        id: newId(),
+        role: 'system',
+        text: summary,
+        kind: 'compact-summary',
+        beforeTokens,
+        createdAt: Date.now(),
+      }
+      return {
+        messages: [...compactedPrev, card, ...tail],
+        compacting: false,
+      }
     })
   },
 

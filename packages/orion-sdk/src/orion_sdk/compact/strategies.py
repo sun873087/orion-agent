@@ -23,23 +23,44 @@ from orion_model.types import (
     ToolUseBlock,
 )
 
-_SUMMARY_SYSTEM_PROMPT = """\
+_LOCALE_LABELS: dict[str, str] = {
+    "zh-TW": "Traditional Chinese (繁體中文)",
+    "zh-CN": "Simplified Chinese (简体中文)",
+    "ja": "Japanese (日本語)",
+    "en": "English",
+}
+
+
+def _build_summary_system_prompt(locale: str | None) -> str:
+    """組摘要 system prompt — 含目標語系 + 長度縮放規則。
+
+    locale: 'zh-TW' / 'zh-CN' / 'ja' / 'en';None 或不認得就 fallback English。
+    """
+    lang_label = _LOCALE_LABELS.get(locale or "", "English")
+    return f"""\
 You compress an earlier portion of an agent conversation into a concise
 summary that the model can use to recall what happened.
 
+LANGUAGE: write the summary in **{lang_label}**, matching how the user spoke.
+
+LENGTH — scale to the actual conversation:
+- 1-3 turns or a single tool call → 1-2 short bullet lines (~30-60 words)
+- 4-10 turns → ~80-150 words
+- 10+ turns / substantial work → 200-400 words
+Do not pad. A short conversation deserves a short summary.
+
 Include:
-- The user's original task / goals
-- Key tool calls and what they discovered (file paths, commands run, findings)
+- The user's task / goals
+- Key tool calls and findings (file paths, commands run, results)
 - Decisions made and code changes
 - Errors encountered
 
 Omit:
-- Verbose tool output (just the conclusions)
+- Verbose tool output (just conclusions)
 - Repetitive reasoning
 - Already-resolved confusion
 
-Output a single coherent paragraph or bullet list. Aim for 200-500 words.
-No preamble, no meta-commentary."""
+Output: bullets or a single paragraph. No preamble, no meta-commentary."""
 
 
 def _flatten_messages_for_summary(
@@ -76,6 +97,7 @@ class CompactionStrategy(Protocol):
         messages: list[NormalizedMessage],
         *,
         provider: LLMProvider,
+        locale: str | None = None,
     ) -> str:
         ...
 
@@ -91,6 +113,7 @@ class SonnetSummaryStrategy:
         messages: list[NormalizedMessage],
         *,
         provider: LLMProvider,
+        locale: str | None = None,
     ) -> str:
         if not messages:
             return "(no prior messages)"
@@ -104,7 +127,7 @@ class SonnetSummaryStrategy:
 
         chunks: list[str] = []
         async for ev in provider.stream(
-            system=_SUMMARY_SYSTEM_PROMPT,
+            system=_build_summary_system_prompt(locale),
             messages=[NormalizedMessage(role="user", content=user_text)],
             tools=[],
             max_tokens=1024,
@@ -127,6 +150,7 @@ class TruncateStrategy:
         messages: list[NormalizedMessage],
         *,
         provider: LLMProvider,  # noqa: ARG002
+        locale: str | None = None,  # noqa: ARG002
     ) -> str:
         return self.summarize_sync(messages)
 

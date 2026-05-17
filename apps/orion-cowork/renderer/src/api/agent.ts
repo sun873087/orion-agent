@@ -347,7 +347,13 @@ export async function sendPrompt(
   onEvent: (ev: SidecarEvent) => void,
   attachments?: Attachment[],
   permissionMode?: PermissionMode,
-  opts?: { autoCompactEnabled?: boolean; autoCompactThreshold?: number },
+  opts?: {
+    autoCompactEnabled?: boolean
+    autoCompactThreshold?: number
+    locale?: string
+    summaryProvider?: string | null
+    summaryModel?: string | null
+  },
 ): Promise<void> {
   await window.agent.call(
     'conversation.send',
@@ -357,6 +363,9 @@ export async function sendPrompt(
       permission_mode: permissionMode ?? 'act',
       auto_compact_enabled: opts?.autoCompactEnabled ?? true,
       auto_compact_threshold: opts?.autoCompactThreshold ?? 0.8,
+      locale: opts?.locale,
+      summary_provider: opts?.summaryProvider ?? undefined,
+      summary_model: opts?.summaryModel ?? undefined,
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,
@@ -368,15 +377,27 @@ export async function sendPrompt(
   )
 }
 
-/** 手動觸發對話壓縮 — UI 攔到 /compact 後呼叫。force=true 跳過 threshold 直接壓。 */
+/** 手動觸發對話壓縮 — UI 攔到 /compact 後呼叫。force=true 跳過 threshold 直接壓。
+ *  locale 控制摘要語系(zh-TW / zh-CN / ja / en),sidecar 傳給 SDK 摘要 prompt。 */
 export async function compactConversation(
   sessionId: string,
   onEvent: (ev: SidecarEvent) => void,
-  force = true,
+  opts?: {
+    force?: boolean
+    locale?: string
+    summaryProvider?: string | null
+    summaryModel?: string | null
+  },
 ): Promise<void> {
   await window.agent.call(
     'conversation.compact',
-    { session_id: sessionId, force },
+    {
+      session_id: sessionId,
+      force: opts?.force ?? true,
+      locale: opts?.locale,
+      summary_provider: opts?.summaryProvider ?? undefined,
+      summary_model: opts?.summaryModel ?? undefined,
+    },
     (frame) => {
       onEvent(frame as unknown as SidecarEvent)
     },
@@ -823,6 +844,12 @@ export type LoadedMessage = {
   attachments: Array<{ media_type: string; ref: LoadedAttachmentRef }>
   tool_calls?: LoadedToolCall[]
   blocks?: LoadedBlock[]
+  /** Compact 前的舊訊息 — UI 淡化顯示,但仍可 scroll 查看。 */
+  compacted?: boolean
+  /** 系統訊息 kind('compact-summary' 等)。 */
+  kind?: 'compact-summary'
+  /** Compact summary card 才有:壓縮前的概略 token 數。 */
+  before_tokens?: number
 }
 
 export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> {
