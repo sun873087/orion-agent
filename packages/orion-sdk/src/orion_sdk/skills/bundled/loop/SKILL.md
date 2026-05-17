@@ -36,11 +36,24 @@ Examples:
 
 ## Action
 
-1. Call CronCreate with:
-   - `cron`: the expression from the table above
+1. Call **LoopCreate** with:
+   - `name`: short label derived from the prompt (e.g. "Watch PRs" for `/babysit-prs`)
+   - `cron_expr`: the expression from the table above
    - `prompt`: the parsed prompt verbatim (slash commands pass through unchanged)
-2. Briefly confirm: what's scheduled, the cron expression, the human-readable cadence, and that they can cancel with CronDelete (include the job ID).
-3. **Then immediately execute the parsed prompt now** — don't wait for the first cron fire.
+
+   LoopCreate auto-binds this loop to the **current conversation** — every fire
+   appends the prompt back into this session, so context accumulates. If you
+   want each fire to open a fresh session instead, use ScheduleCreate.
+
+   (If LoopCreate isn't available — typically because you're not in a host that
+   wired it, like the CLI — fall back to CronCreate with `cron` and `command`
+   parameters.)
+
+2. Briefly confirm: what's scheduled, the cron expression, the human-readable
+   cadence, and that they can cancel via the Settings → 排程 page (include the
+   loop ID).
+3. **Then immediately execute the parsed prompt now** — don't wait for the first
+   cron fire.
 
 ## Usage
 

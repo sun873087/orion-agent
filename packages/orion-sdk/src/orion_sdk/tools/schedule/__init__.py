@@ -9,11 +9,13 @@ caller(目前是 Cowork sidecar)透過 callback injection 提供。
 
 from __future__ import annotations
 
+from orion_sdk.tools.schedule.loop_create import LoopCreateTool
 from orion_sdk.tools.schedule.schedule_create import ScheduleCreateTool
 from orion_sdk.tools.schedule.schedule_delete import ScheduleDeleteTool
 from orion_sdk.tools.schedule.schedule_list import ScheduleListTool
 
 __all__ = [
+    "LoopCreateTool",
     "ScheduleCreateTool",
     "ScheduleDeleteTool",
     "ScheduleListTool",

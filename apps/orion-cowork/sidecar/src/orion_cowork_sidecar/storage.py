@@ -228,6 +228,13 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             )
             """
         )
+        # Idempotent ALTER for older DBs that pre-date target_session_id(Loop 功能加的)
+        try:
+            await conn.exec_driver_sql(
+                "ALTER TABLE cowork_schedules ADD COLUMN target_session_id TEXT"
+            )
+        except Exception:  # noqa: BLE001
+            pass
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS cowork_schedules_enabled_idx "
             "ON cowork_schedules(enabled, next_run_at)"
@@ -235,6 +242,10 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS cowork_schedules_project_idx "
             "ON cowork_schedules(project_id)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_schedules_target_session_idx "
+            "ON cowork_schedules(target_session_id)"
         )
         await conn.commit()
 
@@ -1096,6 +1107,8 @@ class Schedule:
     workspace_dir: str | None
     created_at: float
     updated_at: float
+    # Loop 用:有值表示 fire 時送回該既有 session(不開新);無值是「排程」行為
+    target_session_id: str | None = None
 
 
 def _schedule_from_row(r: Any) -> Schedule:
@@ -1118,13 +1131,14 @@ def _schedule_from_row(r: Any) -> Schedule:
         workspace_dir=r[15],
         created_at=r[16],
         updated_at=r[17],
+        target_session_id=r[18] if len(r) > 18 else None,
     )
 
 
 _SCHEDULE_COLS = (
     "id, user_id, project_id, name, cron_expr, trigger_type, payload, enabled, "
     "last_run_at, next_run_at, last_run_session_id, last_run_status, last_error, "
-    "model_provider, model, workspace_dir, created_at, updated_at"
+    "model_provider, model, workspace_dir, created_at, updated_at, target_session_id"
 )
 
 
@@ -1190,6 +1204,7 @@ async def create_schedule(
     model_provider: str | None = None,
     model: str | None = None,
     workspace_dir: str | None = None,
+    target_session_id: str | None = None,
 ) -> Schedule:
     from uuid import uuid4
     sid = str(uuid4())
@@ -1197,13 +1212,14 @@ async def create_schedule(
     async with engine.connect() as conn:
         await conn.exec_driver_sql(
             f"INSERT INTO cowork_schedules ({_SCHEDULE_COLS}) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 sid, LOCAL_USER_ID, project_id, name, cron_expr, trigger_type,
                 payload, 1 if enabled else 0,
                 None, next_run_at, None, None, None,
                 model_provider, model, workspace_dir,
                 now, now,
+                target_session_id,
             ),
         )
         await conn.commit()

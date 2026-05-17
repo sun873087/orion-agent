@@ -36,6 +36,8 @@ def _schedule_to_dict(s: storage.Schedule) -> dict[str, Any]:
         "workspace_dir": s.workspace_dir,
         "created_at": s.created_at,
         "updated_at": s.updated_at,
+        "target_session_id": s.target_session_id,
+        "kind": "loop" if s.target_session_id else "schedule",
     }
 
 
@@ -110,6 +112,8 @@ def bind_schedule_handlers(handlers: "Handlers") -> dict[str, Any]:
         model_provider = params.get("model_provider") if isinstance(params.get("model_provider"), str) else None
         model = params.get("model") if isinstance(params.get("model"), str) else None
         workspace_dir = params.get("workspace_dir") if isinstance(params.get("workspace_dir"), str) else None
+        # Loop = bound to 既有 session;有值表示 fire 時送回該 session(不開新)
+        target_session_id = params.get("target_session_id") if isinstance(params.get("target_session_id"), str) else None
 
         # Project-scope 自動帶 workspace_dir
         if scope == "project" and project_id and not workspace_dir:
@@ -121,7 +125,7 @@ def bind_schedule_handlers(handlers: "Handlers") -> dict[str, Any]:
 
         sid = params.get("id")
         if isinstance(sid, str) and sid:
-            # Update
+            # Update — 暫不支援切換 target_session_id(loop ↔ schedule 不該透過 update)
             existing = await storage.get_schedule(engine, sid)
             if existing is None:
                 yield {"event": "error", "data": {"code": "NOT_FOUND",
@@ -154,6 +158,7 @@ def bind_schedule_handlers(handlers: "Handlers") -> dict[str, Any]:
                 model_provider=model_provider,
                 model=model,
                 workspace_dir=workspace_dir,
+                target_session_id=target_session_id,
             )
 
         yield {

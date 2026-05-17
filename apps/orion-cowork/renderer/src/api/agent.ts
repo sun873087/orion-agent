@@ -1102,6 +1102,10 @@ export type Schedule = {
   workspace_dir: string | null
   created_at: number
   updated_at: number
+  /** Loop:有值 = 綁定此 session,每次 fire 送回該對話;null = 排程模式(開新 session) */
+  target_session_id: string | null
+  /** sidecar 標的便利欄,'loop' or 'schedule'(從 target_session_id 推導) */
+  kind: 'loop' | 'schedule'
 }
 
 export async function listSchedules(opts?: {
@@ -1142,6 +1146,8 @@ export type WriteScheduleInput = {
   model_provider?: string | null
   model?: string | null
   workspace_dir?: string | null
+  /** Loop:有值 = 綁定此 session,fire 送回該對話 */
+  target_session_id?: string | null
 }
 
 export async function writeSchedule(input: WriteScheduleInput): Promise<Schedule | null> {

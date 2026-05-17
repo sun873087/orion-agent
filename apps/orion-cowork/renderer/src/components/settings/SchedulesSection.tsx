@@ -12,7 +12,17 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Calendar, Clock, Edit3, Play, Plus, ToggleLeft, ToggleRight, Trash2 } from 'lucide-react'
+import {
+  Calendar,
+  Clock,
+  Edit3,
+  Play,
+  Plus,
+  Repeat,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+} from 'lucide-react'
 
 import {
   deleteSchedule,
@@ -126,7 +136,28 @@ export function SchedulesSection() {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
+                  {s.kind === 'loop' ? (
+                    <Repeat
+                      size={13}
+                      className="shrink-0 text-accent"
+                      aria-label={t('schedule.kind.loop')}
+                    />
+                  ) : (
+                    <Clock
+                      size={13}
+                      className="shrink-0 text-fg-subtle"
+                      aria-label={t('schedule.kind.schedule')}
+                    />
+                  )}
                   <span className="truncate text-sm font-medium">{s.name}</span>
+                  {s.kind === 'loop' && (
+                    <span
+                      className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent"
+                      title={t('schedule.kind.loopTooltip')}
+                    >
+                      Loop
+                    </span>
+                  )}
                   {s.scope === 'project' && (
                     <span className="rounded bg-bg-hover px-1.5 py-0.5 text-[10px] text-fg-muted">
                       {t('schedule.scope.project')}
@@ -235,6 +266,10 @@ function ScheduleEditor({
 }) {
   const { t } = useTranslation()
   const isNew = schedule === null
+  // Loop 模式:綁定既有 session,scope / trigger_type / target 不可改;只露
+  // name / cron / prompt / model / enabled。
+  const isLoop = schedule?.kind === 'loop'
+  const targetSessionId = schedule?.target_session_id ?? null
 
   // user 目前的 chat default(從 settings store) — 「跟隨目前」option 用這個
   const currentProvider = useSettingsStore((s) => s.selectedProvider)
@@ -319,6 +354,8 @@ function ScheduleEditor({
       enabled,
       model_provider: chosenProvider || null,
       model: chosenModel || null,
+      // Loop 編輯時 round-trip,別讓它在 update 時 lose binding
+      target_session_id: targetSessionId,
     }
     setSaving(true)
     try {
@@ -347,38 +384,44 @@ function ScheduleEditor({
         />
       </Field>
 
-      <Field label={t('schedule.field.scope')}>
-        <div className="flex gap-2">
-          <RadioBtn
-            label={t('schedule.scope.user')}
-            checked={scope === 'user'}
-            onClick={() => setScope('user')}
-          />
-          <RadioBtn
-            label={t('schedule.scope.project')}
-            checked={scope === 'project'}
-            onClick={() => setScope('project')}
-            disabled={projects.length === 0}
-            hint={
-              projects.length === 0 ? t('schedule.scope.noProjects') : undefined
-            }
-          />
+      {isLoop ? (
+        <div className="rounded-md border border-bg-hover bg-bg-panel px-3 py-2 text-xs text-fg-muted">
+          🔁 {t('schedule.editor.loopBindHint')}
         </div>
-        {scope === 'project' && projects.length > 0 && (
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="mt-2 w-full rounded-md border border-bg-hover bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.workspace_dir ? ` — ${p.workspace_dir}` : ''}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
+      ) : (
+        <Field label={t('schedule.field.scope')}>
+          <div className="flex gap-2">
+            <RadioBtn
+              label={t('schedule.scope.user')}
+              checked={scope === 'user'}
+              onClick={() => setScope('user')}
+            />
+            <RadioBtn
+              label={t('schedule.scope.project')}
+              checked={scope === 'project'}
+              onClick={() => setScope('project')}
+              disabled={projects.length === 0}
+              hint={
+                projects.length === 0 ? t('schedule.scope.noProjects') : undefined
+              }
+            />
+          </div>
+          {scope === 'project' && projects.length > 0 && (
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className="mt-2 w-full rounded-md border border-bg-hover bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.workspace_dir ? ` — ${p.workspace_dir}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      )}
 
       <Field label={t('schedule.field.timing')}>
         <div className="flex flex-wrap gap-2">
@@ -443,20 +486,24 @@ function ScheduleEditor({
         </div>
       </Field>
 
-      <Field label={t('schedule.field.triggerType')}>
-        <div className="flex gap-2">
-          <RadioBtn
-            label={t('schedule.trigger.skill')}
-            checked={triggerType === 'skill'}
-            onClick={() => setTriggerType('skill')}
-          />
-          <RadioBtn
-            label={t('schedule.trigger.prompt')}
-            checked={triggerType === 'prompt'}
-            onClick={() => setTriggerType('prompt')}
-          />
-        </div>
-        {triggerType === 'skill' ? (
+      <Field
+        label={isLoop ? t('schedule.field.prompt') : t('schedule.field.triggerType')}
+      >
+        {!isLoop && (
+          <div className="flex gap-2">
+            <RadioBtn
+              label={t('schedule.trigger.skill')}
+              checked={triggerType === 'skill'}
+              onClick={() => setTriggerType('skill')}
+            />
+            <RadioBtn
+              label={t('schedule.trigger.prompt')}
+              checked={triggerType === 'prompt'}
+              onClick={() => setTriggerType('prompt')}
+            />
+          </div>
+        )}
+        {!isLoop && triggerType === 'skill' ? (
           <select
             value={skillName}
             onChange={(e) => setSkillName(e.target.value)}
@@ -475,7 +522,7 @@ function ScheduleEditor({
             onChange={(e) => setPromptText(e.target.value)}
             rows={3}
             placeholder={t('schedule.field.promptPlaceholder')}
-            className="mt-2 w-full resize-none rounded-md border border-bg-hover bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+            className={`${isLoop ? '' : 'mt-2'} w-full resize-none rounded-md border border-bg-hover bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none`}
           />
         )}
       </Field>

@@ -1515,7 +1515,28 @@ class Handlers:
         async def deleting(params: dict[str, Any]) -> dict[str, Any]:
             return await _run("schedule.delete", params)
 
-        return {"create": create, "list": listing, "delete": deleting}
+        async def loop_create(params: dict[str, Any]) -> dict[str, Any]:
+            """LLM 透過 LoopCreate tool 呼。params 含:
+               name, cron_expr, prompt, target_session_id(SDK 已從 ctx 補)。
+            轉成 schedule.write 的 params(trigger_type 一律 prompt)。"""
+            target_sid = params.get("target_session_id")
+            if not target_sid:
+                raise ValueError("target_session_id required")
+            return await _run("schedule.write", {
+                "name": params.get("name"),
+                "cron_expr": params.get("cron_expr"),
+                "trigger_type": "prompt",
+                "payload": params.get("prompt"),
+                "scope": "user",  # loop 跟 session bound,scope 概念意義不大
+                "target_session_id": target_sid,
+            })
+
+        return {
+            "create": create,
+            "list": listing,
+            "delete": deleting,
+            "loop_create": loop_create,
+        }
 
     async def _build_conversation(
         self,

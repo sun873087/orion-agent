@@ -196,7 +196,8 @@ class SchedulerEngine:
         return session_id
 
     async def _execute_schedule(self, sch: storage.Schedule) -> str:
-        """組 prompt → conv.create → conv.send,回新 session_id。"""
+        """組 prompt → 若 target_session_id 有值就送回該既有 session(Loop 模式),
+        否則 conv.create + send 開新 session(排程模式)。回實際跑的 session_id。"""
         if sch.trigger_type == "skill":
             prompt = (
                 f"請執行 Skill '{sch.payload}'。這是排程任務,請依 Skill 指示完成。"
@@ -204,6 +205,18 @@ class SchedulerEngine:
         else:
             prompt = sch.payload
 
+        # Loop 模式 — 送回既有 session
+        if sch.target_session_id:
+            send_params: dict[str, Any] = {
+                "session_id": sch.target_session_id,
+                "prompt": prompt,
+                "permission_mode": "act",
+            }
+            async for _frame in self._handlers.conversation_send(send_params):
+                pass
+            return sch.target_session_id
+
+        # 排程模式 — 開新 session
         provider = sch.model_provider or "anthropic"
         model = sch.model or "claude-sonnet-4-6"
         create_params: dict[str, Any] = {"provider": provider, "model": model}
@@ -236,12 +249,12 @@ class SchedulerEngine:
                 file=sys.stderr, flush=True,
             )
 
-        send_params: dict[str, Any] = {
+        send_params2: dict[str, Any] = {
             "session_id": new_session_id,
             "prompt": prompt,
             "permission_mode": "act",  # 排程跑 = autonomous
         }
-        async for _frame in self._handlers.conversation_send(send_params):
+        async for _frame in self._handlers.conversation_send(send_params2):
             # drain 全部 frames 直到 final
             pass
         return new_session_id

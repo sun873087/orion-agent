@@ -24,10 +24,12 @@ from orion_sdk.tools.interactive.ask_user import (
     AskUserQuestionTool,
 )
 from orion_sdk.tools.schedule import (
+    LoopCreateTool,
     ScheduleCreateTool,
     ScheduleDeleteTool,
     ScheduleListTool,
 )
+from orion_sdk.tools.schedule.loop_create import LoopCreateCallback
 from orion_sdk.tools.schedule.schedule_create import ScheduleCreateCallback
 from orion_sdk.tools.schedule.schedule_delete import ScheduleDeleteCallback
 from orion_sdk.tools.schedule.schedule_list import ScheduleListCallback
@@ -126,6 +128,8 @@ def build_default_tool_set(
             all_candidates.append(ScheduleListTool(callback=schedule_callbacks["list"]))
         if "delete" in schedule_callbacks:
             all_candidates.append(ScheduleDeleteTool(callback=schedule_callbacks["delete"]))
+        if "loop_create" in schedule_callbacks:
+            all_candidates.append(LoopCreateTool(callback=schedule_callbacks["loop_create"]))
     base: list[Tool[Any]] = [t for t in all_candidates if t.name not in disabled]
 
     # AskUserQuestion / ToolSearch 視為「核心 infra」— 也可被 disable,但通常不會
@@ -166,6 +170,7 @@ def list_builtin_tool_groups() -> list[dict[str, Any]]:
                 to_dict(ScheduleCreateTool()),
                 to_dict(ScheduleListTool()),
                 to_dict(ScheduleDeleteTool()),
+                to_dict(LoopCreateTool()),
             ],
         },
         {"group": "Todo", "tools": [to_dict(TodoWriteTool())]},

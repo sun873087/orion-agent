@@ -10,6 +10,7 @@ import {
   Layers,
   Mic,
   Paperclip,
+  Repeat,
   Send,
   Sparkles,
   Square,
@@ -44,7 +45,20 @@ type SlashCommand = {
   icon: LucideIcon
   /** 短副標題(popover 內每筆下方顯示)。 */
   subtitle: string
+  /** 後面要接的 args 樣板提示,如 '[interval] <prompt>'。User 打完命令名按空格
+   *  / 還沒打空格時,以灰字 ghost-text 形式顯在游標後。 */
+  argsHint?: string
 }
+/** 走 client-side dispatch 的 slash(從輸入框直接執行,不送 LLM)。
+ *  /loop 不在這 — 它需要 LLM 看到原 prompt + 載 bundled `loop` skill 解析。 */
+const CLIENT_SLASH_NAMES = new Set([
+  '/compact',
+  '/add-files',
+  '/export',
+  '/context',
+  '/schedule',
+])
+
 const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: '/compact',
@@ -70,6 +84,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: '/schedule',
     icon: Clock,
     subtitle: '管理排程任務(個人 / 專案)',
+  },
+  {
+    name: '/loop',
+    icon: Repeat,
+    subtitle: '在此對話定期重跑 — 例:/loop 5m 檢查 PR',
+    argsHint: '[interval] <prompt>',
   },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
@@ -109,6 +129,16 @@ export function InputBox({ onSend, onAbort }: Props) {
   })()
   const showSlash = slashMatches.length > 0
   const [slashIdx, setSlashIdx] = useState(0)
+
+  // Ghost-text hint:user 打完整 cmd 名稱(可帶 1 個 trailing space)時,把 argsHint
+  // 以灰字接在後面顯示。如 `/loop` → 顯 `[interval] <prompt>`。
+  const activeArgsHint = (() => {
+    const m = text.match(/^(\/[\w-]+)( ?)$/)
+    if (!m) return null
+    const cmd = SLASH_COMMANDS.find((c) => c.name === m[1])
+    if (!cmd?.argsHint) return null
+    return (m[2] ? '' : ' ') + cmd.argsHint
+  })()
   // text 變動把 idx 拉回有效範圍
   useEffect(() => {
     if (slashIdx >= slashMatches.length) setSlashIdx(0)
@@ -179,10 +209,11 @@ export function InputBox({ onSend, onAbort }: Props) {
     const payload = text
     const att = attachments
     const trimmed = payload.trim()
-    // 精準匹配 slash command(無 attachment 時)— 例:user 打完整 /compact 按 Enter
+    // 精準匹配 client-side slash command(無 attachment 時)— 例:user 打完整 /compact 按 Enter
+    // /loop 不在這 list — 它一律送 LLM(由 bundled loop skill 解析參數)
     if (!att.length && trimmed.startsWith('/')) {
       const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed)
-      if (cmd) {
+      if (cmd && CLIENT_SLASH_NAMES.has(cmd.name)) {
         await executeSlashCommand(cmd.name)
         return
       }
@@ -395,6 +426,16 @@ export function InputBox({ onSend, onAbort }: Props) {
 
         {/* 主框:上方 textarea,下方 toolbar(+ / Ask pill / spacer / Model pill / mic / send) */}
         <div className="flex flex-col gap-2 rounded-2xl bg-bg-input p-3">
+          <div className="relative">
+          {activeArgsHint && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 max-h-[200px] overflow-hidden whitespace-pre-wrap break-words px-1 py-1 text-sm leading-normal"
+            >
+              <span className="invisible">{text}</span>
+              <span className="text-fg-subtle">{activeArgsHint}</span>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={text}
@@ -430,10 +471,17 @@ export function InputBox({ onSend, onAbort }: Props) {
                   return
                 }
                 if (e.key === 'Enter' && !e.shiftKey) {
-                  // Popover 內 Enter = 執行 highlighted 命令(不是送 prompt)
+                  // Popover 內 Enter:
+                  //  - Client-side slash(無參數)→ 直接執行
+                  //  - 其他(需 args,如 /loop)→ fill 進輸入框讓 user 接著打
                   e.preventDefault()
                   const cmd = slashMatches[slashIdx]
-                  if (cmd) void executeSlashCommand(cmd.name)
+                  if (!cmd) return
+                  if (CLIENT_SLASH_NAMES.has(cmd.name)) {
+                    void executeSlashCommand(cmd.name)
+                  } else {
+                    pickSlash(cmd)
+                  }
                   return
                 }
                 if (e.key === 'Escape') {
@@ -468,8 +516,9 @@ export function InputBox({ onSend, onAbort }: Props) {
             disabled={!inputReady}
             placeholder={placeholder}
             rows={isEmpty ? 2 : 1}
-            className="scrollbar-thin max-h-[200px] resize-none bg-transparent px-1 py-1 text-sm text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
+            className="scrollbar-thin block w-full max-h-[200px] resize-none bg-transparent px-1 py-1 text-sm leading-normal text-fg-base placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
           />
+          </div>
 
           <div className="flex items-center gap-1.5">
             <button
