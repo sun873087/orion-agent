@@ -6,6 +6,7 @@
  */
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 import type { AskQuestion } from '../api/agent'
 
@@ -158,7 +159,7 @@ const newId = (() => {
   return () => `m-${Date.now()}-${n++}`
 })()
 
-export const useAgentStore = create<AgentState>((set) => ({
+export const useAgentStore = create<AgentState>()(persist((set) => ({
   sessionId: null,
   messages: [],
   busy: false,
@@ -368,4 +369,12 @@ export const useAgentStore = create<AgentState>((set) => ({
       lastLoopStatus: null,
       pendingQuestion: null,
     }),
+}), {
+  name: 'orion-cowork-agent/v1',
+  // 只 persist 跨 session / 跨 app 重啟有意義的 — extraOutputFiles 記 /export 結果,
+  // 即便 app 重開,只要 .zip 物理檔還在 workspace,sidebar 仍會顯(useExistingFiles
+  // 會 filter 掉已刪的孤兒)。其他 state 是 in-memory / 由 sidecar 重建,不存。
+  partialize: (s) => ({
+    extraOutputFiles: s.extraOutputFiles,
+  }),
 }))
