@@ -285,6 +285,9 @@ export default {
   'skill.field.descriptionPlaceholder': '寫具體,例:對改動的 React 元件做 accessibility review',
   'skill.field.body': '步驟內容(Markdown)',
   'skill.field.bodyHint': '完整指引,SkillTool 呼叫時把這段 inject 到 prompt',
+  'skill.filter.all': '全部',
+  'skill.filter.bundled': '內建',
+  'skill.filter.user': '我的',
   'settings.section.about': '關於',
 
   // Memory

@@ -57,6 +57,11 @@ class Skill:
     hooks: list[dict[str, Any]] = field(default_factory=list)
     effort: str | None = None
     model: str | None = None
+    cowork_visible: bool = True
+    """Cowork 桌面 chat UI 的 slash popover 是否顯示這個 skill。
+    `False` 時 LLM 仍可透過 Skill tool 用名字載入,只是 user-facing popover 隱藏 —
+    用於「CLI 重度工作流」(譬如 `batch` 開多 worktree)在桌面 chat 場景沒意義的 skill。
+    其他 host(CLI / chat-api)忽略此欄,一視同仁。"""
     source_path: Path | None = None
     """檔案來源(供 debug / log)。"""
 
@@ -78,6 +83,8 @@ def _parse_skill_md(md_path: Path, default_name: str) -> Skill | None:
 
     meta = post.metadata or {}
     name = str(meta.get("name") or default_name)
+    cowork_visible_raw = meta.get("cowork_visible", True)
+    cowork_visible = bool(cowork_visible_raw) if cowork_visible_raw is not None else True
     try:
         return Skill(
             name=name,
@@ -87,6 +94,7 @@ def _parse_skill_md(md_path: Path, default_name: str) -> Skill | None:
             hooks=meta.get("hooks") or [],
             effort=meta.get("effort"),
             model=meta.get("model"),
+            cowork_visible=cowork_visible,
             source_path=md_path,
         )
     except Exception as e:  # noqa: BLE001

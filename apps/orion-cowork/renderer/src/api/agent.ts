@@ -275,6 +275,9 @@ export type SkillListItem = {
   source: SkillSource
   editable: boolean
   source_path: string | null
+  /** Cowork 桌面 chat 場景是否該顯示。預設 true;false 表此 skill 是 CLI / web 用,
+   *  在 Cowork popover 跟 Settings → 技能列表都應隱藏(LLM 仍可載)。 */
+  cowork_visible?: boolean
 }
 
 export type Skill = SkillListItem & {

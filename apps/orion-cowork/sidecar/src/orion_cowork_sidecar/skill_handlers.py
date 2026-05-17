@@ -70,6 +70,7 @@ def _skill_to_dict(skill: Any) -> dict[str, Any]:
         "source": source,
         "editable": source == "user",
         "source_path": str(sp) if sp else None,
+        "cowork_visible": getattr(skill, "cowork_visible", True),
     }
 
 

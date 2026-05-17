@@ -273,6 +273,9 @@ export default {
   'skill.field.descriptionPlaceholder': "Be specific, e.g. 'a11y review on changed React components'",
   'skill.field.body': 'Body (markdown)',
   'skill.field.bodyHint': 'Full instructions; SkillTool injects this into prompt on call',
+  'skill.filter.all': 'All',
+  'skill.filter.bundled': 'Bundled',
+  'skill.filter.user': 'Mine',
   'settings.section.about': 'About',
 
   'memory.dirLabel': 'Folder:',

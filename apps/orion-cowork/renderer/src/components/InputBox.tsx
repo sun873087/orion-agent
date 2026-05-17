@@ -18,10 +18,11 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import type { Attachment } from '../api/agent'
+import type { Attachment, SkillListItem } from '../api/agent'
 import {
   fetchModels,
   getContextBreakdown,
+  listSkills,
   setPermissionMode as rpcSetPermissionMode,
   sttTranscribe,
 } from '../api/agent'
@@ -48,6 +49,9 @@ type SlashCommand = {
   /** 後面要接的 args 樣板提示,如 '[interval] <prompt>'。User 打完命令名按空格
    *  / 還沒打空格時,以灰字 ghost-text 形式顯在游標後。 */
   argsHint?: string
+  /** 'client'(預設)= InputBox 直接 dispatch;'skill' = 動態載入的 bundled / user
+   *  skill,不走 client-dispatch,送 LLM 由 Skill tool 載入。 */
+  kind?: 'client' | 'skill'
 }
 /** 走 client-side dispatch 的 slash(從輸入框直接執行,不送 LLM)。
  *  /loop 不在這 — 它需要 LLM 看到原 prompt + 載 bundled `loop` skill 解析。 */
@@ -120,12 +124,34 @@ export function InputBox({ onSend, onAbort }: Props) {
   const composingRef = useRef(false)
 
   // ─── Slash command autocomplete ────────────────────────────────────
-  // popover 開條件:單行 / 開頭(text 內無換行),user 還在打或文字仍以 / 開頭
+  // popover 開條件:單行 / 開頭(text 內無換行),user 還在打或文字仍以 / 開頭。
+  // Bundled / user skills 動態載入後也一併出現在 popover(cowork_visible=false 過濾掉)。
+  const [skillSlashes, setSkillSlashes] = useState<SlashCommand[]>([])
+  useEffect(() => {
+    let cancelled = false
+    listSkills(null)
+      .then((r) => {
+        if (cancelled) return
+        const cmds: SlashCommand[] = r.skills
+          .filter((s) => (s as SkillListItem & { cowork_visible?: boolean }).cowork_visible !== false)
+          .map((s) => ({
+            name: '/' + s.name,
+            icon: Sparkles,
+            subtitle: s.description || `${s.source} skill`,
+            kind: 'skill' as const,
+          }))
+        setSkillSlashes(cmds)
+      })
+      .catch(() => {
+        // sidecar 還沒起來 / RPC fail 時 popover 仍可顯 client slashes
+      })
+  }, [])
+  const allSlashes = [...SLASH_COMMANDS, ...skillSlashes]
   const slashMatches = (() => {
     if (!text.startsWith('/')) return []
     if (text.includes('\n')) return []
     const query = text.toLowerCase()
-    return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().startsWith(query))
+    return allSlashes.filter((c) => c.name.toLowerCase().startsWith(query))
   })()
   const showSlash = slashMatches.length > 0
   const [slashIdx, setSlashIdx] = useState(0)
@@ -210,7 +236,7 @@ export function InputBox({ onSend, onAbort }: Props) {
     const att = attachments
     const trimmed = payload.trim()
     // 精準匹配 client-side slash command(無 attachment 時)— 例:user 打完整 /compact 按 Enter
-    // /loop 不在這 list — 它一律送 LLM(由 bundled loop skill 解析參數)
+    // /loop 跟所有 skill 不在這 list — 它們一律送 LLM(loop / skillify 等由 LLM 自己載 skill 解析)
     if (!att.length && trimmed.startsWith('/')) {
       const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed)
       if (cmd && CLIENT_SLASH_NAMES.has(cmd.name)) {
@@ -389,30 +415,40 @@ export function InputBox({ onSend, onAbort }: Props) {
 
         {/* Slash command autocomplete popover — / 開頭時顯示在輸入框上方 */}
         {showSlash && (
-          <div className="mb-2 overflow-hidden rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
+          <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
             {slashMatches.map((cmd, i) => {
               const active = i === slashIdx
               const Icon = cmd.icon
+              const isSkill = cmd.kind === 'skill'
+              // 分組標題:第一個 skill 上方插 divider
+              const prevIsSkill = i > 0 && slashMatches[i - 1].kind === 'skill'
+              const showDivider = isSkill && !prevIsSkill && i > 0
               return (
-                <button
-                  key={cmd.name}
-                  type="button"
-                  onMouseDown={(e) => {
-                    // mousedown 比 click 早 — 避免 blur 把 popover 收起
-                    e.preventDefault()
-                    pickSlash(cmd)
-                  }}
-                  onMouseEnter={() => setSlashIdx(i)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
-                    active ? 'bg-bg-hover' : 'bg-transparent hover:bg-bg-hover/50'
-                  }`}
-                >
-                  <Icon size={18} className="shrink-0 text-fg-muted" />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="font-mono text-sm text-fg-base">{cmd.name.slice(1)}</span>
-                    <span className="truncate text-xs text-fg-muted">{cmd.subtitle}</span>
-                  </div>
-                </button>
+                <div key={cmd.name}>
+                  {showDivider && (
+                    <div className="mt-1 border-t border-bg-hover/60 px-3 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
+                      Skills
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      // mousedown 比 click 早 — 避免 blur 把 popover 收起
+                      e.preventDefault()
+                      pickSlash(cmd)
+                    }}
+                    onMouseEnter={() => setSlashIdx(i)}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                      active ? 'bg-bg-hover' : 'bg-transparent hover:bg-bg-hover/50'
+                    }`}
+                  >
+                    <Icon size={18} className="shrink-0 text-fg-muted" />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="font-mono text-sm text-fg-base">{cmd.name.slice(1)}</span>
+                      <span className="truncate text-xs text-fg-muted">{cmd.subtitle}</span>
+                    </div>
+                  </button>
+                </div>
               )
             })}
             <div className="mt-1 border-t border-bg-hover px-3 pt-1.5 text-[10px] text-fg-subtle">

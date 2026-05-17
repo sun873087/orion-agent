@@ -1,6 +1,7 @@
 ---
 name: batch
 description: Research and plan a large-scale change, then execute it in parallel across 5-30 isolated worktree agents that each open a PR.
+cowork_visible: false
 ---
 
 # Batch: Parallel Work Orchestration

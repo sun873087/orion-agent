@@ -273,6 +273,9 @@ export default {
   'skill.field.descriptionPlaceholder': '具体的に。例:変更された React コンポーネントの a11y レビュー',
   'skill.field.body': '本文(Markdown)',
   'skill.field.bodyHint': '完全な手順。SkillTool 呼び出し時に prompt に注入される',
+  'skill.filter.all': 'すべて',
+  'skill.filter.bundled': 'バンドル',
+  'skill.filter.user': 'マイ',
   'settings.section.about': 'About',
 
   'memory.dirLabel': 'フォルダ:',

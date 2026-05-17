@@ -1,6 +1,7 @@
 ---
 name: update-config
 description: Update orion-agent settings — picks the right scope (system / project / per-user) and uses Config tool / REST endpoint to apply.
+cowork_visible: false
 ---
 
 # Update Config

@@ -273,6 +273,9 @@ export default {
   'skill.field.descriptionPlaceholder': '具体一点,例:对改动的 React 组件做无障碍 review',
   'skill.field.body': '步骤内容(Markdown)',
   'skill.field.bodyHint': '完整指引,SkillTool 调用时注入 prompt',
+  'skill.filter.all': '全部',
+  'skill.filter.bundled': '内建',
+  'skill.filter.user': '我的',
   'settings.section.about': '关于',
 
   'memory.dirLabel': '文件目录:',

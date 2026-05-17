@@ -20,18 +20,22 @@ const SOURCE_COLOR: Record<string, string> = {
   unknown: 'text-fg-subtle',
 }
 
+type SourceFilter = 'all' | 'bundled' | 'user'
+
 export function SkillsSection({ projectId }: { projectId?: string | null } = {}) {
   const { t } = useTranslation()
   const [items, setItems] = useState<SkillListItem[]>([])
   const [userDir, setUserDir] = useState('')
   const [editing, setEditing] = useState<Skill | 'new' | null>(null)
   const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState<SourceFilter>('all')
 
   async function refresh() {
     setLoading(true)
     try {
       const r = await listSkills(projectId ?? null)
-      setItems(r.skills)
+      // 過濾掉 cowork_visible=false 的 skill(CLI / web 專用,Cowork 不該顯示)
+      setItems(r.skills.filter((s) => s.cowork_visible !== false))
       setUserDir(r.user_skills_dir)
     } finally {
       setLoading(false)
@@ -95,6 +99,18 @@ export function SkillsSection({ projectId }: { projectId?: string | null } = {})
     )
   }
 
+  const filtered = items.filter((s) => {
+    if (filter === 'all') return true
+    if (filter === 'bundled') return s.source === 'bundled' || s.source === 'system'
+    if (filter === 'user') return s.source === 'user'
+    return true
+  })
+  const counts = {
+    all: items.length,
+    bundled: items.filter((s) => s.source === 'bundled' || s.source === 'system').length,
+    user: items.filter((s) => s.source === 'user').length,
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -123,15 +139,27 @@ export function SkillsSection({ projectId }: { projectId?: string | null } = {})
         </div>
       </div>
 
+      <div className="flex gap-1 rounded-md bg-bg-panel p-0.5">
+        <FilterTab active={filter === 'all'} onClick={() => setFilter('all')}>
+          {t('skill.filter.all')} ({counts.all})
+        </FilterTab>
+        <FilterTab active={filter === 'bundled'} onClick={() => setFilter('bundled')}>
+          {t('skill.filter.bundled')} ({counts.bundled})
+        </FilterTab>
+        <FilterTab active={filter === 'user'} onClick={() => setFilter('user')}>
+          {t('skill.filter.user')} ({counts.user})
+        </FilterTab>
+      </div>
+
       {loading && items.length === 0 ? (
         <div className="text-sm text-fg-muted">{t('settings.mcp.loading')}</div>
-      ) : items.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-bg-hover p-6 text-center text-xs text-fg-subtle">
           {t('skill.empty')}
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
-          {items.map((s) => (
+          {filtered.map((s) => (
             <li
               key={s.name}
               className="flex items-start gap-2 rounded-lg border border-bg-hover bg-bg-panel px-3 py-2"
@@ -169,6 +197,28 @@ export function SkillsSection({ projectId }: { projectId?: string | null } = {})
         </ul>
       )}
     </div>
+  )
+}
+
+function FilterTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded px-2.5 py-1 text-xs transition-colors ${
+        active ? 'bg-bg-base text-fg-base shadow-sm' : 'text-fg-muted hover:text-fg-base'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
