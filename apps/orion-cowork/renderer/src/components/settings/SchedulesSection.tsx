@@ -16,11 +16,13 @@ import { Calendar, Clock, Edit3, Play, Plus, ToggleLeft, ToggleRight, Trash2 } f
 
 import {
   deleteSchedule,
+  fetchModels,
   listProjects,
   listSchedules,
   listSkills,
   runScheduleNow,
   writeSchedule,
+  type ModelCatalog,
   type Project,
   type Schedule,
   type ScheduleScope,
@@ -29,6 +31,7 @@ import {
   type WriteScheduleInput,
 } from '../../api/agent'
 import { useTranslation } from '../../i18n'
+import { useSettingsStore } from '../../store/settings'
 
 type Scope = 'user' | 'all'
 
@@ -233,6 +236,9 @@ function ScheduleEditor({
   const { t } = useTranslation()
   const isNew = schedule === null
 
+  // user 目前的 chat default(從 settings store) — 「跟隨目前」option 用這個
+  const currentProvider = useSettingsStore((s) => s.selectedProvider)
+  const currentModel = useSettingsStore((s) => s.selectedModel)
   const initial = useMemo(() => parseSchedule(schedule), [schedule])
   const [name, setName] = useState(initial.name)
   const [preset, setPreset] = useState<PresetKey>(initial.preset)
@@ -247,8 +253,15 @@ function ScheduleEditor({
   const [skillName, setSkillName] = useState(initial.skillName)
   const [promptText, setPromptText] = useState(initial.prompt)
   const [enabled, setEnabled] = useState(initial.enabled)
+  // Model override:'' = 跟隨目前 user default;否則 'provider:model' 編碼
+  const [modelKey, setModelKey] = useState(
+    initial.modelProvider && initial.model
+      ? `${initial.modelProvider}:${initial.model}`
+      : '',
+  )
   const [skills, setSkills] = useState<SkillListItem[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null)
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -260,6 +273,7 @@ function ScheduleEditor({
 
   useEffect(() => {
     listProjects().then(setProjects)
+    fetchModels().then(setCatalog).catch(() => setCatalog(null))
   }, [])
 
   // 切到「專案」但還沒選 — 預設第一個
@@ -290,6 +304,10 @@ function ScheduleEditor({
       setErrorMsg(t('schedule.error.projectRequired'))
       return
     }
+    // Model snapshot:有 override 就用 override,沒有就 snapshot 當前 user default
+    const [chosenProvider, chosenModel] = modelKey
+      ? (modelKey.split(':') as [string, string])
+      : [currentProvider, currentModel]
     const input: WriteScheduleInput = {
       id: schedule?.id ?? null,
       name: name.trim(),
@@ -299,6 +317,8 @@ function ScheduleEditor({
       scope,
       project_id: scope === 'project' ? projectId : null,
       enabled,
+      model_provider: chosenProvider || null,
+      model: chosenModel || null,
     }
     setSaving(true)
     try {
@@ -460,6 +480,31 @@ function ScheduleEditor({
         )}
       </Field>
 
+      <Field label={t('schedule.field.model')}>
+        <select
+          value={modelKey}
+          onChange={(e) => setModelKey(e.target.value)}
+          className="w-full rounded-md border border-bg-hover bg-bg-base px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+        >
+          <option value="">
+            {t('schedule.model.follow', {
+              provider: currentProvider,
+              model: currentModel,
+            })}
+          </option>
+          {catalog?.providers.flatMap((p) =>
+            p.models.map((m) => (
+              <option key={`${p.id}:${m.id}`} value={`${p.id}:${m.id}`}>
+                {p.label} — {m.label}
+              </option>
+            )),
+          )}
+        </select>
+        <p className="mt-1 text-[11px] text-fg-subtle">
+          {t('schedule.model.snapshotHint')}
+        </p>
+      </Field>
+
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -469,6 +514,10 @@ function ScheduleEditor({
         />
         {t('schedule.field.enabled')}
       </label>
+
+      <div className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-fg-muted">
+        {t('schedule.actModeHint')}
+      </div>
 
       {errorMsg && (
         <div className="rounded-md border border-error/40 bg-error/5 px-3 py-2 text-xs text-error">
@@ -671,6 +720,8 @@ function parseSchedule(s: Schedule | null) {
       skillName: '',
       prompt: '',
       enabled: true,
+      modelProvider: '',
+      model: '',
     }
   }
   const parts = s.cron_expr.trim().split(/\s+/)
@@ -703,6 +754,8 @@ function parseSchedule(s: Schedule | null) {
     skillName: s.trigger_type === 'skill' ? s.payload : '',
     prompt: s.trigger_type === 'prompt' ? s.payload : '',
     enabled: s.enabled,
+    modelProvider: s.model_provider ?? '',
+    model: s.model ?? '',
   }
 }
 
