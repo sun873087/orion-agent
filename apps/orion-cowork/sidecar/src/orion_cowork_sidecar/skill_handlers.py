@@ -213,6 +213,122 @@ async def skill_write(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     }
 
 
+async def skill_import_folder(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """匯入一個外部 skill 資料夾 — copytree 到 user / project skills dir。
+
+    params:
+      - source_path: 必填,絕對路徑;必須是資料夾、含 SKILL.md
+      - project_id: 可選 — 給了寫到 project skills dir,否則寫 user skills dir
+      - filename: 可選 — 強制目標 folder 名(不給用 source 的 basename slugify)
+      - overwrite: bool 預設 false;true 會 rmtree 舊的後 copytree
+
+    Skill 是「整個資料夾」(SKILL.md + 可能附帶 scripts/ references/ assets/ 等),
+    所以 copytree 整段。不只讀 SKILL.md 寫進去 — 那會丟失附屬檔。
+    """
+    source_raw = params.get("source_path")
+    if not isinstance(source_raw, str) or not source_raw:
+        yield {
+            "event": "error",
+            "data": {"code": "BAD_PARAMS", "message": "source_path required"},
+            "final": True,
+        }
+        return
+    src = Path(source_raw).expanduser()
+    if not src.is_dir():
+        yield {
+            "event": "error",
+            "data": {"code": "NOT_A_DIR", "message": f"{src} is not a directory"},
+            "final": True,
+        }
+        return
+    if not (src / "SKILL.md").is_file():
+        yield {
+            "event": "error",
+            "data": {
+                "code": "MISSING_SKILL_MD",
+                "message": "資料夾內找不到 SKILL.md(必要檔)",
+            },
+            "final": True,
+        }
+        return
+
+    # 決定目標 base dir
+    project_id = params.get("project_id") if isinstance(params.get("project_id"), str) else None
+    if project_id:
+        pdir = await _project_skills_dir(project_id)
+        if pdir is None:
+            yield {
+                "event": "error",
+                "data": {"code": "NOT_FOUND", "message": "project has no workspace"},
+                "final": True,
+            }
+            return
+        target_base = pdir
+    else:
+        target_base = _user_skills_dir()
+        target_base.mkdir(parents=True, exist_ok=True)
+
+    # 決定 folder 名
+    filename = params.get("filename")
+    if not isinstance(filename, str) or not filename:
+        filename = _slugify(src.name)
+    if "/" in filename or filename.startswith(".") or not filename:
+        yield {
+            "event": "error",
+            "data": {"code": "BAD_PARAMS", "message": "filename invalid"},
+            "final": True,
+        }
+        return
+
+    target_dir = target_base / filename
+    overwrite = bool(params.get("overwrite", False))
+    if target_dir.exists():
+        if not overwrite:
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "ALREADY_EXISTS",
+                    "message": f"已有同名 skill「{filename}」,要覆蓋請設 overwrite=true",
+                    "filename": filename,
+                },
+                "final": True,
+            }
+            return
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+    try:
+        shutil.copytree(src, target_dir)
+    except Exception as e:  # noqa: BLE001
+        yield {
+            "event": "error",
+            "data": {"code": "COPY_FAILED", "message": str(e)},
+            "final": True,
+        }
+        return
+
+    # 讀回 SKILL.md 拿 name(可能跟 folder 名不同)
+    skill_name = filename
+    try:
+        from orion_sdk.skills.loader import load_skills_dir
+        loaded = load_skills_dir(target_base)
+        for sk in loaded:
+            if sk.source_path and sk.source_path.parent.name == filename:
+                skill_name = sk.name
+                break
+    except Exception:  # noqa: BLE001
+        pass
+
+    yield {
+        "event": "skill_imported",
+        "data": {
+            "name": skill_name,
+            "filename": filename,
+            "target_dir": str(target_dir),
+        },
+        "final": True,
+    }
+
+
 async def skill_delete(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """刪 user-level 或 project-level skill(整個 folder)。"""
     filename = params.get("filename")

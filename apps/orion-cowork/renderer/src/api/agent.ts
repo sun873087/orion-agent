@@ -329,6 +329,46 @@ export async function deleteSkill(filename: string, projectId?: string | null): 
   await window.agent.call('skill.delete', params, () => {})
 }
 
+export type ImportedSkill = { name: string; filename: string; targetDir: string }
+
+/** 匯入外部 skill 資料夾(含 SKILL.md + 附帶檔)— sidecar copytree 整段。
+ *  ALREADY_EXISTS error 時 caller 可加 overwrite=true 再呼一次覆蓋。 */
+export async function importSkillFolder(
+  sourcePath: string,
+  opts?: { projectId?: string | null; filename?: string; overwrite?: boolean },
+): Promise<ImportedSkill> {
+  let result: ImportedSkill | null = null
+  let errMsg: string | null = null
+  let errCode: string | null = null
+  const params: Record<string, unknown> = { source_path: sourcePath }
+  if (opts?.projectId) params.project_id = opts.projectId
+  if (opts?.filename) params.filename = opts.filename
+  if (opts?.overwrite) params.overwrite = true
+  await window.agent.call('skill.import_folder', params, (frame) => {
+    const f = frame as {
+      event?: string
+      data?: Record<string, unknown>
+      error?: { code?: string; message?: string }
+    }
+    if (f.event === 'skill_imported' && f.data) {
+      result = {
+        name: String(f.data.name ?? ''),
+        filename: String(f.data.filename ?? ''),
+        targetDir: String(f.data.target_dir ?? ''),
+      }
+    } else if (f.event === 'error' && f.data) {
+      errCode = typeof f.data.code === 'string' ? f.data.code : null
+      errMsg = typeof f.data.message === 'string' ? f.data.message : null
+    }
+  })
+  if (!result) {
+    const err = new Error(errMsg ?? 'import failed')
+    ;(err as Error & { code?: string }).code = errCode ?? undefined
+    throw err
+  }
+  return result
+}
+
 export async function getPrefs(): Promise<Record<string, string>> {
   let out: Record<string, string> = {}
   await window.agent.call('prefs.get_all', {}, (frame) => {

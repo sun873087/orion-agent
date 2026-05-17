@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Lock, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, FolderUp, Lock, Plus, Trash2 } from 'lucide-react'
 
 import {
   deleteSkill,
   getSkill,
+  importSkillFolder,
   listSkills,
   writeSkill,
   type Skill,
@@ -54,6 +55,32 @@ export function SkillsSection({ projectId }: { projectId?: string | null } = {})
     await refresh()
   }
 
+  async function handleImportFolder() {
+    const src = await window.dialog.selectFolder()
+    if (!src) return
+    try {
+      await importSkillFolder(src, { projectId: projectId ?? null })
+      await refresh()
+    } catch (e) {
+      const err = e as Error & { code?: string }
+      if (err.code === 'ALREADY_EXISTS') {
+        if (window.confirm(`已有同名 skill,要覆蓋嗎?\n\n${err.message ?? ''}`)) {
+          try {
+            await importSkillFolder(src, {
+              projectId: projectId ?? null,
+              overwrite: true,
+            })
+            await refresh()
+          } catch (e2) {
+            window.alert(`覆蓋失敗:${(e2 as Error).message}`)
+          }
+        }
+      } else {
+        window.alert(`匯入失敗:${err.message ?? '未知錯誤'}`)
+      }
+    }
+  }
+
   if (editing !== null) {
     return (
       <SkillEditor
@@ -75,14 +102,25 @@ export function SkillsSection({ projectId }: { projectId?: string | null } = {})
           {t('skill.userDirLabel')}{' '}
           <code className="font-mono text-fg-muted">{userDir}</code>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditing('new')}
-          className="flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
-        >
-          <Plus size={12} />
-          <span>{t('skill.new')}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleImportFolder}
+            className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-panel px-3 py-1.5 text-xs font-medium text-fg-base hover:bg-bg-hover"
+            title="選資料夾(內含 SKILL.md)整包匯入"
+          >
+            <FolderUp size={12} />
+            <span>上傳資料夾</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing('new')}
+            className="flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+          >
+            <Plus size={12} />
+            <span>{t('skill.new')}</span>
+          </button>
+        </div>
       </div>
 
       {loading && items.length === 0 ? (

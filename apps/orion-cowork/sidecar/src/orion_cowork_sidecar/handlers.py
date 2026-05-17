@@ -271,6 +271,7 @@ class Handlers:
             "skill.list": skill_handlers.skill_list,
             "skill.get": skill_handlers.skill_get,
             "skill.write": skill_handlers.skill_write,
+            "skill.import_folder": skill_handlers.skill_import_folder,
             "skill.delete": skill_handlers.skill_delete,
             "prefs.get_all": self.prefs_get_all,
             "prefs.set": self.prefs_set,
