@@ -311,20 +311,29 @@ export function InputBox({ onSend, onAbort }: Props) {
   const showSlash = slashMatches.length > 0
   const [slashIdx, setSlashIdx] = useState(0)
 
-  // @ mention(Phase 31-O)— lazy fetch workspace files 第一次打開時
+  // @ mention(Phase 31-O)— lazy fetch workspace files 第一次打開時。
+  // Session 沒建也沒關係 — lazy create 一條(跟 drag-drop 同 pattern),
+  // 才拿得到 workspace_dir 去 walk。
   useEffect(() => {
     if (!mention || mention.mode !== 'file') return
     if (workspaceFilesLoadedRef.current) return
-    const sid = useAgentStore.getState().sessionId
-    if (!sid) return
     workspaceFilesLoadedRef.current = true
     void (async () => {
       try {
+        let sid = useAgentStore.getState().sessionId
+        if (!sid) {
+          const settings = useSettingsStore.getState()
+          sid = await createConversation(settings.selectedProvider, settings.selectedModel, {
+            projectId: settings.activeProjectId,
+          })
+          useAgentStore.getState().setSessionId(sid)
+        }
         const { listWorkspaceFiles } = await import('../api/agent')
         const r = await listWorkspaceFiles(sid)
         setWorkspaceFiles(r.files)
       } catch {
-        // 忽略 — popup 顯空,user 自己拖檔
+        // 忽略 — popup 顯空 state,user 仍可走 @skill: 或拖檔
+        workspaceFilesLoadedRef.current = false  // 容許下次再試
       }
     })()
   }, [mention])
@@ -354,7 +363,9 @@ export function InputBox({ onSend, onAbort }: Props) {
         payload: { mode: 'skill' as const, name },
       }))
   })()
-  const showMention = mention !== null && mentionMatches.length > 0
+  // popup 開條件 — mention 在就開(empty matches 也顯空 state,user 才知道
+  // 自己打的 query 沒命中而不是 popup 沒觸發)
+  const showMention = mention !== null
 
   /** file → 加進 textAttachments + 移除 @token;skill → 替換成 @skill:name 字面值 */
   async function pickMention(item: typeof mentionMatches[number]) {
@@ -831,7 +842,19 @@ export function InputBox({ onSend, onAbort }: Props) {
           <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
             <div className="border-b border-bg-hover px-3 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
               {mention?.mode === 'skill' ? 'Skills' : 'Files'}
+              {mention?.mode === 'file' && workspaceFiles.length === 0 && (
+                <span className="ml-2 text-fg-muted normal-case">— 載入中 / 沒檔</span>
+              )}
             </div>
+            {mentionMatches.length === 0 && (
+              <div className="px-3 py-2 text-xs text-fg-muted">
+                {mention?.mode === 'file'
+                  ? (workspaceFiles.length === 0
+                      ? '工作區還沒設定,或正在載入。打 @skill: 改載 skill。'
+                      : `沒檔案符合 "${mention.query}" — 試別的關鍵字`)
+                  : `沒 skill 符合 "${mention.query}"`}
+              </div>
+            )}
             {mentionMatches.map((item, i) => {
               const active = i === mentionIdx
               return (
@@ -952,8 +975,15 @@ export function InputBox({ onSend, onAbort }: Props) {
               composingRef.current = false
             }}
             onKeyDown={(e) => {
-              // @ mention popup 開時 — 優先處理(跟 slash 互斥,因為 @ 不能
-              // 在 / 開頭的訊息出現)
+              // @ mention popup 開時 — 優先處理(跟 slash 互斥)。Esc 不論
+              // 有沒有 matches 都讓 popup 關;navigation 鍵只在有 matches
+              // 才攔(否則照常打字)
+              if (showMention && e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setMention(null)
+                return
+              }
               if (showMention && mentionMatches.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault()
