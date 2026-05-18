@@ -1,3 +1,4 @@
+import { ForkPromptModal } from './components/ForkPromptModal'
 import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
 import { MessageList } from './components/MessageList'
@@ -67,6 +68,7 @@ export function App() {
       </div>
       <NewProjectModal />
       <PlanApprovalModal />
+      <ForkPromptModal />
     </div>
   )
 }

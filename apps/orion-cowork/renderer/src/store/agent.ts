@@ -94,6 +94,15 @@ export type SessionSummary = {
   forked_from_message_index?: number | null
 }
 
+/** Fork modal 開啟 request — App.tsx top-level 渲染 modal,MessageBubble 只 dispatch。
+ *  Phase 31-R 改:原本 modal 在 MessageBubble 內 createPortal,user 回報沒反應;
+ *  改提到 top-level 跟 NewProjectModal / PlanApprovalModal 同 pattern,徹底避開
+ *  ancestor CSS / event 干擾。 */
+export type ForkRequest = {
+  sessionId: string
+  messageIndex: number
+} | null
+
 type AgentState = {
   sessionId: string | null
   // ─── Per-session state(Phase 31-M)— 切走的 session 仍然背景跑,events
@@ -119,6 +128,11 @@ type AgentState = {
   }>
   setPendingPlanApproval: (sid: string, data: { planId: string | null; planMarkdown: string; planFilePath: string | null }) => void
   clearPendingPlanApproval: (sid: string) => void
+  /** Fork modal 全域 state(Phase 31-R)— 任意 MessageBubble 點分叉 dispatch
+   *  進來,App.tsx 頂層渲染 ForkPromptModal,避開 chat 容器 CSS 影響。 */
+  forkRequest: ForkRequest
+  openForkRequest: (sessionId: string, messageIndex: number) => void
+  closeForkRequest: () => void
   /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
    *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
    *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
@@ -208,6 +222,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   planModeStatusBySession: {},
   pendingPlanApprovalBySession: {},
   extraOutputFiles: {},
+  forkRequest: null,
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -409,6 +424,10 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       delete next[sid]
       return { pendingPlanApprovalBySession: next }
     }),
+
+  openForkRequest: (sessionId, messageIndex) =>
+    set({ forkRequest: { sessionId, messageIndex } }),
+  closeForkRequest: () => set({ forkRequest: null }),
 
   setCompacting: (sid, v) =>
     set((s) => updateSession(s, 'compactingBySession', sid, () => v)),

@@ -1,12 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, ChevronDown, ChevronUp, Copy, GitBranch, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
-import { useDeleteFrom, useEditAndResend, useFork, useRegenerate } from '../hooks/useAgent'
+import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
@@ -72,12 +71,12 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
-  const [forkOpen, setForkOpen] = useState(false)
   const { t } = useTranslation()
   const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
+  const currentSid = useAgentStore((s) => s.sessionId)
+  const openForkRequest = useAgentStore((s) => s.openForkRequest)
   const editResend = useEditAndResend()
   const deleteFrom = useDeleteFrom()
-  const fork = useFork()
   // 能編輯/刪除的條件:有 DB index、非 compacted、非 streaming 中、整體沒在跑
   const canMutate =
     typeof message.messageIndex === 'number' &&
@@ -210,12 +209,13 @@ export function MessageBubble({
                 danger
               />
             )}
-            {/* Fork:從此訊息分叉新 session,原對話完全不動。modal 問 title。 */}
-            {canFork && (
+            {/* Fork:dispatch 進 store,App.tsx top-level 渲染 ForkPromptModal。
+                這樣完全避開 chat 容器 / MessageBubble 父層的 CSS 干擾。 */}
+            {canFork && currentSid && (
               <ActionButton
                 icon={<GitBranch size={12} />}
                 label={t('message.fork')}
-                onClick={() => setForkOpen(true)}
+                onClick={() => openForkRequest(currentSid, message.messageIndex!)}
               />
             )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
@@ -223,80 +223,7 @@ export function MessageBubble({
           </div>
         )}
       </div>
-      {forkOpen && (
-        <ForkPromptModal
-          onCancel={() => setForkOpen(false)}
-          onSubmit={async (title) => {
-            setForkOpen(false)
-            await fork(message.messageIndex!, title || undefined)
-          }}
-        />
-      )}
     </div>
-  )
-}
-
-/** 從某 turn 分叉的標題輸入 modal — Electron 不支援 window.prompt,改用 React state-driven dialog。
- *  Enter 送出、Esc 取消;不輸標題也可送(走 source title + "(fork)" 自動命名)。 */
-function ForkPromptModal({
-  onCancel,
-  onSubmit,
-}: {
-  onCancel: () => void
-  onSubmit: (title: string) => void | Promise<void>
-}) {
-  const { t } = useTranslation()
-  const [title, setTitle] = useState('')
-  // createPortal:render 到 document.body,避開 MessageBubble 父層 overflow /
-  // 任何 stacking context。modal 一定浮在最上、跨整個 viewport。
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onCancel}
-    >
-      <div
-        className="flex w-full max-w-md flex-col gap-3 rounded-2xl border border-bg-hover bg-bg-base p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <GitBranch size={14} />
-          {t('message.fork')}
-        </h2>
-        <p className="text-xs text-fg-muted">{t('message.forkPromptTitle')}</p>
-        <input
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              void onSubmit(title.trim())
-            } else if (e.key === 'Escape') {
-              onCancel()
-            }
-          }}
-          placeholder={t('message.forkTitlePlaceholder')}
-          className="w-full rounded-md border border-bg-hover bg-bg-input px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-        />
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-hover"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={() => void onSubmit(title.trim())}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90"
-          >
-            {t('message.forkConfirm')}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
   )
 }
 
