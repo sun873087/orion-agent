@@ -371,7 +371,9 @@ export default {
 
   'message.regenerate': 'Regenerate',
   'message.fork': 'Fork',
-  'message.forkPromptTitle': 'Fork a new conversation from this message. New conversation title (blank = auto):',
+  'message.forkPromptTitle': 'Fork a new conversation from this message. The original stays untouched.',
+  'message.forkTitlePlaceholder': 'Leave blank → "<source title> (fork)"',
+  'message.forkConfirm': 'Fork',
   'message.copy': 'Copy',
   'message.copied': 'Copied',
   'message.expand': 'Show more',

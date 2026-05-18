@@ -371,7 +371,9 @@ export default {
 
   'message.regenerate': '再生成',
   'message.fork': '分岐',
-  'message.forkPromptTitle': 'このメッセージから新しい会話に分岐します。新会話のタイトル(空欄で自動):',
+  'message.forkPromptTitle': 'このメッセージから新しい会話に分岐します。元の会話は変わりません。',
+  'message.forkTitlePlaceholder': '空欄 → 「元タイトル (fork)」',
+  'message.forkConfirm': '分岐',
   'message.copy': 'コピー',
   'message.copied': 'コピーしました',
   'message.expand': '展開',

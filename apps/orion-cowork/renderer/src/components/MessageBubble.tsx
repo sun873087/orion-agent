@@ -71,6 +71,7 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
+  const [forkOpen, setForkOpen] = useState(false)
   const { t } = useTranslation()
   const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
   const editResend = useEditAndResend()
@@ -208,29 +209,88 @@ export function MessageBubble({
                 danger
               />
             )}
-            {/* Fork:從此訊息分叉新 session,原對話完全不動。輕量 prompt 問 title。 */}
+            {/* Fork:從此訊息分叉新 session,原對話完全不動。modal 問 title。 */}
             {canFork && (
               <ActionButton
                 icon={<GitBranch size={12} />}
                 label={t('message.fork')}
-                onClick={async () => {
-                  const customTitle = window.prompt(
-                    t('message.forkPromptTitle'),
-                    '',
-                  )
-                  // null = 使用者按 Cancel;空字串 = 沒輸 → 走 source title 自動產生
-                  if (customTitle === null) return
-                  await fork(
-                    message.messageIndex!,
-                    customTitle.trim() || undefined,
-                  )
-                }}
+                onClick={() => setForkOpen(true)}
               />
             )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
         )}
+      </div>
+      {forkOpen && (
+        <ForkPromptModal
+          onCancel={() => setForkOpen(false)}
+          onSubmit={async (title) => {
+            setForkOpen(false)
+            await fork(message.messageIndex!, title || undefined)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 從某 turn 分叉的標題輸入 modal — Electron 不支援 window.prompt,改用 React state-driven dialog。
+ *  Enter 送出、Esc 取消;不輸標題也可送(走 source title + "(fork)" 自動命名)。 */
+function ForkPromptModal({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void
+  onSubmit: (title: string) => void | Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [title, setTitle] = useState('')
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="flex w-full max-w-md flex-col gap-3 rounded-2xl border border-bg-hover bg-bg-base p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <GitBranch size={14} />
+          {t('message.fork')}
+        </h2>
+        <p className="text-xs text-fg-muted">{t('message.forkPromptTitle')}</p>
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void onSubmit(title.trim())
+            } else if (e.key === 'Escape') {
+              onCancel()
+            }
+          }}
+          placeholder={t('message.forkTitlePlaceholder')}
+          className="w-full rounded-md border border-bg-hover bg-bg-input px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-hover"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void onSubmit(title.trim())}
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90"
+          >
+            {t('message.forkConfirm')}
+          </button>
+        </div>
       </div>
     </div>
   )
