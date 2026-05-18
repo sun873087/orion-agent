@@ -6,6 +6,7 @@
 
 - **[plans/](./plans/)** — 未實作的 phase plan(forward-looking spec)
 - **[done.md](./done.md)** — 已完成的 phase 一句話列表(git log 對照)
+- **[cowork-wishlist.md](./cowork-wishlist.md)** — Cowork 功能 brainstorm:必須做 / 強烈想要 / 強競爭力 / qol 四層,還沒落到 phase plan 的構想堆放這
 
 ## 寫新 plan
 
