@@ -101,6 +101,10 @@ export type SessionSummary = {
 export type ForkRequest = {
   sessionId: string
   messageIndex: number
+  /** Fork 點的訊息 role — 決定 modal 是問「新訊息」(user)或「標題」(assistant)。 */
+  forkPointRole: 'user' | 'assistant'
+  /** Fork 點原本的 user prompt 文字 — user 訊息 case 預填 / 提示用。 */
+  originalText: string
 } | null
 
 type AgentState = {
@@ -131,7 +135,12 @@ type AgentState = {
   /** Fork modal 全域 state(Phase 31-R)— 任意 MessageBubble 點分叉 dispatch
    *  進來,App.tsx 頂層渲染 ForkPromptModal,避開 chat 容器 CSS 影響。 */
   forkRequest: ForkRequest
-  openForkRequest: (sessionId: string, messageIndex: number) => void
+  openForkRequest: (
+    sessionId: string,
+    messageIndex: number,
+    forkPointRole: 'user' | 'assistant',
+    originalText: string,
+  ) => void
   closeForkRequest: () => void
   /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
    *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
@@ -425,8 +434,10 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       return { pendingPlanApprovalBySession: next }
     }),
 
-  openForkRequest: (sessionId, messageIndex) =>
-    set({ forkRequest: { sessionId, messageIndex } }),
+  openForkRequest: (sessionId, messageIndex, forkPointRole, originalText) =>
+    set({
+      forkRequest: { sessionId, messageIndex, forkPointRole, originalText },
+    }),
   closeForkRequest: () => set({ forkRequest: null }),
 
   setCompacting: (sid, v) =>

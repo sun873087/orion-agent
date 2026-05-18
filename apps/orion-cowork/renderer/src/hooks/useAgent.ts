@@ -652,57 +652,75 @@ export function useDeleteFrom() {
 /** 從指定 messageIndex(inclusive)分叉出新 session — 原 session 完全不動。
  *  Phase 31-R。新 session 自動切過去顯示;sidebar refresh 看得到。
  *
- *  Auto-continue:fork 點若停在 user 訊息 → AI 還沒回應 → 自動觸發 truncate
- *  + resend 同樣文字,新 session 拿到 AI 回應。原 session 完全不動。 */
+ *  Auto-continue 機制(fork 點是 user 訊息時):
+ *    - 預設用原訊息文字 resend(AI 在新 branch 重答)
+ *    - `newPromptOverride` 給就用它取代,等於「換問法再試一次」— title 自動
+ *      從 prompt 前 60 字產生,避免 user 又要輸入一次
+ *
+ *  Fork 自 assistant 訊息時:無 auto-continue,新 session 直接停在 assistant
+ *  回應,user 在輸入框打下個 prompt。title 用 caller 傳的(沒給 sidecar 自
+ *  動帶「原標題 (fork)」)。 */
 export function useFork() {
-  return useCallback(async (messageIndex: number, title?: string) => {
-    const store = useAgentStore.getState()
-    const sid = store.sessionId
-    if (!sid) return null
-    try {
-      const { forkConversation } = await import('../api/agent')
-      const newSid = await forkConversation(sid, messageIndex, title)
-      // 切到新 session + load messages 進 store(sidebar 點選同一條路徑)
-      useAgentStore.getState().switchToSession(newSid)
-      const loaded = await loadMessages(newSid)
-      _hydrateMessages(newSid, loaded)
-      refreshSessions()
+  return useCallback(
+    async (
+      messageIndex: number,
+      title?: string,
+      newPromptOverride?: string,
+    ) => {
+      const store = useAgentStore.getState()
+      const sid = store.sessionId
+      if (!sid) return null
+      try {
+        const { forkConversation } = await import('../api/agent')
+        // newPromptOverride 給的話,title 自動用 prompt 前 60 字(優先於 title 參數)
+        const effectiveTitle =
+          newPromptOverride && newPromptOverride.trim()
+            ? newPromptOverride.trim().slice(0, 60)
+            : title
+        const newSid = await forkConversation(sid, messageIndex, effectiveTitle)
+        // 切到新 session + load messages 進 store(sidebar 點選同一條路徑)
+        useAgentStore.getState().switchToSession(newSid)
+        const loaded = await loadMessages(newSid)
+        _hydrateMessages(newSid, loaded)
+        refreshSessions()
 
-      // Auto-continue 若 fork 點是 user 訊息
-      const last = loaded[loaded.length - 1]
-      if (last && last.role === 'user' && last.text) {
-        const lastText = last.text
-        const assistantId = useAgentStore.getState().beginAssistantMessage(newSid)
-        useAgentStore.getState().setBusy(newSid, true)
-        try {
-          await rpcTruncate(
-            newSid,
-            messageIndex,
-            (ev: SidecarEvent) => applyEvent(newSid, assistantId, ev),
-            {
-              resendText: lastText,
-              permissionMode: useSettingsStore.getState().permissionMode,
-              locale: useSettingsStore.getState().locale,
-            },
-          )
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
-          useAgentStore.getState().setError(newSid, msg)
-        } finally {
-          const st = useAgentStore.getState()
-          st.endAssistantMessage(newSid, assistantId)
-          st.setBusy(newSid, false)
-          refreshSessions()
-          void backfillMessageIndices(newSid)
+        // Auto-continue 若 fork 點是 user 訊息
+        const last = loaded[loaded.length - 1]
+        if (last && last.role === 'user' && last.text) {
+          const sendText = (newPromptOverride && newPromptOverride.trim()) || last.text
+          const assistantId = useAgentStore.getState().beginAssistantMessage(newSid)
+          useAgentStore.getState().setBusy(newSid, true)
+          try {
+            await rpcTruncate(
+              newSid,
+              messageIndex,
+              (ev: SidecarEvent) => applyEvent(newSid, assistantId, ev),
+              {
+                resendText: sendText,
+                permissionMode: useSettingsStore.getState().permissionMode,
+                locale: useSettingsStore.getState().locale,
+              },
+            )
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            useAgentStore.getState().setError(newSid, msg)
+          } finally {
+            const st = useAgentStore.getState()
+            st.endAssistantMessage(newSid, assistantId)
+            st.setBusy(newSid, false)
+            refreshSessions()
+            void backfillMessageIndices(newSid)
+          }
         }
+        return newSid
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        useAgentStore.getState().setError(sid, `Fork 失敗:${msg}`)
+        return null
       }
-      return newSid
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(sid, `Fork 失敗:${msg}`)
-      return null
-    }
-  }, [])
+    },
+    [],
+  )
 }
 
 /** 編輯 user 訊息並重送 — truncate + resend。前段保留,後段重新生成。 */

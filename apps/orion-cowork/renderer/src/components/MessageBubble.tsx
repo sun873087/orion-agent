@@ -210,12 +210,20 @@ export function MessageBubble({
               />
             )}
             {/* Fork:dispatch 進 store,App.tsx top-level 渲染 ForkPromptModal。
-                這樣完全避開 chat 容器 / MessageBubble 父層的 CSS 干擾。 */}
+                這樣完全避開 chat 容器 / MessageBubble 父層的 CSS 干擾。
+                帶 role + text 過去 — modal 依 role 決定問「新訊息」或「標題」。 */}
             {canFork && currentSid && (
               <ActionButton
                 icon={<GitBranch size={12} />}
                 label={t('message.fork')}
-                onClick={() => openForkRequest(currentSid, message.messageIndex!)}
+                onClick={() =>
+                  openForkRequest(
+                    currentSid,
+                    message.messageIndex!,
+                    isUser ? 'user' : 'assistant',
+                    message.text ?? '',
+                  )
+                }
               />
             )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
