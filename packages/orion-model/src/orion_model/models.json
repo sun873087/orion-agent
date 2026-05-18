@@ -164,7 +164,17 @@
       "id": "ollama",
       "label": "Ollama (Local)",
       "dynamic": true,
-      "models": []
+      "_comment": "models[] 是 static fallback — daemon 沒開時 UI 顯這份,daemon 連得上時 InputBox 走 ollama.list_models 動態抓 user 實際 pull 過的(動態 wins,不 merge)。在這加 entry 主要給「daemon 沒在跑時 user 看到能用什麼」的提示。",
+      "models": [
+        {
+          "id": "qwen3.5:0.8b",
+          "label": "Qwen 3.5 · 0.8B(vision+tools, 256K ctx, 1GB)",
+          "max_output_tokens": 4096,
+          "max_context_tokens": 262144,
+          "supports_reasoning": false,
+          "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+        }
+      ]
     }
   ]
 }
