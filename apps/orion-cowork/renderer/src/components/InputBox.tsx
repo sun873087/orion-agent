@@ -69,6 +69,47 @@ const CLIENT_SLASH_NAMES = new Set([
   '/plan',
 ])
 
+// Quick prompts(Phase 31-P)— empty state 顯,點 chip 自動填進 input。
+// 涵蓋 explore / search / web / general 四類示範常用工具
+type QuickPrompt = {
+  key: string
+  icon: LucideIcon
+  labelKey: string
+  hintKey: string
+  textKey: string
+}
+
+const QUICK_PROMPTS: QuickPrompt[] = [
+  {
+    key: 'explore',
+    icon: BookCheck,  // 暫用 BookCheck,後面換 Compass 更貼切
+    labelKey: 'quickPrompt.explore.label',
+    hintKey: 'quickPrompt.explore.hint',
+    textKey: 'quickPrompt.explore.text',
+  },
+  {
+    key: 'todos',
+    icon: Target,
+    labelKey: 'quickPrompt.todos.label',
+    hintKey: 'quickPrompt.todos.hint',
+    textKey: 'quickPrompt.todos.text',
+  },
+  {
+    key: 'web',
+    icon: Gauge,
+    labelKey: 'quickPrompt.web.label',
+    hintKey: 'quickPrompt.web.hint',
+    textKey: 'quickPrompt.web.text',
+  },
+  {
+    key: 'plan',
+    icon: Users,
+    labelKey: 'quickPrompt.plan.label',
+    hintKey: 'quickPrompt.plan.hint',
+    textKey: 'quickPrompt.plan.text',
+  },
+]
+
 const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: '/compact',
@@ -743,17 +784,48 @@ export function InputBox({ onSend, onAbort }: Props) {
       <div className="mx-auto max-w-3xl">
         {/* Empty-state hero — 跟 Claude Cowork 一致,大標題 + subtitle */}
         {isEmpty && (
-          <div className="mb-6 flex items-start gap-3">
-            <Sparkles size={28} className="mt-1 shrink-0 text-accent" />
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight text-fg-base">
-                {t('input.hero.title')}
-              </h2>
-              <p className="mt-1 text-sm text-fg-muted underline decoration-fg-subtle underline-offset-4">
-                {t('input.hero.subtitle')}
-              </p>
+          <>
+            <div className="mb-6 flex items-start gap-3">
+              <Sparkles size={28} className="mt-1 shrink-0 text-accent" />
+              <div>
+                <h2 className="text-2xl font-semibold tracking-tight text-fg-base">
+                  {t('input.hero.title')}
+                </h2>
+                <p className="mt-1 text-sm text-fg-muted underline decoration-fg-subtle underline-offset-4">
+                  {t('input.hero.subtitle')}
+                </p>
+              </div>
             </div>
-          </div>
+            {/* Quick prompts — 點 chip 自動填進 input,user 可改再送 */}
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              {QUICK_PROMPTS.map((qp) => {
+                const Icon = qp.icon
+                return (
+                  <button
+                    key={qp.key}
+                    type="button"
+                    onClick={() => {
+                      const promptText = t(qp.textKey)
+                      setText(promptText)
+                      requestAnimationFrame(() => {
+                        textareaRef.current?.focus()
+                        // cursor 移到最尾
+                        textareaRef.current?.setSelectionRange(promptText.length, promptText.length)
+                      })
+                      autoResize()
+                    }}
+                    className="flex items-start gap-2 rounded-xl border border-bg-hover bg-bg-panel px-3 py-2.5 text-left text-xs hover:border-accent/30 hover:bg-bg-hover"
+                  >
+                    <Icon size={14} className="mt-0.5 shrink-0 text-fg-muted" />
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate font-medium text-fg-base">{t(qp.labelKey)}</span>
+                      <span className="truncate text-fg-muted">{t(qp.hintKey)}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
         )}
 
         {/* Attachment thumbnails */}
