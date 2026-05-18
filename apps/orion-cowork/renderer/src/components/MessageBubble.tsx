@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, ChevronDown, ChevronUp, Copy, GitBranch, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
@@ -246,7 +247,9 @@ function ForkPromptModal({
 }) {
   const { t } = useTranslation()
   const [title, setTitle] = useState('')
-  return (
+  // createPortal:render 到 document.body,避開 MessageBubble 父層 overflow /
+  // 任何 stacking context。modal 一定浮在最上、跨整個 viewport。
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={onCancel}
@@ -292,7 +295,8 @@ function ForkPromptModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
