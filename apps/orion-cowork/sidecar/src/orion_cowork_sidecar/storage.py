@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_model.types import NormalizedMessage
@@ -354,16 +354,24 @@ async def update_title_if_empty(engine: AsyncEngine, session_id: str, title: str
 
 
 async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
+    """List sessions ordered by 最近活動(latest message 或 session 建立)倒序。
+
+    空 session(沒任何 message)fallback 用 session.created_at。已有 message
+    的用 MAX(message.created_at)。SQL LEFT JOIN + GROUP BY 一次撈完。
+    """
     async with db_session(engine) as s:
+        last_msg = func.max(MessageRow.created_at)
         stmt = (
-            select(SessionRow)
+            select(SessionRow, last_msg.label("last_activity"))
+            .outerjoin(MessageRow, MessageRow.session_id == SessionRow.id)
             .where(SessionRow.user_id == LOCAL_USER_ID)
-            .order_by(SessionRow.created_at.desc())
+            .group_by(SessionRow.id)
+            .order_by(func.coalesce(last_msg, SessionRow.created_at).desc())
         )
-        rows = list((await s.execute(stmt)).scalars())
+        rows = list((await s.execute(stmt)).all())
 
         out: list[SessionMeta] = []
-        for r in rows:
+        for r, _last in rows:
             meta = await s.get(MetaRow, r.id)
             title = meta.title if meta is not None else None
             count_stmt = select(MessageRow.id).where(MessageRow.session_id == r.id)
