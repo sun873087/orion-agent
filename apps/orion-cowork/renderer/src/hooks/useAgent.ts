@@ -650,7 +650,10 @@ export function useDeleteFrom() {
 }
 
 /** 從指定 messageIndex(inclusive)分叉出新 session — 原 session 完全不動。
- *  Phase 31-R。新 session 自動切過去顯示;sidebar refresh 看得到。 */
+ *  Phase 31-R。新 session 自動切過去顯示;sidebar refresh 看得到。
+ *
+ *  Auto-continue:fork 點若停在 user 訊息 → AI 還沒回應 → 自動觸發 truncate
+ *  + resend 同樣文字,新 session 拿到 AI 回應。原 session 完全不動。 */
 export function useFork() {
   return useCallback(async (messageIndex: number, title?: string) => {
     const store = useAgentStore.getState()
@@ -664,6 +667,35 @@ export function useFork() {
       const loaded = await loadMessages(newSid)
       _hydrateMessages(newSid, loaded)
       refreshSessions()
+
+      // Auto-continue 若 fork 點是 user 訊息
+      const last = loaded[loaded.length - 1]
+      if (last && last.role === 'user' && last.text) {
+        const lastText = last.text
+        const assistantId = useAgentStore.getState().beginAssistantMessage(newSid)
+        useAgentStore.getState().setBusy(newSid, true)
+        try {
+          await rpcTruncate(
+            newSid,
+            messageIndex,
+            (ev: SidecarEvent) => applyEvent(newSid, assistantId, ev),
+            {
+              resendText: lastText,
+              permissionMode: useSettingsStore.getState().permissionMode,
+              locale: useSettingsStore.getState().locale,
+            },
+          )
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          useAgentStore.getState().setError(newSid, msg)
+        } finally {
+          const st = useAgentStore.getState()
+          st.endAssistantMessage(newSid, assistantId)
+          st.setBusy(newSid, false)
+          refreshSessions()
+          void backfillMessageIndices(newSid)
+        }
+      }
       return newSid
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
