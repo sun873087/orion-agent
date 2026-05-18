@@ -15,6 +15,7 @@ export default {
   'sidebar.empty': '尚無對話',
   'sidebar.newConversation': '(新對話)',
   'sidebar.deleteConfirm': '確定刪除這個對話?',
+  'sidebar.deleteForkWarning': '⚠ 這條對話有 {count} 個 fork 子對話,會一併刪除(不可復原)。',
   'sidebar.deleteTooltip': '刪除',
   'sidebar.settings': '設定',
   'sidebar.localUser': '本機使用者',

@@ -13,6 +13,7 @@ export default {
   'sidebar.empty': '会話がありません',
   'sidebar.newConversation': '(新規会話)',
   'sidebar.deleteConfirm': 'この会話を削除しますか?',
+  'sidebar.deleteForkWarning': '⚠ この会話には {count} 件の fork サブ会話があります。一括で削除されます(復元不可)。',
   'sidebar.deleteTooltip': '削除',
   'sidebar.settings': '設定',
   'sidebar.localUser': 'ローカルユーザー',

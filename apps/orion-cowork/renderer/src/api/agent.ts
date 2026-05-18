@@ -1379,6 +1379,22 @@ export async function regenerateLast(
   )
 }
 
+/** 算該 session 有幾個 fork 子孫(遞迴往下,不含 self)— delete confirm 顯警告用。 */
+export async function countForkDescendants(sessionId: string): Promise<number> {
+  let count = 0
+  await window.agent.call(
+    'conversation.count_fork_descendants',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event === 'fork_descendants_count' && f.data) {
+        count = typeof f.data.count === 'number' ? f.data.count : 0
+      }
+    },
+  )
+  return count
+}
+
 /**
  * 從 source session 第 N 筆訊息(inclusive)分叉出新 session — 原 session 完全不動。
  * 新 session messages [0..upToMessageIndex] 來自 source,workspace / project 繼承,

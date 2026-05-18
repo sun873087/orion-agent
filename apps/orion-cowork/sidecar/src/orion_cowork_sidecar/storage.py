@@ -411,8 +411,50 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
         return out
 
 
+async def find_fork_descendants(
+    engine: AsyncEngine, session_id: str,
+) -> list[str]:
+    """遞迴找該 session 的所有 fork 子孫(不含 self)。BFS,SQLite 沒
+    RECURSIVE CTE 支援限制,純 Python loop 比較好讀也方便除錯。 """
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id, forked_from_session_id FROM cowork_session_ext "
+            "WHERE forked_from_session_id IS NOT NULL"
+        )
+        pairs = [(r[0], r[1]) for r in result.all()]
+    # parent → [child] map
+    children_map: dict[str, list[str]] = {}
+    for child, parent in pairs:
+        children_map.setdefault(parent, []).append(child)
+    out: list[str] = []
+    visited: set[str] = set()
+    queue: list[str] = [session_id]
+    while queue:
+        cur = queue.pop()
+        for child in children_map.get(cur, []):
+            if child in visited:
+                continue
+            visited.add(child)
+            out.append(child)
+            queue.append(child)
+    return out
+
+
+async def count_fork_descendants(
+    engine: AsyncEngine, session_id: str,
+) -> int:
+    """Sidebar delete confirm 用 — 知道刪這 session 會牽動幾個 fork。 """
+    return len(await find_fork_descendants(engine, session_id))
+
+
 async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
-    """Cascade delete:DB rows + 該 session 的 blob 檔 + 綁該 session 的 Loop 排程。
+    """Cascade delete:DB rows + 該 session 的 blob 檔 + 綁該 session 的 Loop 排程
+    + **fork 子孫**(Phase 31-T)。
+
+    Fork 子孫:用 forked_from_session_id 遞迴往下找,每個子孫都跑同樣的
+    清理流程(messages / meta / ext / schedules / blob)。child fork 仍指向
+    parent 的時候,parent 沒了 child 從 sidebar tree 看會變 orphan(root)
+    — user 直覺是「刪母對話就把整支家族都刪掉」,所以這邊直接 cascade。
 
     先撈 content_json 內所有 blob_id 收集,DB rows commit 後再 unlink blob 檔
     (中途 unlink fail 不影響 DB consistency,下次 cleanup_orphan_blobs 會撿)。
@@ -421,33 +463,39 @@ async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
     一起刪 — 它本來就是綁這 session 的,session 沒了排程也沒意義。純 Schedule
     (target_session_id IS NULL,fire 時開新 session)不在這範圍。
     """
+    descendants = await find_fork_descendants(engine, session_id)
+    targets = [session_id, *descendants]
+    all_blob_ids: list[str] = []
     async with db_session(engine) as s:
         row = await s.get(SessionRow, session_id)
         if row is None:
             return False
-        # 先撈 messages 內所有 blob_id ref
-        msg_rows = await s.execute(
-            select(MessageRow.content_json).where(MessageRow.session_id == session_id)
-        )
-        blob_ids = _collect_blob_ids([cj for (cj,) in msg_rows])
-        # Explicit cascade(避免 SQLite FK 設定差異 — CASCADE 也設了 ondelete)
-        await s.execute(delete(MessageRow).where(MessageRow.session_id == session_id))
-        await s.execute(delete(MetaRow).where(MetaRow.session_id == session_id))
-        await s.delete(row)
-        # Loop 排程連同 cowork_session_ext 一起清(ext 沒 FK,raw SQL 處理)
         conn = await s.connection()
-        await conn.exec_driver_sql(
-            "DELETE FROM cowork_schedules WHERE target_session_id = ?",
-            (session_id,),
-        )
-        await conn.exec_driver_sql(
-            "DELETE FROM cowork_session_ext WHERE session_id = ?",
-            (session_id,),
-        )
+        for sid in targets:
+            # blob_id ref 從各 session 的 messages 撈出來累積
+            msg_rows = await s.execute(
+                select(MessageRow.content_json).where(MessageRow.session_id == sid)
+            )
+            all_blob_ids.extend(
+                _collect_blob_ids([cj for (cj,) in msg_rows])
+            )
+            await s.execute(delete(MessageRow).where(MessageRow.session_id == sid))
+            await s.execute(delete(MetaRow).where(MetaRow.session_id == sid))
+            sess_row = await s.get(SessionRow, sid)
+            if sess_row is not None:
+                await s.delete(sess_row)
+            await conn.exec_driver_sql(
+                "DELETE FROM cowork_schedules WHERE target_session_id = ?",
+                (sid,),
+            )
+            await conn.exec_driver_sql(
+                "DELETE FROM cowork_session_ext WHERE session_id = ?",
+                (sid,),
+            )
         await s.commit()
     # DB 已 commit;unlink blob 檔。fail 不影響 DB,下次 cleanup 會撿。
     blob = get_blob_store()
-    for bid in blob_ids:
+    for bid in all_blob_ids:
         try:
             blob.delete(bid)
         except Exception:  # noqa: BLE001

@@ -483,6 +483,7 @@ class Handlers:
             "conversation.regenerate": self.conversation_regenerate,
             "conversation.truncate": self.conversation_truncate,
             "conversation.fork": self.conversation_fork,
+            "conversation.count_fork_descendants": self.conversation_count_fork_descendants,
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
@@ -3464,6 +3465,26 @@ class Handlers:
                 "source_session_id": src_sid,
                 "forked_from_message_index": up_to,
             },
+            "final": True,
+        }
+
+    async def conversation_count_fork_descendants(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """回 session 的 fork 子孫數 — Sidebar delete confirm 用。"""
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        count = await storage.count_fork_descendants(engine, sid)
+        yield {
+            "event": "fork_descendants_count",
+            "data": {"session_id": sid, "count": count},
             "final": True,
         }
 

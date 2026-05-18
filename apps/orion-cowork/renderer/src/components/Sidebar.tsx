@@ -289,6 +289,22 @@ function SessionListGrouped({
     return m
   }, [sessions])
 
+  // 刪除確認:先 async 撈 fork 子孫數,confirm 訊息加 warning 提示一併刪除
+  async function confirmAndDelete(sid: string): Promise<void> {
+    const { countForkDescendants } = await import('../api/agent')
+    let count = 0
+    try {
+      count = await countForkDescendants(sid)
+    } catch {
+      // 撈失敗就 fallback 用普通 confirm
+    }
+    const msg =
+      count > 0
+        ? `${t('sidebar.deleteConfirm')}\n\n${t('sidebar.deleteForkWarning', { count })}`
+        : t('sidebar.deleteConfirm')
+    if (window.confirm(msg)) onDelete(sid)
+  }
+
   return (
     <>
       {starred.length > 0 && (
@@ -312,7 +328,7 @@ function SessionListGrouped({
                   forkedFrom={null}
                   onClick={() => onSwitch(s.session_id)}
                   onDelete={() => {
-                    if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
+                    void confirmAndDelete(s.session_id)
                   }}
                 />
               </li>
@@ -355,7 +371,7 @@ function SessionListGrouped({
                     }
                     onClick={() => onSwitch(s.session_id)}
                     onDelete={() => {
-                      if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
+                      void confirmAndDelete(s.session_id)
                     }}
                   />
                 </li>

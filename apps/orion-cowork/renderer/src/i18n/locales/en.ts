@@ -13,6 +13,7 @@ export default {
   'sidebar.empty': 'No conversations yet',
   'sidebar.newConversation': '(new conversation)',
   'sidebar.deleteConfirm': 'Delete this conversation?',
+  'sidebar.deleteForkWarning': '⚠ This conversation has {count} forked descendants — they will also be deleted (not recoverable).',
   'sidebar.deleteTooltip': 'Delete',
   'sidebar.settings': 'Settings',
   'sidebar.localUser': 'Local user',

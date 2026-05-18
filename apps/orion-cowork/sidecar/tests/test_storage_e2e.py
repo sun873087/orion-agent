@@ -149,6 +149,48 @@ async def test_fork_session_copies_messages_and_lineage(data_dir: str) -> None:
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_delete_session_cascades_fork_descendants(data_dir: str) -> None:
+    """刪 parent session 時,fork 出去的所有子孫(含孫子)一併刪掉。
+    原本只刪 parent 會留孤兒,sidebar tree 看起來變 root,user 直覺不對。"""
+    os.environ["ORION_COWORK_DATA_DIR"] = data_dir
+    from orion_model.types import NormalizedMessage
+    from orion_cowork_sidecar import storage
+
+    engine = await storage.init_storage()
+    root_sid = "44444444-4444-4444-4444-444444444444"
+    await storage.save_session_metadata(
+        engine, root_sid, provider="anthropic", model="claude-haiku-4-5",
+    )
+    await storage.append_messages(engine, root_sid, [
+        NormalizedMessage(role="user", content="Q1"),
+        NormalizedMessage(role="assistant", content="A1"),
+    ])
+    # Fork 一次出 child,再從 child fork 一次出 grandchild
+    child_sid = await storage.fork_session(
+        engine, source_session_id=root_sid, up_to_message_index=1, title="child",
+    )
+    grand_sid = await storage.fork_session(
+        engine, source_session_id=child_sid, up_to_message_index=1, title="grand",
+    )
+    # 不相關的 session 同時存在,確認 cascade 不會誤刪
+    other_sid = "55555555-5555-5555-5555-555555555555"
+    await storage.save_session_metadata(
+        engine, other_sid, provider="anthropic", model="claude-haiku-4-5",
+    )
+
+    assert await storage.count_fork_descendants(engine, root_sid) == 2
+    assert await storage.delete_session(engine, root_sid) is True
+
+    listed = await storage.list_sessions(engine)
+    ids = {s.session_id for s in listed}
+    assert root_sid not in ids
+    assert child_sid not in ids, "child fork 應一併刪掉"
+    assert grand_sid not in ids, "grandchild fork 應一併刪掉"
+    assert other_sid in ids, "無關 session 不該被牽連"
+    await engine.dispose()
+
+
 def test_conversation_delete_persists(data_dir: str) -> None:
     # Create 2 sessions in process A
     frames_a = _run_sidecar([

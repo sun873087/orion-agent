@@ -13,6 +13,7 @@ export default {
   'sidebar.empty': '暂无对话',
   'sidebar.newConversation': '(新对话)',
   'sidebar.deleteConfirm': '确定删除这个对话?',
+  'sidebar.deleteForkWarning': '⚠ 这条对话有 {count} 个 fork 子对话,会一并删除(不可恢复)。',
   'sidebar.deleteTooltip': '删除',
   'sidebar.settings': '设置',
   'sidebar.localUser': '本机用户',
