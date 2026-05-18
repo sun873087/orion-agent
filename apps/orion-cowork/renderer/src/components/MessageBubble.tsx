@@ -265,24 +265,30 @@ function CopyButton({ text }: { text: string }) {
  */
 function UserMessageBubble({ text }: { text: string }) {
   const { t } = useTranslation()
+  // 短訊息不收摺;\n 多 OR char 長才考慮(避免 5 行普通問題被截斷)
+  const newlineCount = (text.match(/\n/g) || []).length
+  const isLong = newlineCount > 10 || text.length > 1500
   const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
 
-  // 量內容是否超過 5 行 — 用 useLayoutEffect 在 paint 前測,避免 flicker
+  // 量內容是否真的超過 line-clamp 顯示區(避免 14 行 prose 算 long 但實際視覺
+  // 折行後只 9 行就不該顯按鈕)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el) return
-    // line-clamp 套上時,scrollHeight 是完整內容,clientHeight 是顯示區
+    if (!el || !isLong) {
+      setOverflows(false)
+      return
+    }
     setOverflows(el.scrollHeight - el.clientHeight > 1)
-  }, [text])
+  }, [text, isLong])
 
   return (
     <div className="rounded-2xl rounded-tr-sm bg-accent px-4 py-2 text-white">
       <span
         ref={ref}
-        className={`block whitespace-pre-wrap ${
-          !expanded ? 'line-clamp-5' : ''
+        className={`whitespace-pre-wrap ${
+          isLong && !expanded ? 'line-clamp-[10]' : 'block'
         }`}
       >
         {text}
