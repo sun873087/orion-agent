@@ -138,6 +138,7 @@ export default {
   'input.attach': 'Attach image (PNG/JPEG/GIF/WebP, max 20 MB each)',
   'input.attach.unsupported': '{name}: unsupported (images: PNG / JPEG / GIF / WebP; other: drop a text / code file)',
   'input.attach.textTooBig': '{name}: text file > 500 KB — ask the LLM to use the Read tool instead to save context',
+  'input.attach.noSession': 'No active conversation — send one message first to create a session before attaching',
   'input.attach.tooBig': '{name}: file > 20 MB (provider limit)',
   'input.attach.readFail': '{name}: failed to read',
   'input.attach.remove': 'Remove',

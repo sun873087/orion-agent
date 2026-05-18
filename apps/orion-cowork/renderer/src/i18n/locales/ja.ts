@@ -138,6 +138,7 @@ export default {
   'input.attach': '画像添付 (PNG/JPEG/GIF/WebP, 1 枚 20 MB まで)',
   'input.attach.unsupported': '{name}: 未対応の形式(画像は PNG / JPEG / GIF / WebP のみ。その他はテキスト / コードファイルをドロップ)',
   'input.attach.textTooBig': '{name}: テキストファイル > 500 KB — Read ツールで読ませた方が context を節約できます',
+  'input.attach.noSession': '会話がまだ開始されていません — 先に1メッセージ送って session を作成してから添付してください',
   'input.attach.tooBig': '{name}: 20 MB 超 (provider 上限)',
   'input.attach.readFail': '{name}: 読み込み失敗',
   'input.attach.remove': '削除',

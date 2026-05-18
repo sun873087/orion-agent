@@ -138,6 +138,7 @@ export default {
   'input.attach': '附加图片 (PNG/JPEG/GIF/WebP, 每张 ≤ 20 MB)',
   'input.attach.unsupported': '{name}:格式不支持(图片仅接受 PNG / JPEG / GIF / WebP;其他档请拖文字 / code)',
   'input.attach.textTooBig': '{name}:文字档 > 500 KB,改叫 LLM 用 Read 工具读比较不吃 context',
+  'input.attach.noSession': '还没对话 — 先送一句话建立 session 才能加附件',
   'input.attach.tooBig': '{name}:文件 > 20 MB (provider 上限)',
   'input.attach.readFail': '{name}:读取失败',
   'input.attach.remove': '移除',

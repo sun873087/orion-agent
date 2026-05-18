@@ -739,6 +739,64 @@ export type PlanStatusResult = {
   plan_file_path: string | null
 }
 
+// ─── Attachment staging(Phase 31-N)──────────────────────────────────
+
+export type AttachmentStaged = {
+  finalPath: string
+  copied: boolean
+  inWorkspace: boolean
+}
+
+/** Drag-drop 後告訴 sidecar 源檔路徑,sidecar 判斷:
+ *  - 在 workspace 內 → 不 copy,回原 path
+ *  - 在外面 → copy 到 <ws>/.orion/uploads/<safe>,回新 path
+ *  LLM 收到的 prompt prefix 只列 path,不 inline content。 */
+export async function prepareAttachmentDrop(
+  sessionId: string,
+  sourcePath: string,
+): Promise<AttachmentStaged> {
+  let result: AttachmentStaged = { finalPath: sourcePath, copied: false, inWorkspace: false }
+  await window.agent.call(
+    'attachment.prepare_drop',
+    { session_id: sessionId, source_path: sourcePath },
+    (frame) => {
+      if (frame.event === 'attachment_staged' && frame.data) {
+        const d = frame.data as { final_path?: string; copied?: boolean; in_workspace?: boolean }
+        result = {
+          finalPath: d.final_path || sourcePath,
+          copied: !!d.copied,
+          inWorkspace: !!d.in_workspace,
+        }
+      }
+    },
+  )
+  return result
+}
+
+/** File picker 場景(沒 source path 只有 content)— 一律寫進 uploads dir。 */
+export async function saveUploadedAttachment(
+  sessionId: string,
+  filename: string,
+  contentB64: string,
+): Promise<AttachmentStaged> {
+  let result: AttachmentStaged = { finalPath: '', copied: true, inWorkspace: false }
+  await window.agent.call(
+    'attachment.save_uploaded',
+    { session_id: sessionId, filename, content_b64: contentB64 },
+    (frame) => {
+      if (frame.event === 'attachment_staged' && frame.data) {
+        const d = frame.data as { final_path?: string; copied?: boolean; in_workspace?: boolean }
+        result = {
+          finalPath: d.final_path || '',
+          copied: !!d.copied,
+          inWorkspace: !!d.in_workspace,
+        }
+      }
+    },
+  )
+  return result
+}
+
 /** Renderer mount 時呼 — 從 sidecar 查 session 當前 plan mode 狀態,re-hydrate UI。 */
 export async function planStatus(sessionId: string): Promise<PlanStatusResult> {
   let result: PlanStatusResult = { status: 'idle', plan_id: null, plan_markdown: null, plan_file_path: null }

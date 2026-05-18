@@ -461,6 +461,8 @@ class Handlers:
             "tools.list_builtin": self.tools_list_builtin,
             "conversation.messages": self.conversation_messages,
             "conversation.attachment": self.conversation_attachment,
+            "attachment.prepare_drop": self.attachment_prepare_drop,
+            "attachment.save_uploaded": self.attachment_save_uploaded,
             "conversation.regenerate": self.conversation_regenerate,
             "conversation.truncate": self.conversation_truncate,
             "conversation.tool_approval": self.conversation_tool_approval,
@@ -1968,6 +1970,153 @@ class Handlers:
         if not ws:
             ws = await storage.get_pref(engine, "default_workspace_dir")
         return Path(ws) if ws else None
+
+    async def _resolve_uploads_dir(
+        self, sid: str, engine: AsyncEngine
+    ) -> "Path":
+        """拖檔 / 上傳暫存位置。優先用 workspace,沒設則 ~/.orion/uploads/<sid>/。"""
+        from pathlib import Path
+        ws = await self._resolve_session_cwd(sid, engine)
+        if ws is not None:
+            return ws / ".orion" / "uploads"
+        return Path.home() / ".orion" / "uploads" / sid
+
+    @staticmethod
+    def _safe_dest(target_dir: "Path", filename: str) -> "Path":
+        """同名衝突時加時間戳尾碼。filename 內含 path 分隔符會被丟掉(取 basename)。"""
+        from datetime import datetime
+        from pathlib import PurePath
+        basename = PurePath(filename).name or "file"
+        candidate = target_dir / basename
+        if not candidate.exists():
+            return candidate
+        # 加時間戳尾碼:foo.py → foo-20260518-211200.py
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stem = candidate.stem
+        suffix = candidate.suffix
+        return target_dir / f"{stem}-{stamp}{suffix}"
+
+    async def attachment_prepare_drop(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Drag-drop 檔案進對話前的前置處理。
+
+        - 若 source_path 在 session workspace 之下 → 不 copy,inject 原 path
+          (project 內檔,LLM 改它就是 user 要的)
+        - 否則 → copy 到 <workspace>/.orion/uploads/<safe_name>,inject 新 path
+          (外部檔,LLM 只看 copy,user 原檔不會被動)
+
+        Params: {session_id, source_path}
+        Returns: {final_path, copied: bool, in_workspace: bool}
+        """
+        from pathlib import Path
+        import shutil
+        sid = params.get("session_id")
+        source_path_raw = params.get("source_path")
+        if not isinstance(sid, str) or not isinstance(source_path_raw, str) or not source_path_raw:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id + source_path required"},
+                "final": True,
+            }
+            return
+        source_path = Path(source_path_raw)
+        if not source_path.is_file():
+            yield {
+                "event": "error",
+                "data": {"code": "FILE_NOT_FOUND", "message": f"{source_path} not a file"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        ws = await self._resolve_session_cwd(sid, engine)
+        # 檔在 workspace 之下 → 就地用
+        if ws is not None:
+            try:
+                source_resolved = source_path.resolve()
+                ws_resolved = ws.resolve()
+                if str(source_resolved).startswith(str(ws_resolved) + "/") or source_resolved == ws_resolved:
+                    yield {
+                        "event": "attachment_staged",
+                        "data": {
+                            "final_path": str(source_resolved),
+                            "copied": False,
+                            "in_workspace": True,
+                        },
+                        "final": True,
+                    }
+                    return
+            except (OSError, RuntimeError):
+                pass  # resolve 失敗 → 走 copy 路徑
+        # 外部檔 → copy 到 uploads dir
+        uploads = await self._resolve_uploads_dir(sid, engine)
+        uploads.mkdir(parents=True, exist_ok=True)
+        dest = self._safe_dest(uploads, source_path.name)
+        try:
+            shutil.copy2(source_path, dest)
+        except OSError as e:
+            yield {
+                "event": "error",
+                "data": {"code": "COPY_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "attachment_staged",
+            "data": {
+                "final_path": str(dest),
+                "copied": True,
+                "in_workspace": False,
+            },
+            "final": True,
+        }
+
+    async def attachment_save_uploaded(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """File picker 上傳(沒 source_path 路徑只有 base64 content)— 一律寫進
+        uploads dir。
+
+        Params: {session_id, filename, content_b64}
+        Returns: {final_path}
+        """
+        import base64 as _b64
+        sid = params.get("session_id")
+        filename = params.get("filename")
+        content_b64 = params.get("content_b64")
+        if (
+            not isinstance(sid, str) or not isinstance(filename, str)
+            or not isinstance(content_b64, str) or not filename
+        ):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id + filename + content_b64 required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        uploads = await self._resolve_uploads_dir(sid, engine)
+        uploads.mkdir(parents=True, exist_ok=True)
+        dest = self._safe_dest(uploads, filename)
+        try:
+            data = _b64.b64decode(content_b64)
+            dest.write_bytes(data)
+        except (OSError, ValueError) as e:
+            yield {
+                "event": "error",
+                "data": {"code": "WRITE_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "attachment_staged",
+            "data": {
+                "final_path": str(dest),
+                "copied": True,
+                "in_workspace": False,
+            },
+            "final": True,
+        }
 
     async def tools_list_builtin(
         self, _params: dict[str, Any]

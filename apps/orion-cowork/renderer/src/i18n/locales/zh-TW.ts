@@ -149,6 +149,7 @@ export default {
   'input.attach.unsupported': '{name}:格式不支援(圖片只接受 PNG / JPEG / GIF / WebP;其他檔請拖文字 / code)',
   'input.attach.tooBig': '{name}:檔案 > 20 MB (provider 上限)',
   'input.attach.textTooBig': '{name}:文字檔 > 500 KB,改叫 LLM 用 Read 工具讀比較不吃 context',
+  'input.attach.noSession': '還沒對話 — 先送一句話建立 session 才能加附件',
   'input.attach.readFail': '{name}:讀取失敗',
   'input.attach.remove': '移除',
   'input.disclaimer': 'Orion 是 AI,回答可能出錯,請自行確認重要資訊。',

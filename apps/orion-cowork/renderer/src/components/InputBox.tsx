@@ -141,10 +141,16 @@ const TEXT_EXTENSIONS = new Set([
 
 type TextAttachment = {
   filename: string
-  /** Absolute path 從 webUtils.getPathForFile;沒有就空字串(file picker 拖 / 沒有 Electron 環境) */
+  /** LLM 看到的最終 path:
+   *  - 拖 workspace 內檔 → 原 path
+   *  - 拖 workspace 外檔 → sidecar copy 後的新 path(<workspace>/.orion/uploads/...)
+   *  - File picker → 永遠是 uploads dir 內的 copy */
   path: string
-  content: string
   size: number
+  /** sidecar 是否 copy 過(UI chip 顯不同顏色 / hover hint) */
+  copied: boolean
+  /** 是否在 workspace 內(原檔可被 LLM Edit 改) */
+  inWorkspace: boolean
 }
 
 function isLikelyTextFile(f: File): boolean {
@@ -160,12 +166,17 @@ function isLikelyTextFile(f: File): boolean {
   return false
 }
 
-async function readFileAsText(f: File): Promise<string> {
+async function fileToBase64Bytes(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
+    reader.onload = () => {
+      const result = reader.result as string
+      // dataURL prefix: `data:<mime>;base64,<b64>` — 去掉前綴只回 b64
+      const i = result.indexOf(',')
+      resolve(i >= 0 ? result.slice(i + 1) : result)
+    }
     reader.onerror = () => reject(reader.error ?? new Error('read failed'))
-    reader.readAsText(f)
+    reader.readAsDataURL(f)
   })
 }
 
@@ -362,16 +373,17 @@ export function InputBox({ onSend, onAbort }: Props) {
       textareaRef.current.value = ''
     }
     autoResize()
-    // 文字檔(drag-drop)inline 進 prompt 前綴,LLM 看得到完整 content + path
+    // 文字檔 prefix:只列 path,不 inline content。LLM 需要時用 Read tool。
+    // 區分 in-workspace(原檔可改)vs uploads dir(copy,原檔不會被動)。
     let finalPrompt = payload
     if (texts.length) {
-      const prefix = texts.map((t) => {
-        const langHint = t.filename.split('.').pop()?.toLowerCase() || ''
-        const header = t.path
-          ? `[Attached file: ${t.path} (${t.size} bytes)]`
-          : `[Attached file: ${t.filename} (${t.size} bytes)]`
-        return `${header}\n\`\`\`${langHint}\n${t.content}\n\`\`\`\n`
+      const lines = texts.map((t) => {
+        const note = t.inWorkspace
+          ? '(workspace 內檔 — 可 Read / Edit)'
+          : '(已 copy 到 uploads,原檔不會被改 — Read 看)'
+        return `- ${t.path} ${note}`
       }).join('\n')
+      const prefix = `[User attached files (use Read tool to view content):\n${lines}\n]\n`
       finalPrompt = prefix + (payload ? `\n${payload}` : '')
     }
     await onSend(finalPrompt, att.length ? att : undefined)
@@ -412,23 +424,38 @@ export function InputBox({ onSend, onAbort }: Props) {
         }
         continue
       }
-      // 文字檔(code / markdown / json / ...)— 讀內容,送 prompt 時 inline
+      // 文字檔(code / markdown / json / ...)— 透過 sidecar staging,
+      // 拿到 LLM 看的 path(可能是原檔或 workspace copy)
       if (isLikelyTextFile(f)) {
         if (f.size > TEXT_FILE_MAX_BYTES) {
           setAttachError(t('input.attach.textTooBig', { name: f.name }))
           continue
         }
+        const sid = useAgentStore.getState().sessionId
+        if (!sid) {
+          setAttachError(t('input.attach.noSession'))
+          continue
+        }
         try {
-          const content = await readFileAsText(f)
-          const path = window.shellApi?.getPathForFile?.(f) || ''
+          const sourcePath = window.shellApi?.getPathForFile?.(f) || ''
+          const { prepareAttachmentDrop, saveUploadedAttachment } = await import('../api/agent')
+          const staged = sourcePath
+            ? await prepareAttachmentDrop(sid, sourcePath)
+            : await saveUploadedAttachment(sid, f.name, await fileToBase64Bytes(f))
+          if (!staged.finalPath) {
+            setAttachError(t('input.attach.readFail', { name: f.name }))
+            continue
+          }
           addedTexts.push({
             filename: f.name,
-            path,
-            content,
+            path: staged.finalPath,
             size: f.size,
+            copied: staged.copied,
+            inWorkspace: staged.inWorkspace,
           })
-        } catch {
-          setAttachError(t('input.attach.readFail', { name: f.name }))
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          setAttachError(t('input.attach.readFail', { name: `${f.name}: ${msg}` }))
         }
         continue
       }
@@ -555,20 +582,35 @@ export function InputBox({ onSend, onAbort }: Props) {
           </div>
         )}
 
-        {/* Text-file drop chips(Phase 31-N)— 拖進來的 code / markdown 等文字檔 */}
+        {/* Text-file drop chips(Phase 31-N)— 拖進來的 code / markdown 等
+            檔案。LLM 看到的是 path(in-workspace 原檔 / uploads dir copy),
+            不 inline content。Hover 顯完整 path 跟 copy 狀態。 */}
         {textAttachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {textAttachments.map((tf, i) => (
               <div
                 key={i}
-                className="group relative flex items-center gap-1.5 rounded-lg border border-bg-hover bg-bg-panel px-2.5 py-1.5 text-xs"
-                title={tf.path || tf.filename}
+                className={`group relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+                  tf.inWorkspace
+                    ? 'border-accent/30 bg-accent/5'
+                    : 'border-bg-hover bg-bg-panel'
+                }`}
+                title={
+                  tf.inWorkspace
+                    ? `${tf.path}\n(workspace 內 — LLM 可 Edit 原檔)`
+                    : `${tf.path}\n(已 copy 到 uploads — 原檔不會被改)`
+                }
               >
                 <FileText size={14} className="shrink-0 text-fg-muted" />
                 <span className="max-w-[200px] truncate font-mono">{tf.filename}</span>
                 <span className="text-[10px] text-fg-subtle">
                   {(tf.size / 1024).toFixed(1)} KB
                 </span>
+                {tf.copied && (
+                  <span className="rounded bg-bg-hover px-1 text-[9px] uppercase text-fg-subtle">
+                    copy
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => removeTextAttachment(i)}
