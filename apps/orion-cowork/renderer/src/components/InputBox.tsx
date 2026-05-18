@@ -6,6 +6,7 @@ import {
   Clock,
   Download,
   FastForward,
+  FileText,
   Gauge,
   Hand,
   Layers,
@@ -124,11 +125,56 @@ const COMPRESS_TRIGGER_BYTES = 1 * 1024 * 1024  // raw 超過 1MB 才走 canvas 
 const COMPRESS_MAX_EDGE = 2048
 const COMPRESS_QUALITY = 0.85
 
+// Text-file drop(Phase 31-N)— 拖進來自動 inject 進 prompt
+const TEXT_FILE_MAX_BYTES = 500 * 1024  // 500 KB,太大會吃掉 LLM context budget
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'env',
+  'py', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
+  'json', 'yaml', 'yml', 'toml', 'ini', 'cfg',
+  'html', 'htm', 'xml', 'css', 'scss', 'less',
+  'go', 'rs', 'java', 'kt', 'swift', 'rb', 'php', 'lua',
+  'c', 'cpp', 'cc', 'h', 'hpp', 'm', 'mm',
+  'sh', 'bash', 'zsh', 'fish', 'ps1',
+  'sql', 'graphql', 'proto', 'dockerfile',
+  'gitignore', 'gitattributes', 'editorconfig',
+])
+
+type TextAttachment = {
+  filename: string
+  /** Absolute path 從 webUtils.getPathForFile;沒有就空字串(file picker 拖 / 沒有 Electron 環境) */
+  path: string
+  content: string
+  size: number
+}
+
+function isLikelyTextFile(f: File): boolean {
+  if (f.type.startsWith('text/')) return true
+  if (f.type === 'application/json' || f.type === 'application/xml') return true
+  if (f.type.startsWith('image/')) return false
+  // mime 拿不到時用副檔名
+  const ext = f.name.toLowerCase().split('.').pop() || ''
+  if (TEXT_EXTENSIONS.has(ext)) return true
+  // 無副檔名常見 dotfile / Dockerfile / Makefile 等
+  const base = f.name.toLowerCase().replace(/^\./, '')
+  if (['dockerfile', 'makefile', 'readme', 'license', 'changelog'].includes(base)) return true
+  return false
+}
+
+async function readFileAsText(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'))
+    reader.readAsText(f)
+  })
+}
+
 /** 多行輸入 + paperclip 上傳 + send / abort 切換。Enter 送出,Shift+Enter 換行。 */
 export function InputBox({ onSend, onAbort }: Props) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const busy = useAgentStore((s) =>
     s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
@@ -220,7 +266,8 @@ export function InputBox({ onSend, onAbort }: Props) {
   }
 
   const canSend =
-    !busy && !compacting && inputReady && (text.trim().length > 0 || attachments.length > 0)
+    !busy && !compacting && inputReady &&
+    (text.trim().length > 0 || attachments.length > 0 || textAttachments.length > 0)
 
   /** Slash command 分派 — 不送 prompt,直接執行對應動作。Tab 補字 + Enter
    *  popover 選 + handleSubmit 精準匹配三個入口都走這。 */
@@ -296,10 +343,11 @@ export function InputBox({ onSend, onAbort }: Props) {
     if (!canSend) return
     const payload = text
     const att = attachments
+    const texts = textAttachments
     const trimmed = payload.trim()
     // 精準匹配 client-side slash command(無 attachment 時)— 例:user 打完整 /compact 按 Enter
     // /loop 跟所有 skill 不在這 list — 它們一律送 LLM(loop / skillify 等由 LLM 自己載 skill 解析)
-    if (!att.length && trimmed.startsWith('/')) {
+    if (!att.length && !texts.length && trimmed.startsWith('/')) {
       const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed)
       if (cmd && CLIENT_SLASH_NAMES.has(cmd.name)) {
         await executeSlashCommand(cmd.name)
@@ -308,14 +356,25 @@ export function InputBox({ onSend, onAbort }: Props) {
     }
     setText('')
     setAttachments([])
+    setTextAttachments([])
     setAttachError(null)
-    // 直接清 textarea DOM value:避免 IME / React batching 時序 race
-    // 讓送出後字符仍殘留在輸入框。
     if (textareaRef.current) {
       textareaRef.current.value = ''
     }
     autoResize()
-    await onSend(payload, att.length ? att : undefined)
+    // 文字檔(drag-drop)inline 進 prompt 前綴,LLM 看得到完整 content + path
+    let finalPrompt = payload
+    if (texts.length) {
+      const prefix = texts.map((t) => {
+        const langHint = t.filename.split('.').pop()?.toLowerCase() || ''
+        const header = t.path
+          ? `[Attached file: ${t.path} (${t.size} bytes)]`
+          : `[Attached file: ${t.filename} (${t.size} bytes)]`
+        return `${header}\n\`\`\`${langHint}\n${t.content}\n\`\`\`\n`
+      }).join('\n')
+      finalPrompt = prefix + (payload ? `\n${payload}` : '')
+    }
+    await onSend(finalPrompt, att.length ? att : undefined)
   }
 
   function autoResize() {
@@ -328,39 +387,64 @@ export function InputBox({ onSend, onAbort }: Props) {
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setAttachError(null)
-    const added: Attachment[] = []
+    const addedImages: Attachment[] = []
+    const addedTexts: TextAttachment[] = []
     for (const f of Array.from(files)) {
-      if (!SUPPORTED_MIME.includes(f.type)) {
-        setAttachError(t('input.attach.unsupported', { name: f.name }))
+      // 圖片 — 走原本 attachment 路徑
+      if (SUPPORTED_MIME.includes(f.type)) {
+        if (f.size > MAX_BYTES) {
+          setAttachError(t('input.attach.tooBig', { name: f.name }))
+          continue
+        }
+        try {
+          const { base64, mediaType } =
+            f.size > COMPRESS_TRIGGER_BYTES
+              ? await compressImage(f)
+              : { base64: await fileToBase64(f), mediaType: f.type }
+          addedImages.push({
+            media_type: mediaType,
+            data: base64,
+            preview_url: `data:${mediaType};base64,${base64}`,
+            filename: f.name,
+          })
+        } catch {
+          setAttachError(t('input.attach.readFail', { name: f.name }))
+        }
         continue
       }
-      if (f.size > MAX_BYTES) {
-        setAttachError(t('input.attach.tooBig', { name: f.name }))
+      // 文字檔(code / markdown / json / ...)— 讀內容,送 prompt 時 inline
+      if (isLikelyTextFile(f)) {
+        if (f.size > TEXT_FILE_MAX_BYTES) {
+          setAttachError(t('input.attach.textTooBig', { name: f.name }))
+          continue
+        }
+        try {
+          const content = await readFileAsText(f)
+          const path = window.shellApi?.getPathForFile?.(f) || ''
+          addedTexts.push({
+            filename: f.name,
+            path,
+            content,
+            size: f.size,
+          })
+        } catch {
+          setAttachError(t('input.attach.readFail', { name: f.name }))
+        }
         continue
       }
-      try {
-        // 大圖(> 1MB raw)自動 canvas resize + JPEG re-encode,避免 Anthropic 5 MB
-        // base64 上限把 LLM call 打回。人眼幾乎無差(2048px max edge / quality 0.85)。
-        const { base64, mediaType } =
-          f.size > COMPRESS_TRIGGER_BYTES
-            ? await compressImage(f)
-            : { base64: await fileToBase64(f), mediaType: f.type }
-        added.push({
-          media_type: mediaType,
-          data: base64,
-          preview_url: `data:${mediaType};base64,${base64}`,
-          filename: f.name,
-        })
-      } catch {
-        setAttachError(t('input.attach.readFail', { name: f.name }))
-      }
+      setAttachError(t('input.attach.unsupported', { name: f.name }))
     }
-    if (added.length) setAttachments((prev) => [...prev, ...added])
+    if (addedImages.length) setAttachments((prev) => [...prev, ...addedImages])
+    if (addedTexts.length) setTextAttachments((prev) => [...prev, ...addedTexts])
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   function removeAttachment(idx: number) {
     setAttachments((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  function removeTextAttachment(idx: number) {
+    setTextAttachments((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const [dragOver, setDragOver] = useState(false)
@@ -466,6 +550,33 @@ export function InputBox({ onSend, onAbort }: Props) {
                     {a.filename}
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Text-file drop chips(Phase 31-N)— 拖進來的 code / markdown 等文字檔 */}
+        {textAttachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {textAttachments.map((tf, i) => (
+              <div
+                key={i}
+                className="group relative flex items-center gap-1.5 rounded-lg border border-bg-hover bg-bg-panel px-2.5 py-1.5 text-xs"
+                title={tf.path || tf.filename}
+              >
+                <FileText size={14} className="shrink-0 text-fg-muted" />
+                <span className="max-w-[200px] truncate font-mono">{tf.filename}</span>
+                <span className="text-[10px] text-fg-subtle">
+                  {(tf.size / 1024).toFixed(1)} KB
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeTextAttachment(i)}
+                  className="ml-1 rounded p-0.5 text-fg-muted opacity-0 hover:bg-error/40 hover:text-error group-hover:opacity-100"
+                  title={t('input.attach.remove')}
+                >
+                  <X size={12} />
+                </button>
               </div>
             ))}
           </div>

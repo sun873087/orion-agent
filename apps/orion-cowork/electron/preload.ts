@@ -3,7 +3,7 @@
  * Renderer 透過 window.agent.* 跟 main process 講話,main 再轉發給 sidecar。
  */
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 type StreamFrame = Record<string, unknown> & { id?: string; event?: string; final?: boolean }
 
@@ -39,6 +39,15 @@ const shellApi = {
   },
   pathExists: async (path: string): Promise<boolean> => {
     return ipcRenderer.invoke('fs:pathExists', path)
+  },
+  /** 拿 drag-drop File 的絕對路徑(Electron 32+ 必須走 webUtils,
+   *  舊 file.path API 已 deprecated)。 */
+  getPathForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
   },
 }
 

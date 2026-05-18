@@ -44,6 +44,9 @@ interface OrionShellApi {
   revealInFinder: (path: string) => Promise<null>
   /** 檢查路徑(檔或資料夾)是否實際存在於檔案系統。 */
   pathExists: (path: string) => Promise<boolean>
+  /** 拿 drag-drop File 的絕對路徑(Electron 32+ webUtils 替代 file.path)。
+   *  失敗或拿不到回空字串。 */
+  getPathForFile: (file: File) => string
 }
 
 interface OrionSchedulerFiredPayload {
