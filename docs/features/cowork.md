@@ -69,7 +69,7 @@ apps/orion-cowork/
 
 | 類別 | Methods |
 |---|---|
-| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode}` |
+| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode,get_budget,set_budget,set_plan_mode,plan_approve,plan_reject,plan_status}` |
 | **Project** | `project.{list,get,create,update,delete}` |
 | **Memory** | `memory.{list,get,write,delete}` |
 | **Skill** | `skill.{list,get,write,import_folder,delete}` |
@@ -83,6 +83,8 @@ apps/orion-cowork/
 Notifications(sidecar 主動 push,無 `id`):
 - `sidecar.ready` — sidecar 啟動完成
 - `scheduler.fired` — 排程 / loop 觸發完成(renderer refresh sessions + 對齊 sidebar)
+- `plan_mode.{entered,exited,awaiting_approval,approved,rejected}` — Phase 31-J Plan Mode 狀態轉移
+- `budget.exceeded` — Phase 31-Q,session 累積成本超過 cap,renderer 顯紅 banner
 - `log` — debug log
 
 ## Renderer side
@@ -163,6 +165,12 @@ Phase 31-A~G 累積加上的功能:
 - Settings → 工具 — 13 個 tool group(File / Shell / Search / Web / Skill / Schedule / Todo / Workdir / System / Task / Cron / Browser / Interactive),group 級 tri-state checkbox + 展開個別 tool override
 - Disabled tools 存 `cowork_prefs.disabled_tools`(CSV),`build_default_tool_set` 過濾;變更立刻 invalidate conv cache
 
+### Cost dashboard + budget cap(Phase 31-Q)
+- **Per-session dashboard** — RightSidebar UsageSection 拉 `conversation.stats` 顯三層:本次 turn / session 累積 / context window;含 cache hit rate
+- **Budget cap** — `cowork_session_ext.budget_usd_cap` 存 per-session 上限;turn 結束後 `_check_budget_and_notify` 算 cumulative cost,超過 → 設 `budget_exceeded` flag + emit `budget.exceeded` 通知,下次 `conversation.send` 在 pre-check 直接擋(error `BUDGET_EXCEEDED`)。調高 cap 自動 reset flag,可繼續送
+- **Default budget** — Settings → Models 的 `BudgetPicker`(0 / $0.5 / $1 / $5 / $10 / 自訂),新 session 建立時帶入。Per-session 仍可在 RightSidebar BudgetSection 各別 inline edit
+- **RPC**:`conversation.{get_budget,set_budget}`(讀 cap + current cost / 設或清 cap)
+
 ### 路徑統一(Phase 31-G)
 Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / mcp / users
 跟 CLI / chat-api 共用**;sessions 透過 `sessions/cowork.db`(Cowork)vs `sessions/<uuid>/`
@@ -201,6 +209,8 @@ Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / 
 - ✅ 排程 + Loop
 - ✅ 工具 group 開關
 - ✅ 完整 Electron + React UI(Sidebar / RightSidebar / Settings)
+- ✅ Plan Mode wired(Phase 31-J)— `/plan` slash + 計畫審核 modal + read-only enforcement
+- ✅ Per-session cost dashboard + budget cap(Phase 31-Q)— 超 cap 自停 + 通知
 - ✅ E2e 測試(Playwright Electron)
 
 **未實作 / Roadmap**:
