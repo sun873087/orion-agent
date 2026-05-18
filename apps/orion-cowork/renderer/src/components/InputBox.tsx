@@ -167,6 +167,13 @@ function isLikelyTextFile(f: File): boolean {
   return false
 }
 
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
 async function fileToBase64Bytes(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -374,17 +381,22 @@ export function InputBox({ onSend, onAbort }: Props) {
       textareaRef.current.value = ''
     }
     autoResize()
-    // 文字檔 prefix:只列 path,不 inline content。LLM 需要時用 Read tool。
-    // 區分 in-workspace(原檔可改)vs uploads dir(copy,原檔不會被動)。
+    // 文字檔 prefix:只列 path + size + workspace 狀態,**不** prescribe
+    // 怎麼用。LLM 看 size 自己決定:
+    //   - KB 級小檔 → 直接 Read 進 context
+    //   - MB+ 大檔 → peek 結構後寫 Bash / Python / jq script 處理
+    //   - 100MB+ → 必走 streaming(整檔 Read 會炸 context)
+    // 不寫死「Read 看」避免綁死 LLM workflow(thanks user feedback)
     let finalPrompt = payload
     if (texts.length) {
       const lines = texts.map((t) => {
+        const sizeStr = humanSize(t.size)
         const note = t.inWorkspace
-          ? '(workspace 內檔 — 可 Read / Edit)'
-          : '(已 copy 到 uploads,原檔不會被改 — Read 看)'
-        return `- ${t.path} ${note}`
+          ? `${sizeStr}, in workspace — editable in place`
+          : `${sizeStr}, copied to uploads — original preserved`
+        return `- ${t.path} (${note})`
       }).join('\n')
-      const prefix = `[User attached files (use Read tool to view content):\n${lines}\n]\n`
+      const prefix = `[User attached files (decide how to use based on the task and file size — small files: Read; large files: peek first then process via Bash / Python / jq to save context):\n${lines}\n]\n`
       finalPrompt = prefix + (payload ? `\n${payload}` : '')
     }
     await onSend(finalPrompt, att.length ? att : undefined)
