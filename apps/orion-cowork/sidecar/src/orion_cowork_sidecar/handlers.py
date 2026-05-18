@@ -51,6 +51,22 @@ from orion_cowork_sidecar.streaming import to_rpc_frame
 load_dotenv()
 
 
+def _walk_workspace(root: Path, skip_dirs: set[str]):
+    """Sync generator yielding files under root, skipping common heavy dirs.
+
+    Caller's outer function is async but this walk is sync and fast for
+    typical workspaces。Return type annotation 省略避免 mypy 跟 ast 衝突。
+    """
+    import os
+    for dirpath, dirnames, filenames in os.walk(root):
+        # In-place modify dirnames so os.walk skips matching subdirs
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
+        for name in filenames:
+            if name.startswith("."):
+                continue  # 跳 dotfile(.DS_Store 等)
+            yield Path(dirpath) / name
+
+
 # Cowork 是 desktop 聊天 app — 不該帶 cwd / git_status / env_info(那是給
 # CLI 用的)。給個簡短 system prompt,SDK 看到 self.system_prompt 非空就會
 # 跳過 fetch_system_prompt_parts,user message 不被 per-turn 注入污染。
@@ -463,6 +479,7 @@ class Handlers:
             "conversation.attachment": self.conversation_attachment,
             "attachment.prepare_drop": self.attachment_prepare_drop,
             "attachment.save_uploaded": self.attachment_save_uploaded,
+            "workspace.list_files": self.workspace_list_files,
             "conversation.regenerate": self.conversation_regenerate,
             "conversation.truncate": self.conversation_truncate,
             "conversation.tool_approval": self.conversation_tool_approval,
@@ -1995,6 +2012,66 @@ class Handlers:
         stem = candidate.stem
         suffix = candidate.suffix
         return target_dir / f"{stem}-{stamp}{suffix}"
+
+    async def workspace_list_files(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """列出 workspace 內檔案,給 @file: mention popup 用。
+
+        Skip 重的目錄(node_modules / .git / __pycache__ / dist / build / .venv /
+        target / .next / .orion/uploads),最多回 max 條(預設 500)。
+
+        Params: {session_id, max?: int}
+        Returns: {workspace_dir, files: [{rel_path, abs_path, size}], truncated}
+        """
+        from pathlib import Path
+        SKIP_DIRS = {
+            "node_modules", ".git", "__pycache__", "dist", "build",
+            ".venv", "venv", "target", ".next", ".turbo", ".cache",
+            ".idea", ".vscode", "vendor", ".orion",
+        }
+        sid = params.get("session_id")
+        max_count = params.get("max") if isinstance(params.get("max"), int) else 500
+        if not isinstance(sid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ws = await self._resolve_session_cwd(sid, engine)
+        if ws is None:
+            yield {
+                "event": "workspace_files",
+                "data": {"workspace_dir": None, "files": [], "truncated": False},
+                "final": True,
+            }
+            return
+        ws_resolved = ws.resolve()
+        files: list[dict[str, Any]] = []
+        truncated = False
+        try:
+            for p in _walk_workspace(ws_resolved, SKIP_DIRS):
+                if len(files) >= max_count:
+                    truncated = True
+                    break
+                try:
+                    stat = p.stat()
+                except OSError:
+                    continue
+                files.append({
+                    "rel_path": str(p.relative_to(ws_resolved)),
+                    "abs_path": str(p),
+                    "size": stat.st_size,
+                })
+        except OSError:
+            pass
+        yield {
+            "event": "workspace_files",
+            "data": {
+                "workspace_dir": str(ws_resolved),
+                "files": files,
+                "truncated": truncated,
+            },
+            "final": True,
+        }
 
     async def attachment_prepare_drop(
         self, params: dict[str, Any]

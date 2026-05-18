@@ -773,6 +773,45 @@ export async function prepareAttachmentDrop(
   return result
 }
 
+export type WorkspaceFileEntry = {
+  relPath: string
+  absPath: string
+  size: number
+}
+
+/** 列 workspace 內檔(給 @file: mention popup),sidecar 端 skip 重的目錄
+ *  (node_modules / .git / dist 等)、跳 dotfile / dot-dir。回的 list
+ *  最多 500 條,truncated=true 表示有更多沒回。 */
+export async function listWorkspaceFiles(
+  sessionId: string,
+  max?: number,
+): Promise<{ workspaceDir: string | null; files: WorkspaceFileEntry[]; truncated: boolean }> {
+  let result = { workspaceDir: null as string | null, files: [] as WorkspaceFileEntry[], truncated: false }
+  await window.agent.call(
+    'workspace.list_files',
+    max ? { session_id: sessionId, max } : { session_id: sessionId },
+    (frame) => {
+      if (frame.event === 'workspace_files' && frame.data) {
+        const d = frame.data as {
+          workspace_dir?: string | null
+          files?: Array<{ rel_path: string; abs_path: string; size: number }>
+          truncated?: boolean
+        }
+        result = {
+          workspaceDir: d.workspace_dir ?? null,
+          files: (d.files ?? []).map((f) => ({
+            relPath: f.rel_path,
+            absPath: f.abs_path,
+            size: f.size,
+          })),
+          truncated: !!d.truncated,
+        }
+      }
+    },
+  )
+  return result
+}
+
 /** File picker 場景(沒 source path 只有 content)— 一律寫進 uploads dir。 */
 export async function saveUploadedAttachment(
   sessionId: string,

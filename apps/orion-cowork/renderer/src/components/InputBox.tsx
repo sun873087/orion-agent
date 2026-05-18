@@ -167,6 +167,60 @@ function isLikelyTextFile(f: File): boolean {
   return false
 }
 
+// ─── @ mention detection(Phase 31-O)──────────────────────────────
+
+type MentionContext = {
+  /** @file: 拖檔 / 路徑 引用,@skill: 載 skill */
+  mode: 'file' | 'skill'
+  /** `:` 後面 user 還在打的 query string */
+  query: string
+  /** `@` 在 text 內的 index(replace 時用) */
+  startIdx: number
+  /** Cursor 位置(replace end) */
+  endIdx: number
+}
+
+/** 從 cursor 往回掃 `@`,判斷現在是否在 mention 中。
+ *  條件:`@` 在 string 開頭 或 前一字是 whitespace,從 `@` 到 cursor 之間
+ *  沒 whitespace。 */
+function detectMention(text: string, cursorPos: number): MentionContext | null {
+  let i = cursorPos
+  while (i > 0) {
+    const c = text[i - 1]
+    if (c === '@') {
+      // `@` 必須在 string 頭或前面是 whitespace
+      if (i - 1 === 0 || /\s/.test(text[i - 2])) {
+        const token = text.slice(i, cursorPos)
+        if (/\s/.test(token)) return null
+        // 判 mode:`skill:xxx` 切 skill,其他都 file(也接受 `file:xxx`)
+        if (token.startsWith('skill:')) {
+          return { mode: 'skill', query: token.slice(6), startIdx: i - 1, endIdx: cursorPos }
+        }
+        const fileQuery = token.startsWith('file:') ? token.slice(5) : token
+        return { mode: 'file', query: fileQuery, startIdx: i - 1, endIdx: cursorPos }
+      }
+      return null
+    }
+    if (/\s/.test(c)) return null
+    i--
+  }
+  return null
+}
+
+/** Fuzzy match — query 字串依序出現在 target 內就 hit;空 query 全 hit。 */
+function fuzzyMatch(target: string, query: string): boolean {
+  if (!query) return true
+  const t = target.toLowerCase()
+  const q = query.toLowerCase()
+  let ti = 0
+  for (const qc of q) {
+    const found = t.indexOf(qc, ti)
+    if (found < 0) return false
+    ti = found + 1
+  }
+  return true
+}
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -195,6 +249,11 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  // @ mention popup state(Phase 31-O)
+  const [mention, setMention] = useState<MentionContext | null>(null)
+  const [mentionIdx, setMentionIdx] = useState(0)
+  const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ relPath: string; absPath: string; size: number }>>([])
+  const workspaceFilesLoadedRef = useRef(false)
   const busy = useAgentStore((s) =>
     s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
   )
@@ -251,6 +310,108 @@ export function InputBox({ onSend, onAbort }: Props) {
   })()
   const showSlash = slashMatches.length > 0
   const [slashIdx, setSlashIdx] = useState(0)
+
+  // @ mention(Phase 31-O)— lazy fetch workspace files 第一次打開時
+  useEffect(() => {
+    if (!mention || mention.mode !== 'file') return
+    if (workspaceFilesLoadedRef.current) return
+    const sid = useAgentStore.getState().sessionId
+    if (!sid) return
+    workspaceFilesLoadedRef.current = true
+    void (async () => {
+      try {
+        const { listWorkspaceFiles } = await import('../api/agent')
+        const r = await listWorkspaceFiles(sid)
+        setWorkspaceFiles(r.files)
+      } catch {
+        // 忽略 — popup 顯空,user 自己拖檔
+      }
+    })()
+  }, [mention])
+
+  /** 過濾 mention 候選清單 — file fuzzy match path,skill fuzzy match name */
+  const mentionMatches = (() => {
+    if (!mention) return [] as Array<{ key: string; label: string; sublabel: string; payload: { mode: 'file' | 'skill'; absPath?: string; relPath?: string; size?: number; name?: string } }>
+    if (mention.mode === 'file') {
+      return workspaceFiles
+        .filter((f) => fuzzyMatch(f.relPath, mention.query))
+        .slice(0, 12)
+        .map((f) => ({
+          key: f.absPath,
+          label: f.relPath,
+          sublabel: humanSize(f.size),
+          payload: { mode: 'file' as const, absPath: f.absPath, relPath: f.relPath, size: f.size },
+        }))
+    }
+    return skillSlashes
+      .map((s) => s.name.replace(/^\//, ''))
+      .filter((name) => fuzzyMatch(name, mention.query))
+      .slice(0, 12)
+      .map((name) => ({
+        key: `skill:${name}`,
+        label: name,
+        sublabel: 'skill',
+        payload: { mode: 'skill' as const, name },
+      }))
+  })()
+  const showMention = mention !== null && mentionMatches.length > 0
+
+  /** file → 加進 textAttachments + 移除 @token;skill → 替換成 @skill:name 字面值 */
+  async function pickMention(item: typeof mentionMatches[number]) {
+    if (!mention) return
+    const before = text.slice(0, mention.startIdx)
+    const after = text.slice(mention.endIdx)
+    const p = item.payload
+    if (p.mode === 'file' && p.absPath) {
+      const absPath = p.absPath
+      const relPath = p.relPath ?? ''
+      const fileSize = p.size ?? 0
+      const newText = before + after
+      setText(newText)
+      if (textareaRef.current) {
+        textareaRef.current.value = newText
+        requestAnimationFrame(() => {
+          textareaRef.current?.setSelectionRange(mention.startIdx, mention.startIdx)
+          textareaRef.current?.focus()
+        })
+      }
+      const sid = useAgentStore.getState().sessionId
+      if (!sid) {
+        setMention(null)
+        return
+      }
+      try {
+        const { prepareAttachmentDrop } = await import('../api/agent')
+        const staged = await prepareAttachmentDrop(sid, absPath)
+        setTextAttachments((prev) => [...prev, {
+          filename: relPath.split('/').pop() || absPath || 'file',
+          path: staged.finalPath,
+          size: fileSize,
+          copied: staged.copied,
+          inWorkspace: staged.inWorkspace,
+        }])
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setAttachError(msg)
+      }
+      setMention(null)
+      return
+    }
+    if (p.mode === 'skill' && p.name) {
+      const inserted = `@skill:${p.name}`
+      const newText = before + inserted + after
+      setText(newText)
+      if (textareaRef.current) {
+        textareaRef.current.value = newText
+        const newPos = mention.startIdx + inserted.length
+        requestAnimationFrame(() => {
+          textareaRef.current?.setSelectionRange(newPos, newPos)
+          textareaRef.current?.focus()
+        })
+      }
+      setMention(null)
+    }
+  }
 
   // Ghost-text hint:user 打完整 cmd 名稱(可帶 1 個 trailing space)時,把 argsHint
   // 以灰字接在後面顯示。如 `/loop` → 顯 `[interval] <prompt>`。
@@ -377,10 +538,16 @@ export function InputBox({ onSend, onAbort }: Props) {
     setAttachments([])
     setTextAttachments([])
     setAttachError(null)
+    setMention(null)
     if (textareaRef.current) {
       textareaRef.current.value = ''
     }
     autoResize()
+    // @skill:xxx 偵測 — 在 prefix 加 hint 提示 LLM 用 Skill tool 載
+    // (我們不 pre-resolve,讓 LLM 看到 token 自己決定要不要 load)
+    const skillRefs = Array.from(payload.matchAll(/(?:^|\s)@skill:([\w-]+)/g)).map((m) => m[1])
+    const uniqueSkills = Array.from(new Set(skillRefs))
+
     // 文字檔 prefix:只列 path + size + workspace 狀態,**不** prescribe
     // 怎麼用。LLM 看 size 自己決定:
     //   - KB 級小檔 → 直接 Read 進 context
@@ -388,6 +555,7 @@ export function InputBox({ onSend, onAbort }: Props) {
     //   - 100MB+ → 必走 streaming(整檔 Read 會炸 context)
     // 不寫死「Read 看」避免綁死 LLM workflow(thanks user feedback)
     let finalPrompt = payload
+    const prefixParts: string[] = []
     if (texts.length) {
       const lines = texts.map((t) => {
         const sizeStr = humanSize(t.size)
@@ -396,8 +564,13 @@ export function InputBox({ onSend, onAbort }: Props) {
           : `${sizeStr}, copied to uploads — original preserved`
         return `- ${t.path} (${note})`
       }).join('\n')
-      const prefix = `[User attached files (decide how to use based on the task and file size — small files: Read; large files: peek first then process via Bash / Python / jq to save context):\n${lines}\n]\n`
-      finalPrompt = prefix + (payload ? `\n${payload}` : '')
+      prefixParts.push(`[User attached files (decide how to use based on the task and file size — small files: Read; large files: peek first then process via Bash / Python / jq to save context):\n${lines}\n]`)
+    }
+    if (uniqueSkills.length) {
+      prefixParts.push(`[User referenced skills via @skill: tokens: ${uniqueSkills.join(', ')}. Load them via the Skill tool if relevant to the request.]`)
+    }
+    if (prefixParts.length) {
+      finalPrompt = prefixParts.join('\n') + (payload ? `\n${payload}` : '')
     }
     await onSend(finalPrompt, att.length ? att : undefined)
   }
@@ -652,6 +825,46 @@ export function InputBox({ onSend, onAbort }: Props) {
           <p className="mb-1 px-2 text-xs text-error">⚠ {attachError}</p>
         )}
 
+        {/* @ mention popup(Phase 31-O)— 在輸入框上方,跟 slash popover
+            互斥(text 開頭是 `/` 才開 slash;@ 不在開頭也能觸發) */}
+        {showMention && (
+          <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
+            <div className="border-b border-bg-hover px-3 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
+              {mention?.mode === 'skill' ? 'Skills' : 'Files'}
+            </div>
+            {mentionMatches.map((item, i) => {
+              const active = i === mentionIdx
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); void pickMention(item) }}
+                  onMouseEnter={() => setMentionIdx(i)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs transition-colors ${
+                    active ? 'bg-bg-hover' : 'bg-transparent hover:bg-bg-hover/50'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {mention?.mode === 'skill' ? (
+                      <Sparkles size={12} className="shrink-0 text-fg-muted" />
+                    ) : (
+                      <FileText size={12} className="shrink-0 text-fg-muted" />
+                    )}
+                    <span className="truncate font-mono">{item.label}</span>
+                  </span>
+                  <span className="shrink-0 text-[10px] text-fg-subtle">{item.sublabel}</span>
+                </button>
+              )
+            })}
+            <div className="mt-1 border-t border-bg-hover px-3 pt-1.5 text-[10px] text-fg-subtle">
+              <kbd className="font-mono">↑↓</kbd> 切換 ·{' '}
+              <kbd className="font-mono">Tab/Enter</kbd> 選 ·{' '}
+              <kbd className="font-mono">Esc</kbd> 取消 ·{' '}
+              <span className="text-fg-muted">type `@skill:` for skills</span>
+            </div>
+          </div>
+        )}
+
         {/* Slash command autocomplete popover — / 開頭時顯示在輸入框上方 */}
         {showSlash && (
           <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
@@ -716,8 +929,21 @@ export function InputBox({ onSend, onAbort }: Props) {
             ref={textareaRef}
             value={text}
             onChange={(e) => {
-              setText(e.target.value)
+              const newText = e.target.value
+              setText(newText)
               autoResize()
+              // Mention detection — cursor 位置看新 text 內是否在 @ 內
+              const pos = e.target.selectionStart ?? newText.length
+              const ctx = detectMention(newText, pos)
+              setMention(ctx)
+              setMentionIdx(0)
+            }}
+            onSelect={(e) => {
+              // 滑鼠 / 鍵盤移動 cursor 也要重判 mention(避免 user 用方向鍵
+              // 把 cursor 移出 / 進入 @ token 後 popup 沒對應更新)
+              const ta = e.currentTarget
+              const ctx = detectMention(ta.value, ta.selectionStart ?? 0)
+              setMention(ctx)
             }}
             onCompositionStart={() => {
               composingRef.current = true
@@ -726,6 +952,38 @@ export function InputBox({ onSend, onAbort }: Props) {
               composingRef.current = false
             }}
             onKeyDown={(e) => {
+              // @ mention popup 開時 — 優先處理(跟 slash 互斥,因為 @ 不能
+              // 在 / 開頭的訊息出現)
+              if (showMention && mentionMatches.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMentionIdx((i) => (i + 1) % mentionMatches.length)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMentionIdx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length)
+                  return
+                }
+                if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                  if (e.key === 'Enter' && (e.nativeEvent.isComposing || composingRef.current)) {
+                    // 組字中 Enter 確認候選,不選 mention
+                  } else {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void pickMention(mentionMatches[mentionIdx])
+                    return
+                  }
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMention(null)
+                  return
+                }
+              }
               // Slash popover 開時,navigation keys 優先處理 — 不被 IME guard 擋
               // (IME 異常沒 fire compositionEnd 時 composingRef 可能 stuck=true,
               //  ArrowDown/Up/Tab/Enter/Escape 一律穿透給 popover)
