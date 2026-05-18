@@ -8,7 +8,7 @@
 
 **LLM provider 抽象層**。Anthropic / OpenAI SDK 包裝成統一介面,輸出 normalized 事件流。
 
-- 上游依賴:`anthropic`、`openai`、`httpx`、`pydantic`、`structlog`
+- 上游依賴:`anthropic`、`openai`、`httpx`、`pydantic`、`structlog`(Ollama 走 httpx,不用額外 SDK)
 - 不依賴 agent loop / tools / DB / framework
 - 適合單純做 prompt 測試、benchmark、純 chatbot
 
@@ -31,10 +31,10 @@ async for event in provider.stream(system=..., messages=..., tools=...):
 | `events.py` | `NormalizedEvent` union — 跨 provider 統一事件型別 |
 | `types.py` | `NormalizedMessage` — 跨 provider 統一訊息型別 |
 | `tool_def.py` | `ToolDefinition` — agent runtime 中立的 tool schema |
-| `anthropic_provider.py` / `openai_provider.py` | 兩個實作 |
-| `translation/` | 兩個 provider 各自的 wire format ↔ Normalized 轉譯 |
-| `catalog.py` + `models.json` | 已知模型表(context window、capabilities) |
-| `pricing.py` | per-token 計價 |
+| `anthropic_provider.py` / `openai_provider.py` / `ollama_provider.py` | 三個實作(Phase 31-L 加 Ollama native — 走 `/api/chat` NDJSON streaming) |
+| `translation/` | 各 provider 的 wire format ↔ Normalized 轉譯(`anthropic.py` / `openai.py` / `ollama.py`) |
+| `catalog.py` + `models.json` | 已知模型表(context window、capabilities)— Ollama 標 `dynamic: true`,models list 空,靠 RPC `ollama.list_models` 動態抓 |
+| `pricing.py` | per-token 計價(Ollama 永遠 $0) |
 | `cache_config.py` | prompt caching 決策 |
 
 ---

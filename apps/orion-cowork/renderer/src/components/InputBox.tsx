@@ -831,11 +831,23 @@ function ModelPill() {
             label: p.label,
             models: p.models,
             api_key_configured: p.api_key_configured,
+            dynamic: p.dynamic,
           })),
         ),
       )
       .catch(() => {})
   }, [catalogLoaded, setCatalog])
+
+  // Ollama 動態 model list — popup 打開時刷新,stale > 30s 也重抓
+  const ollamaState = useSettingsStore((s) => s.ollama)
+  const refreshOllama = useSettingsStore((s) => s.refreshOllama)
+  useEffect(() => {
+    if (!open) return
+    const hasOllama = providers.some((p) => p.id === 'ollama')
+    if (!hasOllama) return
+    const stale = !ollamaState.lastFetched || Date.now() - ollamaState.lastFetched > 30_000
+    if (stale) void refreshOllama()
+  }, [open, providers, ollamaState.lastFetched, refreshOllama])
 
   // 點外面關掉 popup
   useEffect(() => {
@@ -891,44 +903,72 @@ function ModelPill() {
                 {t('settings.model.failed')}
               </div>
             ) : (
-              providers.map((p) => (
-                <div key={p.id}>
-                  <div className="flex items-center justify-between border-b border-bg-hover px-3 py-1.5 text-[11px] uppercase tracking-wide text-fg-subtle">
-                    <span>{p.label}</span>
-                    {!p.api_key_configured && (
-                      <span className="text-warning">
-                        {t('settings.model.apiKeyMissing')}
-                      </span>
+              providers.map((p) => {
+                // Ollama 是 dynamic provider — 用 store 的 ollamaState.models
+                // 取代靜態 p.models(p.models 為空)
+                const isOllama = p.id === 'ollama'
+                const ollamaList = isOllama && ollamaState.models
+                  ? ollamaState.models.map((om) => ({
+                      id: om.name,
+                      label: om.name + (om.details?.parameter_size ? ` · ${om.details.parameter_size}` : ''),
+                    }))
+                  : null
+                const modelsToShow = ollamaList ?? p.models
+                return (
+                  <div key={p.id}>
+                    <div className="flex items-center justify-between border-b border-bg-hover px-3 py-1.5 text-[11px] uppercase tracking-wide text-fg-subtle">
+                      <span>{p.label}</span>
+                      {isOllama && !ollamaState.ok && (
+                        <span className="text-warning">
+                          {t('settings.model.ollamaOffline')}
+                        </span>
+                      )}
+                      {!isOllama && !p.api_key_configured && (
+                        <span className="text-warning">
+                          {t('settings.model.apiKeyMissing')}
+                        </span>
+                      )}
+                    </div>
+                    {isOllama && !ollamaState.ok && (
+                      <div className="px-3 py-2 text-xs text-fg-muted">
+                        {ollamaState.error || t('settings.model.ollamaUnreachable')}
+                      </div>
                     )}
+                    {isOllama && ollamaState.ok && modelsToShow.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-fg-muted">
+                        {t('settings.model.ollamaEmpty')}
+                      </div>
+                    )}
+                    {modelsToShow.map((m) => {
+                      const active =
+                        selectedProvider === p.id && selectedModel === m.id
+                      const disabled = isOllama ? !ollamaState.ok : !p.api_key_configured
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            setSelectedModel(p.id, m.id)
+                            setOpen(false)
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40 ${
+                            active ? 'text-accent' : 'text-fg-base'
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            {active && <Check size={12} className="shrink-0" />}
+                            <span className="truncate">{m.label}</span>
+                          </span>
+                          <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
+                            {m.id}
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
-                  {p.models.map((m) => {
-                    const active =
-                      selectedProvider === p.id && selectedModel === m.id
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        disabled={!p.api_key_configured}
-                        onClick={() => {
-                          setSelectedModel(p.id, m.id)
-                          setOpen(false)
-                        }}
-                        className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-40 ${
-                          active ? 'text-accent' : 'text-fg-base'
-                        }`}
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          {active && <Check size={12} className="shrink-0" />}
-                          <span className="truncate">{m.label}</span>
-                        </span>
-                        <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
-                          {m.id}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ))
+                )
+              })
             )}
           </div>
           <button

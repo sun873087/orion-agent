@@ -122,4 +122,8 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
         from orion_model.openai_provider import OpenAIProvider
 
         return OpenAIProvider(model=model)
+    if provider_name == "ollama":
+        from orion_model.ollama_provider import OllamaProvider
+
+        return OllamaProvider(model=model)
     raise ValueError(f"Unknown provider: {provider_name!r}")

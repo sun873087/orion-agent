@@ -53,7 +53,7 @@ def test_list_catalog_shape() -> None:
     providers = cat["providers"]
     assert isinstance(providers, list)
     ids = {p["id"] for p in providers}  # type: ignore[index]
-    assert ids == {"anthropic", "openai"}
+    assert ids == {"anthropic", "openai", "ollama"}
     for p in providers:  # type: ignore[union-attr]
         assert "label" in p
         assert "models" in p

@@ -42,6 +42,25 @@ export type Provider = {
   label: string
   models: ModelEntry[]
   api_key_configured: boolean
+  /** 動態 provider — models 是空 catalog,要 caller 跑 RPC(如 ollama.list_models)拿 */
+  dynamic?: boolean
+}
+
+export type OllamaState = {
+  /** 已 pull 的 model list(name + size + details);健康時非 null,失敗時 null */
+  models: Array<{
+    name: string
+    size?: number
+    details?: { parameter_size?: string; quantization_level?: string; family?: string }
+  }> | null
+  /** Ollama daemon 連線 OK 嗎 */
+  ok: boolean
+  /** Ollama daemon 沒開 / 連不上的錯誤訊息 */
+  error: string | null
+  /** 用的 base URL(顯示 / debug 用) */
+  baseUrl: string
+  /** 上次成功 fetch 的 epoch ms(用來判 stale) */
+  lastFetched: number | null
 }
 
 type SettingsState = {
@@ -53,6 +72,9 @@ type SettingsState = {
   // Ephemeral(load from sidecar on init)
   providers: Provider[]
   catalogLoaded: boolean
+  /** Ollama 動態 model list + daemon 狀態(Phase 31-L) */
+  ollama: OllamaState
+  refreshOllama: () => Promise<void>
   settingsOpen: boolean
   /** 當前 Settings page 高亮的 section id。Page 是 list-driven 全頁,不再是 modal。 */
   activeSettingsSection: string
@@ -131,6 +153,43 @@ export const useSettingsStore = create<SettingsState>()(
       openaiSttModel: 'gpt-4o-mini-transcribe',
       providers: [],
       catalogLoaded: false,
+      ollama: {
+        models: null,
+        ok: false,
+        error: null,
+        baseUrl: '',
+        lastFetched: null,
+      },
+      refreshOllama: async () => {
+        const { listOllamaModels } = await import('../api/agent')
+        try {
+          const result = await listOllamaModels()
+          set({
+            ollama: {
+              models: result.models.map((m) => ({
+                name: m.name,
+                size: m.size,
+                details: m.details,
+              })),
+              ok: true,
+              error: null,
+              baseUrl: result.base_url,
+              lastFetched: Date.now(),
+            },
+          })
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          set((prev) => ({
+            ollama: {
+              models: null,
+              ok: false,
+              error: msg,
+              baseUrl: prev.ollama.baseUrl,
+              lastFetched: Date.now(),
+            },
+          }))
+        }
+      },
       settingsOpen: false,
       activeSettingsSection: 'general',
       sidebarCollapsed: false,
@@ -168,6 +227,8 @@ export const useSettingsStore = create<SettingsState>()(
       setOpenaiSttModel: (m) => set({ openaiSttModel: m }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
+
+      // Ollama refresh delegated to action defined above
       openSettings: (section) =>
         set((s) => ({
           settingsOpen: true,

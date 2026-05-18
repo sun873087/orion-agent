@@ -159,6 +159,12 @@
           }
         }
       ]
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama (Local)",
+      "dynamic": true,
+      "models": []
     }
   ]
 }

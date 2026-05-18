@@ -910,6 +910,8 @@ export type ModelCatalog = {
       pricing?: Record<string, number>
     }>
     api_key_configured: boolean
+    /** Ollama 之類動態 provider — 不靠 catalog,要 caller 跑 ollama.list_models 拿 model list */
+    dynamic?: boolean
   }>
 }
 
@@ -921,6 +923,68 @@ export async function fetchModels(): Promise<ModelCatalog> {
     }
   })
   if (!result) throw new Error('models.list returned no data')
+  return result
+}
+
+// ─── Ollama(local model)─────────────────────────────────────────
+
+export type OllamaModelInfo = {
+  name: string
+  size?: number
+  modified_at?: string
+  digest?: string
+  details?: {
+    parameter_size?: string
+    quantization_level?: string
+    family?: string
+  }
+}
+
+export type OllamaListResult = {
+  models: OllamaModelInfo[]
+  base_url: string
+}
+
+/** 從 user 本機 Ollama 抓已 pull 的 model 列表(GET /api/tags)。
+ *  失敗(Ollama 沒開 / 連不上)會 throw — caller 自己處理 banner UI。 */
+export async function listOllamaModels(baseUrl?: string): Promise<OllamaListResult> {
+  let result: OllamaListResult | null = null
+  let errMsg: string | null = null
+  await window.agent.call(
+    'ollama.list_models',
+    baseUrl ? { base_url: baseUrl } : {},
+    (frame) => {
+      if (frame.event === 'ollama_models' && frame.data) {
+        result = frame.data as OllamaListResult
+      } else if (frame.event === 'error' && frame.data) {
+        errMsg = (frame.data as { message?: string }).message || 'Ollama unreachable'
+      }
+    },
+  )
+  if (errMsg) throw new Error(errMsg)
+  if (!result) throw new Error('ollama.list_models returned no data')
+  return result
+}
+
+export type OllamaHealth = {
+  ok: boolean
+  version?: string
+  error?: string
+  base_url: string
+}
+
+/** Ping `/api/version` 看 Ollama daemon 是否在跑。失敗回 {ok: false, error}。 */
+export async function checkOllamaHealth(baseUrl?: string): Promise<OllamaHealth> {
+  let result: OllamaHealth = { ok: false, base_url: baseUrl || '' }
+  await window.agent.call(
+    'ollama.health',
+    baseUrl ? { base_url: baseUrl } : {},
+    (frame) => {
+      if (frame.event === 'ollama_health' && frame.data) {
+        result = frame.data as OllamaHealth
+      }
+    },
+  )
   return result
 }
 

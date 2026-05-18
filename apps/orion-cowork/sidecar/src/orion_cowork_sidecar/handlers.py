@@ -429,6 +429,8 @@ class Handlers:
             **schedule_handlers.bind_schedule_handlers(self),
             "ping": self.ping,
             "models.list": self.models_list,
+            "ollama.list_models": self.ollama_list_models,
+            "ollama.health": self.ollama_health,
             "conversation.create": self.conversation_create,
             "conversation.send": self.conversation_send,
             "conversation.abort": self.conversation_abort,
@@ -508,11 +510,74 @@ class Handlers:
             for p in providers:
                 if not isinstance(p, dict):
                     continue
-                env_name = env_map.get(p.get("id", ""))
-                p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
+                pid = p.get("id", "")
+                if pid == "ollama":
+                    # Ollama 不需要 API key,但要標 "available" 看 Ollama daemon 是否在跑
+                    p["api_key_configured"] = True
+                    p["dynamic"] = True
+                else:
+                    env_name = env_map.get(pid)
+                    p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
         yield {
             "event": "models",
             "data": catalog,
+            "final": True,
+        }
+
+    async def ollama_list_models(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """呼 `GET /api/tags`,回 user 在 Ollama 已 pull 的 model 列表。
+
+        Params:
+            base_url: 可選,override 預設 base URL(否則走 OLLAMA_HOST env / localhost)。
+
+        Yields:
+            event=ollama_models, data={models: [{name, size, ...}], base_url}
+            event=error 若連不上。
+        """
+        from orion_model.ollama_provider import list_ollama_models, resolve_ollama_base_url
+
+        base_url = params.get("base_url") if isinstance(params, dict) else None
+        if base_url is not None and not isinstance(base_url, str):
+            base_url = None
+        resolved = resolve_ollama_base_url(base_url)
+        try:
+            models = await list_ollama_models(base_url=base_url)
+        except RuntimeError as e:
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "OLLAMA_UNREACHABLE",
+                    "message": str(e),
+                    "base_url": resolved,
+                },
+                "final": True,
+            }
+            return
+        yield {
+            "event": "ollama_models",
+            "data": {"models": models, "base_url": resolved},
+            "final": True,
+        }
+
+    async def ollama_health(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """呼 `GET /api/version` 確認 Ollama 在跑。
+
+        Yields:
+            event=ollama_health, data={ok, version?, error?, base_url}
+        """
+        from orion_model.ollama_provider import check_ollama_health
+
+        base_url = params.get("base_url") if isinstance(params, dict) else None
+        if base_url is not None and not isinstance(base_url, str):
+            base_url = None
+        result = await check_ollama_health(base_url=base_url)
+        yield {
+            "event": "ollama_health",
+            "data": result,
             "final": True,
         }
 
