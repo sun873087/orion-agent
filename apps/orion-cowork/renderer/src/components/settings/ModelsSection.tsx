@@ -96,6 +96,60 @@ export function ModelsSection() {
       <SttPicker />
       <AutoCompactPicker />
       <ConcurrentLimitPicker />
+      <BudgetPicker />
+    </div>
+  )
+}
+
+/** 預設 budget cap(Phase 31-Q)— 新 session 累積成本超過自動 abort + 顯 banner。 */
+function BudgetPicker() {
+  const value = useSettingsStore((s) => s.defaultBudgetUsd)
+  const setValue = useSettingsStore((s) => s.setDefaultBudgetUsd)
+  // 預設選項 + custom 文字框
+  const PRESETS = [0, 0.5, 1, 5, 10]
+  const isPreset = PRESETS.includes(value)
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-fg-muted">
+        <Layers size={14} />
+        Cost budget(USD / session)
+      </h3>
+      <p className="text-[11px] text-fg-subtle">
+        新開的 session 預設累積成本上限。Loop / Agent / autonomous workflow 跑久了
+        會燒錢,設個 cap 超過自動 abort 並提醒。0 = 不限。Per-session 可在
+        右側面板各別調整。
+      </p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {PRESETS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setValue(p)}
+            className={`rounded-md border px-3 py-1 text-xs ${
+              value === p
+                ? 'border-accent bg-accent/10 text-accent'
+                : 'border-bg-hover bg-bg-panel text-fg-muted hover:border-accent/40'
+            }`}
+          >
+            {p === 0 ? '不限' : `$${p.toFixed(2)}`}
+          </button>
+        ))}
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-fg-subtle">$</span>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={isPreset ? '' : value}
+            placeholder="自訂"
+            onChange={(e) => {
+              const v = parseFloat(e.target.value)
+              setValue(Number.isFinite(v) ? v : 0)
+            }}
+            className="w-20 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
     </div>
   )
 }

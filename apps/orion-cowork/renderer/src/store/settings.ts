@@ -123,6 +123,12 @@ type SettingsState = {
   maxConcurrentSessions: number
   setMaxConcurrentSessions: (v: number) => void
 
+  /** 新 session 預設 budget cap(USD)— 累積 cost 超過自動 abort + 顯 banner。
+   *  Phase 31-Q。0 = 不設限(預設,避免初次用就被擋)。Per-session 仍可在
+   *  RightSidebar 各別調整;這只是新建 session 帶入的 default。 */
+  defaultBudgetUsd: number
+  setDefaultBudgetUsd: (v: number) => void
+
   /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
    *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-4o-mini)。 */
   compactSummaryProvider: string | null
@@ -204,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoCompactEnabled: true,
       autoCompactThreshold: 0.8,
       maxConcurrentSessions: 5,
+      defaultBudgetUsd: 0,
       // 預設用便宜 model 摘要(Anthropic 端 Haiku),省 cost ~5x。
       // 跟 chat provider 對齊在 dispatch 時挑;User 也可手動改成任何 model。
       compactSummaryProvider: 'anthropic',
@@ -263,6 +270,11 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setMaxConcurrentSessions: (v) =>
         set({ maxConcurrentSessions: Math.max(1, Math.min(20, Math.round(v))) }),
+      setDefaultBudgetUsd: (v) => {
+        const n = Number.isFinite(v) ? Math.max(0, v) : 0
+        // 1 美分精度
+        set({ defaultBudgetUsd: Math.round(n * 100) / 100 })
+      },
       setCompactSummary: (provider, model) =>
         set({ compactSummaryProvider: provider, compactSummaryModel: model }),
 
@@ -290,6 +302,7 @@ export const useSettingsStore = create<SettingsState>()(
         compactSummaryProvider: s.compactSummaryProvider,
         compactSummaryModel: s.compactSummaryModel,
         maxConcurrentSessions: s.maxConcurrentSessions,
+        defaultBudgetUsd: s.defaultBudgetUsd,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

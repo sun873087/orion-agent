@@ -9,6 +9,7 @@ import { SettingsPage } from './components/SettingsPage'
 import { Sidebar } from './components/Sidebar'
 import {
   useAbort,
+  useBudgetNotifications,
   useInitConversation,
   usePlanModeNotifications,
   usePlanStatusRehydrate,
@@ -23,6 +24,7 @@ export function App() {
   useScheduleNotifications()
   usePlanModeNotifications()
   usePlanStatusRehydrate()
+  useBudgetNotifications()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)

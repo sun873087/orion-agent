@@ -149,6 +149,27 @@ export function usePlanModeNotifications(): void {
 }
 
 /**
+ * 訂閱 sidecar 推的 budget.exceeded 事件(Phase 31-Q)。
+ *
+ * 累積成本超 cap 時 sidecar 會 emit 一次(設新 cap 後才會再 emit)。
+ * 這邊把訊息塞進對應 session 的 errorBySession,UI 顯紅 banner。
+ */
+export function useBudgetNotifications(): void {
+  useEffect(() => {
+    if (!window.budgetApi) return
+    const off = window.budgetApi.onExceeded((data) => {
+      const cur = data.current_usd.toFixed(4)
+      const cap = data.budget_usd_cap.toFixed(2)
+      useAgentStore.getState().setError(
+        data.session_id,
+        `Session 累積成本超過上限($${cur} / $${cap})— 右側面板可調整 cap 後繼續。`,
+      )
+    })
+    return () => off()
+  }, [])
+}
+
+/**
  * "New chat" 按鈕。只清 currentSessionId,不立即建 DB session。首次 send 時
  * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
  *
@@ -314,6 +335,12 @@ export function useSendPrompt() {
           projectId: activeProjectId,
         })
         useAgentStore.getState().setSessionId(sid)
+        // 帶入 Settings 的 default budget cap(0 = 不限就跳過)
+        const defaultBudget = useSettingsStore.getState().defaultBudgetUsd
+        if (defaultBudget > 0) {
+          const { setSessionBudget } = await import('../api/agent')
+          await setSessionBudget(sid, defaultBudget).catch(() => {})
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         useAgentStore.getState().setError('__global__', msg)

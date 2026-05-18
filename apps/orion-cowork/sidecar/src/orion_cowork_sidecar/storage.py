@@ -187,6 +187,9 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             "plan_file_path TEXT",              # 絕對路徑 ~/.orion/plans/plan-{id}.md
             "plan_content TEXT",                # 提交的 plan markdown(crash recovery 用)
             "plan_entered_at_message_index INTEGER",
+            # Cost budget(Phase 31-Q)— 累積成本超 cap 自動 abort:
+            "budget_usd_cap REAL",              # NULL = 不限,>0 = 上限(USD);0 視同 NULL
+            "budget_exceeded INTEGER NOT NULL DEFAULT 0",  # 已觸發過 → 阻擋下一次 send
         ):
             try:
                 await conn.exec_driver_sql(
@@ -691,6 +694,67 @@ async def list_awaiting_approval_sessions(
         }
         for r in rows
     ]
+
+
+# ─── Cost budget(Phase 31-Q)──────────────────────────────────────────────
+
+
+async def get_session_budget(
+    engine: AsyncEngine, session_id: str
+) -> dict[str, Any]:
+    """讀 budget cap + exceeded flag。沒設 row 或 budget=NULL → cap=None。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT budget_usd_cap, budget_exceeded FROM cowork_session_ext "
+            "WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None:
+        return {"budget_usd_cap": None, "exceeded": False}
+    cap = row[0]
+    # 0 視同未設(避免使用者設 0 反而立刻 block)
+    if cap is not None and cap <= 0:
+        cap = None
+    return {"budget_usd_cap": cap, "exceeded": bool(row[1])}
+
+
+async def set_session_budget(
+    engine: AsyncEngine, session_id: str, budget_usd_cap: float | None
+) -> None:
+    """Upsert budget cap。None 或 <=0 清空。設新 cap 順便清 exceeded flag。"""
+    cap_value = budget_usd_cap if (budget_usd_cap and budget_usd_cap > 0) else None
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (
+                session_id, budget_usd_cap, budget_exceeded
+            )
+            VALUES (?, ?, 0)
+            ON CONFLICT(session_id) DO UPDATE SET
+                budget_usd_cap = excluded.budget_usd_cap,
+                budget_exceeded = 0
+            """,
+            (session_id, cap_value),
+        )
+        await conn.commit()
+
+
+async def mark_budget_exceeded(
+    engine: AsyncEngine, session_id: str, exceeded: bool
+) -> None:
+    """Toggle exceeded flag(超過 cap → 1;raise cap 後 reset → 0)。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, budget_exceeded)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                budget_exceeded = excluded.budget_exceeded
+            """,
+            (session_id, 1 if exceeded else 0),
+        )
+        await conn.commit()
 
 
 async def list_referenced_plan_files(engine: AsyncEngine) -> set[str]:

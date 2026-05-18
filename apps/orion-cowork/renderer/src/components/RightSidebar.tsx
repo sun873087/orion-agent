@@ -19,15 +19,23 @@ import {
   Sparkles,
 } from 'lucide-react'
 
-import { getConversationStats, type ConversationStats } from '../api/agent'
+import {
+  getConversationStats,
+  getSessionBudget,
+  setSessionBudget,
+  type ConversationStats,
+  type SessionBudget,
+} from '../api/agent'
 import { useTranslation } from '../i18n'
-import { useAgentStore } from '../store/agent'
+import { useAgentStore, type Message } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
 
 type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
-/** Stable empty array reference — selector fallback 用,避免每 render 回新陣列。 */
+/** Stable empty array references — selector fallback 用,避免每 render 回新陣列
+ *  → 觸發 zustand `useSyncExternalStore` 偵測到 snapshot 不同 → infinite loop。 */
 const EMPTY_FILES: readonly string[] = Object.freeze([])
+const EMPTY_MESSAGES: readonly unknown[] = Object.freeze([])
 
 const ACTION_RANK: Record<'opened' | 'wrote' | 'edited', number> = {
   opened: 3,
@@ -204,8 +212,12 @@ function extractSkills(toolCalls: Array<{ toolName: string; input?: Record<strin
 
 export function RightSidebar() {
   const { t } = useTranslation()
-  const messages = useAgentStore((s) =>
-    s.sessionId ? s.messagesBySession[s.sessionId] ?? [] : [],
+  // 常數 fallback:zustand 用 Object.is 比 reference,新陣列每 render 都不同
+  // → React 18 useSyncExternalStore 噴 "getSnapshot should be cached" + 無窮 re-render。
+  const messages = useAgentStore(
+    (s) =>
+      (s.sessionId ? s.messagesBySession[s.sessionId] : null) ??
+      (EMPTY_MESSAGES as Message[]),
   )
 
   // 把所有 assistant message 的 toolCalls 全攤平,給三個 extractor 用
@@ -380,7 +392,181 @@ export function RightSidebar() {
       </Section>
 
       <UsageSection />
+      <BudgetSection />
     </aside>
+  )
+}
+
+/**
+ * Per-session cost budget(Phase 31-Q)。
+ *
+ * 顯示 cap 設定 + progress bar(cumulative / cap),inline edit。
+ * 累積超過 cap 時 sidecar 會自動 abort 下次 send 並推 notification —
+ * 這裡只負責顯狀態 + 提供調整入口。
+ */
+function BudgetSection() {
+  const { t } = useTranslation()
+  const sessionId = useAgentStore((s) => s.sessionId)
+  const busy = useAgentStore((s) =>
+    s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
+  )
+  const [budget, setBudget] = useState<SessionBudget | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setBudget(null)
+    setEditing(false)
+  }, [sessionId])
+
+  // sessionId 有 + busy 轉 false 時 refetch(turn 結束 cost 才會更新)
+  useEffect(() => {
+    if (!sessionId || busy) return
+    let cancelled = false
+    getSessionBudget(sessionId)
+      .then((b) => {
+        if (!cancelled) setBudget(b)
+      })
+      .catch(() => {
+        if (!cancelled) setBudget(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, busy])
+
+  if (!sessionId) return null
+  if (!budget) {
+    return (
+      <Section title={t('rightSidebar.budget')}>
+        <Empty>{t('rightSidebar.loadingUsage')}</Empty>
+      </Section>
+    )
+  }
+
+  const cap = budget.budgetUsdCap
+  const cur = budget.currentUsd
+  const pct = cap && cap > 0 ? Math.min(100, (cur / cap) * 100) : 0
+  const barColor = budget.exceeded
+    ? 'bg-error'
+    : pct > 80
+      ? 'bg-warning'
+      : 'bg-accent'
+
+  async function save(newCap: number | null) {
+    if (!sessionId) return
+    setSaving(true)
+    try {
+      await setSessionBudget(sessionId, newCap)
+      const fresh = await getSessionBudget(sessionId)
+      setBudget(fresh)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Section
+      title={t('rightSidebar.budget')}
+      action={
+        !editing && (
+          <button
+            type="button"
+            className="text-[10px] text-accent hover:underline"
+            onClick={() => {
+              setDraft(cap != null ? cap.toFixed(2) : '')
+              setEditing(true)
+            }}
+          >
+            {cap != null ? t('rightSidebar.budgetEdit') : t('rightSidebar.budgetSet')}
+          </button>
+        )
+      }
+    >
+      <div className="flex flex-col gap-2 text-xs">
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] text-fg-subtle">{t('rightSidebar.budgetHint')}</p>
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-fg-subtle">$</span>
+              <input
+                autoFocus
+                type="number"
+                min={0}
+                step={0.01}
+                value={draft}
+                placeholder="0.00"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = parseFloat(draft)
+                    save(Number.isFinite(v) && v > 0 ? v : null)
+                  } else if (e.key === 'Escape') {
+                    setEditing(false)
+                  }
+                }}
+                className="w-24 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs focus:border-accent focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  const v = parseFloat(draft)
+                  save(Number.isFinite(v) && v > 0 ? v : null)
+                }}
+                className="rounded-md bg-accent px-2 py-1 text-[10px] font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+              >
+                {t('common.save')}
+              </button>
+              {cap != null && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => save(null)}
+                  className="rounded-md border border-bg-hover px-2 py-1 text-[10px] text-fg-muted hover:bg-bg-hover disabled:opacity-50"
+                >
+                  {t('rightSidebar.budgetClear')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-md px-2 py-1 text-[10px] text-fg-subtle hover:bg-bg-hover"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        ) : cap != null ? (
+          <>
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">{t('rightSidebar.budgetUsed')}</span>
+              <span className="font-mono text-fg-base">
+                ${cur.toFixed(4)} / ${cap.toFixed(2)}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-hover">
+              <div
+                className={`h-full transition-all ${barColor}`}
+                style={{ width: `${pct.toFixed(1)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between font-mono text-[10px] text-fg-subtle">
+              <span>{pct.toFixed(1)}%</span>
+              {budget.exceeded && (
+                <span className="text-error">{t('rightSidebar.budgetExceeded')}</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-[11px] text-fg-subtle">
+            {t('rightSidebar.budgetUnlimited')}
+          </p>
+        )}
+      </div>
+    </Section>
   )
 }
 
@@ -580,12 +766,23 @@ function fmt(n: number): string {
   return n.toString()
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-        {title}
-      </h3>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+          {title}
+        </h3>
+        {action}
+      </div>
       {children}
     </section>
   )

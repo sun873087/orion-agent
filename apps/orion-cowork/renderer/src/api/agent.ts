@@ -657,6 +657,51 @@ export async function getConversationStats(
   return out
 }
 
+// ─── Cost budget(Phase 31-Q)──────────────────────────────────────────
+
+export type SessionBudget = {
+  sessionId: string
+  budgetUsdCap: number | null  // null = unlimited
+  currentUsd: number
+  exceeded: boolean
+}
+
+/** 讀 session 當前 budget + 累積 cost。 */
+export async function getSessionBudget(
+  sessionId: string,
+): Promise<SessionBudget | null> {
+  let out: SessionBudget | null = null
+  await window.agent.call(
+    'conversation.get_budget',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event !== 'budget' || !f.data) return
+      const d = f.data
+      out = {
+        sessionId: String(d.session_id ?? sessionId),
+        budgetUsdCap:
+          typeof d.budget_usd_cap === 'number' ? (d.budget_usd_cap as number) : null,
+        currentUsd: typeof d.current_usd === 'number' ? (d.current_usd as number) : 0,
+        exceeded: Boolean(d.exceeded),
+      }
+    },
+  )
+  return out
+}
+
+/** 設 / 清 budget cap。傳 null 或 0 等於不限。 */
+export async function setSessionBudget(
+  sessionId: string,
+  budgetUsdCap: number | null,
+): Promise<void> {
+  await window.agent.call(
+    'conversation.set_budget',
+    { session_id: sessionId, budget_usd_cap: budgetUsdCap },
+    () => {},
+  )
+}
+
 /**
  * 中途切 Ask / Act mode — sidecar 立刻把 in-flight turn 的 can_use_tool gate
  * 切過去;若切到 'act' 還會 auto-resolve 所有等中的 approval / ask futures。

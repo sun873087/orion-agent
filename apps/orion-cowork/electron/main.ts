@@ -124,6 +124,7 @@ app.whenReady().then(async () => {
     else if (evt === 'plan_mode.exited') broadcast('plan_mode:exited')
     else if (evt === 'plan_mode.approved') broadcast('plan_mode:approved')
     else if (evt === 'plan_mode.rejected') broadcast('plan_mode:rejected')
+    else if (evt === 'budget.exceeded') broadcast('budget:exceeded')
   })
 
   // 2. 註冊 IPC

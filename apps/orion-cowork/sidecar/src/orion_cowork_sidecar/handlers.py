@@ -490,6 +490,8 @@ class Handlers:
             "conversation.plan_reject": self.conversation_plan_reject,
             "conversation.plan_status": self.conversation_plan_status,
             "conversation.stats": self.conversation_stats,
+            "conversation.get_budget": self.conversation_get_budget,
+            "conversation.set_budget": self.conversation_set_budget,
             "conversation.context_breakdown": self.conversation_context_breakdown,
             "conversation.compact": self.conversation_compact,
             "permissions.get": self.permissions_get,
@@ -672,6 +674,28 @@ class Handlers:
                 }
                 return
             self._conversations[sid] = conv
+
+        # Budget pre-check(Phase 31-Q)— exceeded flag 已標 + cap 仍存在 → 拒絕
+        # 給 user 看到 banner 提示「加額度或新開 session」。Raise cap 在
+        # set_budget RPC 內會 reset flag。
+        budget_info = await storage.get_session_budget(engine, sid)
+        if budget_info["exceeded"] and budget_info["budget_usd_cap"] is not None:
+            current = _compute_cumulative_cost(conv)
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "BUDGET_EXCEEDED",
+                    "message": (
+                        f"Session budget exceeded "
+                        f"(${current:.4f} / ${budget_info['budget_usd_cap']:.2f}). "
+                        "Raise the cap in the right panel to continue."
+                    ),
+                    "current_usd": current,
+                    "budget_usd_cap": budget_info["budget_usd_cap"],
+                },
+                "final": True,
+            }
+            return
 
         # 首次 prompt → 設 title
         if sid not in self._title_done:
@@ -951,6 +975,16 @@ class Handlers:
             except Exception as e:  # noqa: BLE001
                 print(
                     f"[plan_mode] persist/notify failed for {sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
+            # ─── Budget post-check(Phase 31-Q)─────────────────────────
+            # 累積成本超 cap → 設 exceeded flag + emit notification,renderer
+            # 收到後浮 banner 提示。下次 send 會被 pre-check 攔下。
+            try:
+                await self._check_budget_and_notify(sid, conv, engine)
+            except Exception as e:  # noqa: BLE001
+                print(
+                    f"[budget] check/notify failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
 
@@ -1655,6 +1689,95 @@ class Handlers:
                     "plan_file_path": plan_file_path,
                 },
             })
+
+    async def _check_budget_and_notify(
+        self, sid: str, conv: Any, engine: Any,
+    ) -> None:
+        """Turn 結束後檢查累積成本是否超 cap。超過 → set exceeded flag + notify。
+
+        Cap=None(未設) → 不做事。已經 exceeded=True 不再重發通知,避免每 turn 都炸。
+        """
+        info = await storage.get_session_budget(engine, sid)
+        cap = info["budget_usd_cap"]
+        if cap is None:
+            return
+        current = _compute_cumulative_cost(conv)
+        if current >= cap and not info["exceeded"]:
+            await storage.mark_budget_exceeded(engine, sid, True)
+            await self.notify({
+                "event": "budget.exceeded",
+                "data": {
+                    "session_id": sid,
+                    "current_usd": current,
+                    "budget_usd_cap": cap,
+                },
+            })
+
+    async def conversation_get_budget(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀 session budget cap + 目前累積成本。"""
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        engine = await self.ensure_engine()
+        info = await storage.get_session_budget(engine, sid)
+        # 算當前累積 cost — 若 conv 不在 memory 就 0(沒跑過 turn,沒花到錢)
+        conv = self._conversations.get(sid)
+        current = _compute_cumulative_cost(conv) if conv is not None else 0.0
+        yield {
+            "event": "budget",
+            "data": {
+                "session_id": sid,
+                "budget_usd_cap": info["budget_usd_cap"],
+                "exceeded": info["exceeded"],
+                "current_usd": current,
+            },
+            "final": True,
+        }
+
+    async def conversation_set_budget(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """設 / 清 session budget cap。傳 0 或 null 等於不限。
+
+        設新 cap 會 reset exceeded flag — 讓 user raise cap 後可繼續 send。
+        若新 cap 仍 < current cost,下一次 turn 結束時會再次觸發 exceeded。
+        """
+        sid = params.get("session_id")
+        cap_raw = params.get("budget_usd_cap")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        if cap_raw is not None and not isinstance(cap_raw, (int, float)):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "budget_usd_cap must be number or null"},
+                "final": True,
+            }
+            return
+        cap_value: float | None = float(cap_raw) if cap_raw is not None else None
+        engine = await self.ensure_engine()
+        await storage.set_session_budget(engine, sid, cap_value)
+        info = await storage.get_session_budget(engine, sid)
+        yield {
+            "event": "budget_saved",
+            "data": {
+                "session_id": sid,
+                "budget_usd_cap": info["budget_usd_cap"],
+                "exceeded": info["exceeded"],
+            },
+            "final": True,
+        }
 
     async def conversation_set_plan_mode(
         self, params: dict[str, Any]
@@ -3397,6 +3520,38 @@ class Handlers:
                     await storage.append_messages(engine, sid, new_msgs)
                 except Exception:  # noqa: BLE001
                     pass
+
+
+def _compute_cumulative_cost(conv: Any) -> float:
+    """跟 conversation_stats 同一套算法 — 把 stats × pricing → USD。
+
+    conv 為 None 或還沒跑過 turn → 0.0。Unknown provider/model 走 pricing
+    fallback,絕不丟例外(budget check 不該炸 user)。
+    """
+    if conv is None:
+        return 0.0
+    try:
+        from orion_model.pricing import get_pricing
+        s = conv.stats
+        provider = conv.provider.name
+        model = conv.provider.model
+        p = get_pricing(provider, model)
+        input_price = p.get("input", 0.0)
+        output_price = p.get("output", 0.0)
+        cache_read_price = p.get("cache_read", input_price)
+        cache_creation_price = p.get("cache_creation", input_price)
+        return round(
+            (
+                s.input_tokens * input_price
+                + s.output_tokens * output_price
+                + s.cache_read_tokens * cache_read_price
+                + s.cache_creation_tokens * cache_creation_price
+            )
+            / 1_000_000,
+            6,
+        )
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 def _apply_summary_provider(conv: Conversation, params: dict[str, Any]) -> None:

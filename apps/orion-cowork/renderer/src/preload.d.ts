@@ -86,6 +86,17 @@ interface OrionPlanApi {
   onRejected: (cb: (data: OrionPlanModeSessionEvent) => void) => () => void
 }
 
+interface OrionBudgetExceededPayload {
+  session_id: string
+  current_usd: number
+  budget_usd_cap: number
+}
+
+interface OrionBudgetApi {
+  /** Session 累積成本超過 cap — Phase 31-Q。 */
+  onExceeded: (cb: (data: OrionBudgetExceededPayload) => void) => () => void
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
@@ -96,6 +107,8 @@ declare global {
     schedulerApi: OrionSchedulerApi
     /** Plan Mode 通知通道(Phase 31-J)。 */
     planApi: OrionPlanApi
+    /** Budget 通知通道(Phase 31-Q)。 */
+    budgetApi: OrionBudgetApi
   }
 }
 

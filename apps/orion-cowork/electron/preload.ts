@@ -107,6 +107,21 @@ const planApi = {
   },
 }
 
+type BudgetExceededPayload = {
+  session_id: string
+  current_usd: number
+  budget_usd_cap: number
+}
+
+const budgetApi = {
+  /** Session 累積成本超過 cap — renderer 顯 banner + toast(Phase 31-Q)。 */
+  onExceeded: (cb: (data: BudgetExceededPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: BudgetExceededPayload) => cb(data)
+    ipcRenderer.on('budget:exceeded', listener)
+    return () => ipcRenderer.removeListener('budget:exceeded', listener)
+  },
+}
+
 const agentApi = {
   /**
    * 呼叫 sidecar RPC。`onFrame` 每個 streaming frame 觸發一次。
@@ -142,6 +157,7 @@ contextBridge.exposeInMainWorld('shellApi', shellApi)
 // an existing property」。改用 'schedulerApi' 跟 'shellApi' 對齊。
 contextBridge.exposeInMainWorld('schedulerApi', schedulerApi)
 contextBridge.exposeInMainWorld('planApi', planApi)
+contextBridge.exposeInMainWorld('budgetApi', budgetApi)
 
 declare global {
   interface Window {
@@ -150,5 +166,6 @@ declare global {
     shellApi: typeof shellApi
     schedulerApi: typeof schedulerApi
     planApi: typeof planApi
+    budgetApi: typeof budgetApi
   }
 }
