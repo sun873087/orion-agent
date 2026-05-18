@@ -24,6 +24,7 @@ import {
 
 import type { Attachment, SkillListItem } from '../api/agent'
 import {
+  createConversation,
   fetchModels,
   getContextBreakdown,
   listSkills,
@@ -431,10 +432,21 @@ export function InputBox({ onSend, onAbort }: Props) {
           setAttachError(t('input.attach.textTooBig', { name: f.name }))
           continue
         }
-        const sid = useAgentStore.getState().sessionId
+        // Lazy-create session — user drop 檔比 send 早,要先建 session 才有
+        // sid 可以給 sidecar staging RPC
+        let sid = useAgentStore.getState().sessionId
         if (!sid) {
-          setAttachError(t('input.attach.noSession'))
-          continue
+          try {
+            const settings = useSettingsStore.getState()
+            sid = await createConversation(settings.selectedProvider, settings.selectedModel, {
+              projectId: settings.activeProjectId,
+            })
+            useAgentStore.getState().setSessionId(sid)
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            setAttachError(`session create failed: ${msg}`)
+            continue
+          }
         }
         try {
           const sourcePath = window.shellApi?.getPathForFile?.(f) || ''
