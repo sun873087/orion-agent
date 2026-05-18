@@ -32,6 +32,8 @@ export default {
   'sidebar.recents': '最近',
   'sidebar.forkedFromTooltip': '「{title}」の {turn} 番目のメッセージから分岐',
   'sidebar.untitledSession': '無題の会話',
+  'sidebar.collapseFork': 'ブランチを折りたたむ',
+  'sidebar.expandFork': 'ブランチを展開',
   'sidebar.star': 'スター',
   'sidebar.unstar': 'スター解除',
   'sidebar.rename': '名前変更',

@@ -32,6 +32,8 @@ export default {
   'sidebar.recents': '最近',
   'sidebar.forkedFromTooltip': '分叉自「{title}」第 {turn} 则消息',
   'sidebar.untitledSession': '未命名对话',
+  'sidebar.collapseFork': '收起分支',
+  'sidebar.expandFork': '展开分支',
   'sidebar.star': '加星标',
   'sidebar.unstar': '取消星标',
   'sidebar.rename': '重命名',

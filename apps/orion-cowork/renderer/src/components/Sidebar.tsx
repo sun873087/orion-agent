@@ -197,6 +197,10 @@ export function Sidebar() {
 type SessionTreeNode = {
   session: SessionSummary
   depth: number
+  /** 是否有 children — row 顯 chevron toggle 的依據。 */
+  hasChildren: boolean
+  /** 是否已被 user 摺起(在 collapsed set 內)— row 決定 chevron 方向。 */
+  collapsed: boolean
 }
 
 /** 從平的 session list 建 fork tree。
@@ -205,11 +209,17 @@ type SessionTreeNode = {
  * - 有 `forked_from_session_id` 且 parent 還在 → child(depth = parent.depth + 1)
  * - 有 `forked_from_session_id` 但 parent 已刪(orphan)→ 當 root 處理
  *
+ * `collapsed` Set 內的 parent 不展開 children(整棵子樹略過)— UX 跟 VS Code
+ * file tree 一致。`hasChildren` 仍照原 tree 標,確保 chevron 顯示。
+ *
  * 排序:root 順序保留 list_sessions 原序(最近活動 desc);children 依
  * 各自的 created_at desc(也就是 list 內出現順序)排,讓「同 parent 下的
  * fork」按建立先後一致呈現。深度優先 flatten 出最終要 render 的 row 序列。
  */
-function buildSessionTree(sessions: SessionSummary[]): SessionTreeNode[] {
+function buildSessionTree(
+  sessions: SessionSummary[],
+  collapsed: Set<string>,
+): SessionTreeNode[] {
   const byId = new Map<string, SessionSummary>(
     sessions.map((s) => [s.session_id, s]),
   )
@@ -233,9 +243,17 @@ function buildSessionTree(sessions: SessionSummary[]): SessionTreeNode[] {
   function walk(s: SessionSummary, depth: number): void {
     if (visited.has(s.session_id)) return  // 防止 cyclic ref
     visited.add(s.session_id)
-    out.push({ session: s, depth })
     const kids = childrenMap.get(s.session_id) ?? []
-    for (const k of kids) walk(k, depth + 1)
+    const isCollapsed = collapsed.has(s.session_id)
+    out.push({
+      session: s,
+      depth,
+      hasChildren: kids.length > 0,
+      collapsed: isCollapsed,
+    })
+    if (!isCollapsed) {
+      for (const k of kids) walk(k, depth + 1)
+    }
   }
   for (const r of roots) walk(r, 0)
   return out
@@ -257,7 +275,13 @@ function SessionListGrouped({
   const recents = sessions.filter((s) => !s.starred)
   // Fork tree 只在 recents 段建,starred 維持平的(starred 一般 user 自己挑,
   // 樹狀關係意義不大;且 starred 通常少,不必為它做 tree)
-  const tree = useMemo(() => buildSessionTree(recents), [recents])
+  const collapsedList = useSettingsStore((s) => s.collapsedForkParents)
+  const toggleCollapse = useSettingsStore((s) => s.toggleForkCollapse)
+  const collapsedSet = useMemo(() => new Set(collapsedList), [collapsedList])
+  const tree = useMemo(
+    () => buildSessionTree(recents, collapsedSet),
+    [recents, collapsedSet],
+  )
   // 給每個 session 算 parent title,fork badge tooltip 用
   const titleById = useMemo(() => {
     const m: Record<string, string | null> = {}
@@ -282,6 +306,9 @@ function SessionListGrouped({
                   scheduledBy={s.scheduled_by ?? null}
                   active={s.session_id === currentId}
                   depth={0}
+                  hasChildren={false}
+                  collapsed={false}
+                  onToggleCollapse={() => {}}
                   forkedFrom={null}
                   onClick={() => onSwitch(s.session_id)}
                   onDelete={() => {
@@ -301,7 +328,7 @@ function SessionListGrouped({
             </div>
           )}
           <ul className="flex flex-col gap-0.5">
-            {tree.map(({ session: s, depth }) => {
+            {tree.map(({ session: s, depth, hasChildren, collapsed }) => {
               const fromSid = s.forked_from_session_id ?? null
               const fromIdx = s.forked_from_message_index ?? null
               const fromTitle = fromSid ? titleById[fromSid] ?? null : null
@@ -314,6 +341,9 @@ function SessionListGrouped({
                     scheduledBy={s.scheduled_by ?? null}
                     active={s.session_id === currentId}
                     depth={depth}
+                    hasChildren={hasChildren}
+                    collapsed={collapsed}
+                    onToggleCollapse={() => toggleCollapse(s.session_id)}
                     forkedFrom={
                       fromSid
                         ? {
@@ -345,6 +375,9 @@ function SessionRow({
   scheduledBy,
   active,
   depth,
+  hasChildren,
+  collapsed,
+  onToggleCollapse,
   forkedFrom,
   onClick,
   onDelete,
@@ -356,6 +389,11 @@ function SessionRow({
   active: boolean
   /** Fork tree 深度;0 = root,>0 = 縮排顯為 child(Phase 31-S)。 */
   depth: number
+  /** 有 fork 子節點 → 顯 chevron toggle 讓 user 摺/展(Phase 31-S 改)。 */
+  hasChildren: boolean
+  /** 當前是否被摺起;chevron 方向跟 children 是否在 tree flatten 中由此控。 */
+  collapsed: boolean
+  onToggleCollapse: () => void
   /** 非 null 時表示這 session 是 fork 來的 — 顯 GitBranch icon + tooltip。 */
   forkedFrom: {
     sessionId: string
@@ -450,6 +488,26 @@ function SessionRow({
       onClick={editing ? undefined : onClick}
       title={forkTooltip}
     >
+      {/* Chevron toggle:有 children 才顯;點擊只摺/展,不切 session。沒
+          children 用 spacer 同寬 12px 保持其他 row 的 icon 對齊。 */}
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleCollapse()
+          }}
+          className="shrink-0 rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-base"
+          title={collapsed ? t('sidebar.expandFork') : t('sidebar.collapseFork')}
+        >
+          <ChevronRight
+            size={12}
+            className={`transition-transform ${collapsed ? '' : 'rotate-90'}`}
+          />
+        </button>
+      ) : (
+        <span className="inline-block w-[16px] shrink-0" />
+      )}
       {isRunning ? (
         <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
       ) : starred ? (

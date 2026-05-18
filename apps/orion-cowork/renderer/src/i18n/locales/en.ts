@@ -32,6 +32,8 @@ export default {
   'sidebar.recents': 'Recents',
   'sidebar.forkedFromTooltip': 'Forked from "{title}" at message {turn}',
   'sidebar.untitledSession': 'Untitled conversation',
+  'sidebar.collapseFork': 'Collapse branches',
+  'sidebar.expandFork': 'Expand branches',
   'sidebar.star': 'Star',
   'sidebar.unstar': 'Unstar',
   'sidebar.rename': 'Rename',

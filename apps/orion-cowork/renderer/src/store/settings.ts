@@ -129,6 +129,11 @@ type SettingsState = {
   defaultBudgetUsd: number
   setDefaultBudgetUsd: (v: number) => void
 
+  /** Fork tree 已摺起的 parent session_id list(Phase 31-S 改 collapse 功能)。
+   *  存 array 方便 persist。Sidebar render 時轉 Set 用。空 = 全展開(預設)。 */
+  collapsedForkParents: string[]
+  toggleForkCollapse: (sessionId: string) => void
+
   /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
    *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-4o-mini)。 */
   compactSummaryProvider: string | null
@@ -211,6 +216,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoCompactThreshold: 0.8,
       maxConcurrentSessions: 5,
       defaultBudgetUsd: 0,
+      collapsedForkParents: [],
       // 預設用便宜 model 摘要(Anthropic 端 Haiku),省 cost ~5x。
       // 跟 chat provider 對齊在 dispatch 時挑;User 也可手動改成任何 model。
       compactSummaryProvider: 'anthropic',
@@ -275,6 +281,14 @@ export const useSettingsStore = create<SettingsState>()(
         // 1 美分精度
         set({ defaultBudgetUsd: Math.round(n * 100) / 100 })
       },
+      toggleForkCollapse: (sessionId) => {
+        set((s) => {
+          const list = s.collapsedForkParents
+          return list.includes(sessionId)
+            ? { collapsedForkParents: list.filter((x) => x !== sessionId) }
+            : { collapsedForkParents: [...list, sessionId] }
+        })
+      },
       setCompactSummary: (provider, model) =>
         set({ compactSummaryProvider: provider, compactSummaryModel: model }),
 
@@ -303,6 +317,7 @@ export const useSettingsStore = create<SettingsState>()(
         compactSummaryModel: s.compactSummaryModel,
         maxConcurrentSessions: s.maxConcurrentSessions,
         defaultBudgetUsd: s.defaultBudgetUsd,
+        collapsedForkParents: s.collapsedForkParents,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)
