@@ -195,6 +195,15 @@ export function InputBox({ onSend, onAbort }: Props) {
     if (slashIdx >= slashMatches.length) setSlashIdx(0)
   }, [slashMatches.length, slashIdx])
 
+  // 鍵盤切換 active item 時把它 scroll 進 popover 視野(↑↓ 走出 max-h-72
+  // 看不到 highlight 移動,user 以為沒反應)
+  const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([])
+  useEffect(() => {
+    if (!showSlash) return
+    const el = slashItemRefs.current[slashIdx]
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [slashIdx, showSlash])
+
   function pickSlash(cmd: SlashCommand) {
     setText(cmd.name + ' ')
     // 不立即送出 — 給 user 看一眼,Enter 才真的觸發
@@ -478,6 +487,7 @@ export function InputBox({ onSend, onAbort }: Props) {
                     </div>
                   )}
                   <button
+                    ref={(el) => { slashItemRefs.current[i] = el }}
                     type="button"
                     onMouseDown={(e) => {
                       // mousedown 比 click 早 — 避免 blur 把 popover 收起
@@ -533,31 +543,40 @@ export function InputBox({ onSend, onAbort }: Props) {
               composingRef.current = false
             }}
             onKeyDown={(e) => {
-              // IME 在組字中(注音/拼音)按 Enter 是確認候選詞,不是送出。
-              // e.nativeEvent.isComposing 是現代瀏覽器 spec;composingRef 雙保險。
-              if (e.nativeEvent.isComposing || composingRef.current) return
-              // Slash command popover 開時,方向鍵 / Tab / Enter / Esc 給 popover 處理
-              if (showSlash) {
+              // Slash popover 開時,navigation keys 優先處理 — 不被 IME guard 擋
+              // (IME 異常沒 fire compositionEnd 時 composingRef 可能 stuck=true,
+              //  ArrowDown/Up/Tab/Enter/Escape 一律穿透給 popover)
+              if (showSlash && slashMatches.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault()
+                  e.stopPropagation()
                   setSlashIdx((i) => (i + 1) % slashMatches.length)
                   return
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault()
+                  e.stopPropagation()
                   setSlashIdx((i) => (i - 1 + slashMatches.length) % slashMatches.length)
                   return
                 }
                 if (e.key === 'Tab') {
                   e.preventDefault()
+                  e.stopPropagation()
                   pickSlash(slashMatches[slashIdx])
                   return
                 }
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  // Popover 內 Enter:
-                  //  - Client-side slash(無參數)→ 直接執行
-                  //  - 其他(需 args,如 /loop)→ fill 進輸入框讓 user 接著打
+                if (e.key === 'Escape') {
                   e.preventDefault()
+                  e.stopPropagation()
+                  setText('')
+                  if (textareaRef.current) textareaRef.current.value = ''
+                  return
+                }
+                // Enter 仍要 IME guard — 組字中 Enter 是確認候選詞
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.nativeEvent.isComposing || composingRef.current) return
+                  e.preventDefault()
+                  e.stopPropagation()
                   const cmd = slashMatches[slashIdx]
                   if (!cmd) return
                   if (CLIENT_SLASH_NAMES.has(cmd.name)) {
@@ -567,13 +586,9 @@ export function InputBox({ onSend, onAbort }: Props) {
                   }
                   return
                 }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  setText('')
-                  if (textareaRef.current) textareaRef.current.value = ''
-                  return
-                }
               }
+              // Popover 沒開 — IME guard 用於 Enter 送出
+              if (e.nativeEvent.isComposing || composingRef.current) return
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()
