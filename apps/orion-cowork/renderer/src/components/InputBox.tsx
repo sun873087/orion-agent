@@ -14,6 +14,7 @@ import {
   Repeat,
   Send,
   Target,
+  Users,
   Sparkles,
   Square,
   X,
@@ -108,6 +109,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
     icon: Target,
     subtitle: '持續推進到達標自動停 — 例:/goal 把測試跑到全綠',
     argsHint: '<objective>',
+  },
+  {
+    name: '/agent',
+    icon: Users,
+    subtitle: '平行 spawn sub-agent — 需先在 Settings 啟用 Agent 工具',
+    argsHint: '<task>',
   },
 ]
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)

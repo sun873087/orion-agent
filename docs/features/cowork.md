@@ -186,6 +186,7 @@ Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / 
 | `/schedule` | client — 跳 Settings → 排程 |
 | `/loop` | LLM — `/loop 5m <prompt>`,LLM 走 bundled `loop` skill 解析參數呼 `LoopCreate` |
 | `/goal` | LLM — `/goal <objective>`,LLM 走 bundled `goal` skill 條件驅動 self-iterate 達標自停 |
+| `/agent` | LLM — `/agent <task>`,LLM 走 bundled `agent` skill 平行 spawn sub-agents(需 Settings → 工具 啟用 `Agent`)|
 | `/<skill-name>` | LLM — 動態載入 bundled / user skill(popover 顯所有 `cowork_visible=true` 的) |
 
 ## 已 / 未實作
