@@ -319,6 +319,9 @@ class SessionMeta:
     title: str | None
     created_at: float
     n_messages: int
+    # Fork lineage(Phase 31-S)— sidebar 樹狀視覺化用,None = 不是 fork 來的
+    forked_from_session_id: str | None = None
+    forked_from_message_index: int | None = None
 
 
 async def save_session_metadata(
@@ -364,7 +367,19 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
 
     空 session(沒任何 message)fallback 用 session.created_at。已有 message
     的用 MAX(message.created_at)。SQL LEFT JOIN + GROUP BY 一次撈完。
+    Fork lineage(forked_from_*)同時 batch query 一次撈完,renderer 端可用
+    來組樹狀 sidebar。
     """
+    # Batch 一次撈 fork lineage(只挑有 fork 的;沒 fork 的 dict 內就沒 key)
+    async with engine.connect() as conn:
+        lineage_result = await conn.exec_driver_sql(
+            "SELECT session_id, forked_from_session_id, forked_from_message_index "
+            "FROM cowork_session_ext WHERE forked_from_session_id IS NOT NULL"
+        )
+        lineage_map: dict[str, tuple[str, int | None]] = {
+            r[0]: (r[1], r[2]) for r in lineage_result.all()
+        }
+
     async with db_session(engine) as s:
         last_msg = func.max(MessageRow.created_at)
         stmt = (
@@ -382,6 +397,7 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
             title = meta.title if meta is not None else None
             count_stmt = select(MessageRow.id).where(MessageRow.session_id == r.id)
             n = len(list((await s.execute(count_stmt)).scalars()))
+            parent, msg_idx = lineage_map.get(r.id, (None, None))
             out.append(SessionMeta(
                 session_id=r.id,
                 provider=r.provider or "anthropic",
@@ -389,6 +405,8 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
                 title=title,
                 created_at=r.created_at.timestamp() if r.created_at else time.time(),
                 n_messages=n,
+                forked_from_session_id=parent,
+                forked_from_message_index=msg_idx,
             ))
         return out
 

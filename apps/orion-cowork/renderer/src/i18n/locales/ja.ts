@@ -30,6 +30,8 @@ export default {
   'sidebar.moveTo': '移動先⋯',
   'sidebar.starred': 'スター付き',
   'sidebar.recents': '最近',
+  'sidebar.forkedFromTooltip': '「{title}」の {turn} 番目のメッセージから分岐',
+  'sidebar.untitledSession': '無題の会話',
   'sidebar.star': 'スター',
   'sidebar.unstar': 'スター解除',
   'sidebar.rename': '名前変更',

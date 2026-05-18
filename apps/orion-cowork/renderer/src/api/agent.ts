@@ -1137,6 +1137,10 @@ export type SessionSummary = {
   title: string | null
   created_at: number
   n_messages: number
+  starred?: boolean
+  scheduled_by?: { schedule_id: string; schedule_name: string } | null
+  forked_from_session_id?: string | null
+  forked_from_message_index?: number | null
 }
 
 export async function renameConversation(

@@ -89,6 +89,9 @@ export type SessionSummary = {
   starred?: boolean
   /** 排程觸發產生的 session 帶這個標記;手動建的 session 為 null。 */
   scheduled_by?: { schedule_id: string; schedule_name: string } | null
+  /** Fork 系譜(Phase 31-S)— 從哪個 session 第幾輪分叉來的,null = 非 fork。 */
+  forked_from_session_id?: string | null
+  forked_from_message_index?: number | null
 }
 
 type AgentState = {

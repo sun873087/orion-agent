@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ChevronRight,
   Clock,
+  GitBranch,
   Loader2,
   Edit3,
   Folder,
@@ -192,6 +193,54 @@ export function Sidebar() {
   )
 }
 
+/** Fork tree 一個節點;render 時用深度優先 + depth 縮排,看起來像 Git tree。 */
+type SessionTreeNode = {
+  session: SessionSummary
+  depth: number
+}
+
+/** 從平的 session list 建 fork tree。
+ *
+ * - 沒 `forked_from_session_id` 的 session → root(depth 0)
+ * - 有 `forked_from_session_id` 且 parent 還在 → child(depth = parent.depth + 1)
+ * - 有 `forked_from_session_id` 但 parent 已刪(orphan)→ 當 root 處理
+ *
+ * 排序:root 順序保留 list_sessions 原序(最近活動 desc);children 依
+ * 各自的 created_at desc(也就是 list 內出現順序)排,讓「同 parent 下的
+ * fork」按建立先後一致呈現。深度優先 flatten 出最終要 render 的 row 序列。
+ */
+function buildSessionTree(sessions: SessionSummary[]): SessionTreeNode[] {
+  const byId = new Map<string, SessionSummary>(
+    sessions.map((s) => [s.session_id, s]),
+  )
+  // parent → children(保留 list 順序)
+  const childrenMap = new Map<string, SessionSummary[]>()
+  const roots: SessionSummary[] = []
+  for (const s of sessions) {
+    const pid = s.forked_from_session_id
+    if (pid && byId.has(pid)) {
+      const list = childrenMap.get(pid) ?? []
+      list.push(s)
+      childrenMap.set(pid, list)
+    } else {
+      // 沒 parent 或 orphan(parent 被刪了)當 root
+      roots.push(s)
+    }
+  }
+  // DFS flatten
+  const out: SessionTreeNode[] = []
+  const visited = new Set<string>()
+  function walk(s: SessionSummary, depth: number): void {
+    if (visited.has(s.session_id)) return  // 防止 cyclic ref
+    visited.add(s.session_id)
+    out.push({ session: s, depth })
+    const kids = childrenMap.get(s.session_id) ?? []
+    for (const k of kids) walk(k, depth + 1)
+  }
+  for (const r of roots) walk(r, 0)
+  return out
+}
+
 function SessionListGrouped({
   sessions,
   currentId,
@@ -206,6 +255,15 @@ function SessionListGrouped({
   const { t } = useTranslation()
   const starred = sessions.filter((s) => s.starred)
   const recents = sessions.filter((s) => !s.starred)
+  // Fork tree 只在 recents 段建,starred 維持平的(starred 一般 user 自己挑,
+  // 樹狀關係意義不大;且 starred 通常少,不必為它做 tree)
+  const tree = useMemo(() => buildSessionTree(recents), [recents])
+  // 給每個 session 算 parent title,fork badge tooltip 用
+  const titleById = useMemo(() => {
+    const m: Record<string, string | null> = {}
+    for (const s of sessions) m[s.session_id] = s.title
+    return m
+  }, [sessions])
 
   return (
     <>
@@ -223,6 +281,8 @@ function SessionListGrouped({
                   starred={true}
                   scheduledBy={s.scheduled_by ?? null}
                   active={s.session_id === currentId}
+                  depth={0}
+                  forkedFrom={null}
                   onClick={() => onSwitch(s.session_id)}
                   onDelete={() => {
                     if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
@@ -233,7 +293,7 @@ function SessionListGrouped({
           </ul>
         </div>
       )}
-      {recents.length > 0 && (
+      {tree.length > 0 && (
         <div>
           {starred.length > 0 && (
             <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
@@ -241,21 +301,36 @@ function SessionListGrouped({
             </div>
           )}
           <ul className="flex flex-col gap-0.5">
-            {recents.map((s) => (
-              <li key={s.session_id}>
-                <SessionRow
-                  sessionId={s.session_id}
-                  title={s.title}
-                  starred={false}
-                  scheduledBy={s.scheduled_by ?? null}
-                  active={s.session_id === currentId}
-                  onClick={() => onSwitch(s.session_id)}
-                  onDelete={() => {
-                    if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
-                  }}
-                />
-              </li>
-            ))}
+            {tree.map(({ session: s, depth }) => {
+              const fromSid = s.forked_from_session_id ?? null
+              const fromIdx = s.forked_from_message_index ?? null
+              const fromTitle = fromSid ? titleById[fromSid] ?? null : null
+              return (
+                <li key={s.session_id}>
+                  <SessionRow
+                    sessionId={s.session_id}
+                    title={s.title}
+                    starred={false}
+                    scheduledBy={s.scheduled_by ?? null}
+                    active={s.session_id === currentId}
+                    depth={depth}
+                    forkedFrom={
+                      fromSid
+                        ? {
+                            sessionId: fromSid,
+                            messageIndex: fromIdx,
+                            sourceTitle: fromTitle,
+                          }
+                        : null
+                    }
+                    onClick={() => onSwitch(s.session_id)}
+                    onDelete={() => {
+                      if (window.confirm(t('sidebar.deleteConfirm'))) onDelete(s.session_id)
+                    }}
+                  />
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}
@@ -269,6 +344,8 @@ function SessionRow({
   starred,
   scheduledBy,
   active,
+  depth,
+  forkedFrom,
   onClick,
   onDelete,
 }: {
@@ -277,6 +354,14 @@ function SessionRow({
   starred: boolean
   scheduledBy: { schedule_id: string; schedule_name: string } | null
   active: boolean
+  /** Fork tree 深度;0 = root,>0 = 縮排顯為 child(Phase 31-S)。 */
+  depth: number
+  /** 非 null 時表示這 session 是 fork 來的 — 顯 GitBranch icon + tooltip。 */
+  forkedFrom: {
+    sessionId: string
+    messageIndex: number | null
+    sourceTitle: string | null
+  } | null
   onClick: () => void
   onDelete: () => void
 }) {
@@ -341,6 +426,18 @@ function SessionRow({
     await refresh()
   }
 
+  // Fork tree 縮排:每層多 12px;同時顯左側淡 border 標示「同 parent」血緣帶
+  const indentStyle = depth > 0
+    ? { paddingLeft: `${0.5 + depth * 0.75}rem` }
+    : undefined
+  // Fork tooltip:顯「分叉自 <source title> 第 N 輪」
+  const forkTooltip = forkedFrom
+    ? t('sidebar.forkedFromTooltip', {
+        title: forkedFrom.sourceTitle ?? t('sidebar.untitledSession'),
+        turn: forkedFrom.messageIndex != null ? forkedFrom.messageIndex + 1 : '?',
+      })
+    : undefined
+
   return (
     <div
       ref={wrapRef}
@@ -348,8 +445,10 @@ function SessionRow({
         editing ? '' : 'cursor-pointer'
       } ${
         active ? 'bg-bg-hover text-fg-base' : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
-      }`}
+      } ${depth > 0 ? 'border-l-2 border-bg-hover' : ''}`}
+      style={indentStyle}
       onClick={editing ? undefined : onClick}
+      title={forkTooltip}
     >
       {isRunning ? (
         <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
@@ -357,6 +456,8 @@ function SessionRow({
         <Star size={14} className="shrink-0 fill-current text-warning" />
       ) : scheduledBy ? (
         <Clock size={14} className="shrink-0 text-accent" />
+      ) : forkedFrom ? (
+        <GitBranch size={14} className="shrink-0 text-accent/70" />
       ) : (
         <MessageSquare size={14} className="shrink-0" />
       )}

@@ -34,6 +34,8 @@ export default {
   'sidebar.noProjects': '尚未建立任何專案',
   'sidebar.starred': '已標星',
   'sidebar.recents': '最近',
+  'sidebar.forkedFromTooltip': '分叉自「{title}」第 {turn} 則訊息',
+  'sidebar.untitledSession': '未命名對話',
   'sidebar.star': '加入星標',
   'sidebar.unstar': '取消星標',
   'sidebar.rename': '重新命名',

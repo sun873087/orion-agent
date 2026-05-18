@@ -2652,6 +2652,8 @@ class Handlers:
                             if r.session_id in scheduled_map
                             else None
                         ),
+                        "forked_from_session_id": r.forked_from_session_id,
+                        "forked_from_message_index": r.forked_from_message_index,
                     }
                     for r in rows
                 ],

@@ -30,6 +30,8 @@ export default {
   'sidebar.moveTo': 'Move to…',
   'sidebar.starred': 'Starred',
   'sidebar.recents': 'Recents',
+  'sidebar.forkedFromTooltip': 'Forked from "{title}" at message {turn}',
+  'sidebar.untitledSession': 'Untitled conversation',
   'sidebar.star': 'Star',
   'sidebar.unstar': 'Unstar',
   'sidebar.rename': 'Rename',

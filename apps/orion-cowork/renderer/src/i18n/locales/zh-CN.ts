@@ -30,6 +30,8 @@ export default {
   'sidebar.moveTo': '移到⋯',
   'sidebar.starred': '已加星',
   'sidebar.recents': '最近',
+  'sidebar.forkedFromTooltip': '分叉自「{title}」第 {turn} 则消息',
+  'sidebar.untitledSession': '未命名对话',
   'sidebar.star': '加星标',
   'sidebar.unstar': '取消星标',
   'sidebar.rename': '重命名',
