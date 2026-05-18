@@ -272,21 +272,46 @@ class Handlers:
                     )
             return self._engine
 
+    # 版本化的 default-disabled seed — 每條 version 是一次性 additive operation。
+    # 將來想再加 default-off 工具,擴一條 vN 就好(已 apply 過的 version 不會 re-run)。
+    _DEFAULT_DISABLED_SEEDS: dict[str, frozenset[str]] = {  # noqa: RUF012
+        "v1": frozenset({"Agent"}),
+        "v2": frozenset({
+            # System group(目前只剩 Sleep — autonomous loop 偶爾用,Cowork chat
+            # 場景幾乎用不到)
+            "Sleep",
+            # Browser group(playwright + system Chrome,LLM 自呼會跳新 Chrome
+            # window,user 應該顯式 enable)
+            "BrowserNavigate", "BrowserBack", "BrowserForward",
+            "BrowserClick", "BrowserType", "BrowserScroll",
+            "BrowserScreenshot", "BrowserReadPage",
+            "BrowserWaitFor", "BrowserClose",
+        }),
+    }
+
     async def _seed_default_disabled_tools(self) -> None:
         """First-run-after-upgrade:把 host 認為「預設該關」的 tool 名一次性
-        seed 進 cowork_prefs.disabled_tools。Marker pref 防止重複 seed —
-        user 之後在 Settings UI 開關都被尊重。"""
+        seed 進 cowork_prefs.disabled_tools。Marker pref 記已 apply 的 version
+        list(CSV),user 之後在 Settings UI 開關都被尊重 — 同一 version 不會
+        重複 seed,但新加 vN 還是會補 seed 給已升級的舊 user。"""
         if self._engine is None:
             return
-        marker = await storage.get_pref(self._engine, "host_default_disabled_seeded")
-        if marker == "v1":
+        marker = await storage.get_pref(self._engine, "host_default_disabled_seeded") or ""
+        applied = {v.strip() for v in marker.split(",") if v.strip()}
+        new_to_add: set[str] = set()
+        for version, tool_names in self._DEFAULT_DISABLED_SEEDS.items():
+            if version not in applied:
+                new_to_add |= tool_names
+                applied.add(version)
+        if not new_to_add:
             return
         existing = await storage.get_pref(self._engine, "disabled_tools") or ""
         items = {t.strip() for t in existing.split(",") if t.strip()}
-        # 目前只 seed Agent;將來想加更多 default-off 工具直接擴這 set
-        items.add("Agent")
+        items |= new_to_add
         await storage.set_pref(self._engine, "disabled_tools", ",".join(sorted(items)))
-        await storage.set_pref(self._engine, "host_default_disabled_seeded", "v1")
+        await storage.set_pref(
+            self._engine, "host_default_disabled_seeded", ",".join(sorted(applied)),
+        )
 
     async def _plan_mode_startup_recovery(self) -> None:
         """啟動時若有 session 卡在 AWAITING_APPROVAL,re-emit notification 讓

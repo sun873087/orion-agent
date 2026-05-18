@@ -105,13 +105,23 @@ build_default_tool_set(
 
 **Cron**:Phase 31-H 後從 SDK 搬到 CLI host(SDK 不再背 `apscheduler` dep)。CLI `__main__.py` 透過 `extra_tools=build_cron_tools()` 注入,Cowork / chat-api 不註冊。
 
-### Agent(Cowork-only,**預設 disabled**)
+### Cowork 預設 disabled 的工具
+
+Cowork chat UI 場景下幾乎用不到、或讓 LLM 自呼會放大成本的工具,sidecar 首次啟動時透過 `_seed_default_disabled_tools()` 一次性 seed 進 `cowork_prefs.disabled_tools`。Marker `host_default_disabled_seeded`(CSV of applied versions)防重複 seed,user 在 Settings UI 開關都被尊重。
+
+| Version | 工具 | 原因 |
+|---|---|---|
+| **v1** | `Agent` | spawn sub-agent 容易放大 token cost(每個 sub-agent 獨立 conv loop)|
+| **v2** | `Sleep`、`Browser*`(10 個) | Sleep:autonomous CLI 用,chat 場景無意義。Browser:會跳新 Chrome window,user 該顯式啟用 |
+
+User 要開:Settings → 工具 → 找對應 group 勾選 → 立刻下次 send 生效。
+
+### Agent(Cowork host-injected,需 user 啟用)
 
 `Agent` 工具讓 LLM **spawn 子 agent** 處理 self-contained 子任務(平行探索、隔離 context、用大量 tool call 不想污染主對話)。Sub-agent 用 parent 同一個 LLMProvider 但獨立 `AgentContext`(sub_agent_depth+1),跑完只回 final assistant text 給 parent。
 
 - 位置:`packages/orion-sdk/src/orion_sdk/tools/agent/agent_tool.py`
-- Cowork 透過 `extra_tools=[AgentTool(provider=llm, child_tools=tools)]` 在 `_build_conversation` 注入
-- **預設 disabled**:Cowork 首次跑時 seed `"Agent"` 進 `cowork_prefs.disabled_tools`(marker `host_default_disabled_seeded`),避免 LLM 任意 spawn 推高 token cost。User 在 Settings → 工具 → Agent group 自己開
+- Cowork 透過 `extra_tools=[AgentTool(provider=llm, child_tools=tools)]` 在 `_build_conversation` 注入(disabled_set 內含 "Agent" 時不註冊)
 - Sub-agent 最大 turn 數 10(parent 30),`sub_agent_depth >= 1` 守住不能再 nest
 - Phase 15 加的 `orion_sdk/multi_agent/`(Coordinator / Swarm / MessageBus)是 **programmatic Python API**,跟這個 LLM-facing 工具是兩條獨立路線
 
