@@ -688,8 +688,16 @@ export function useFork() {
         const last = loaded[loaded.length - 1]
         if (last && last.role === 'user' && last.text) {
           const sendText = (newPromptOverride && newPromptOverride.trim()) || last.text
-          const assistantId = useAgentStore.getState().beginAssistantMessage(newSid)
-          useAgentStore.getState().setBusy(newSid, true)
+          // Optimistic UI(跟 useEditAndResend 同 path):server 那邊 truncate
+          // 會把 user 訊息 row 砍掉重 insert 新文字,renderer 不同步的話畫面
+          // 還顯舊內容。先砍 → push 新 user msg → assistant skeleton。
+          const store2 = useAgentStore.getState()
+          const msgsNow = store2.messagesBySession[newSid] ?? []
+          const cut = msgsNow.findIndex((m) => m.messageIndex === messageIndex)
+          if (cut >= 0) store2.truncateMessages(newSid, cut)
+          store2.appendUserMessage(newSid, sendText, [])
+          const assistantId = store2.beginAssistantMessage(newSid)
+          store2.setBusy(newSid, true)
           try {
             await rpcTruncate(
               newSid,
