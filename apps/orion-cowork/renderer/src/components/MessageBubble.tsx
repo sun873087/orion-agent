@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, ChevronDown, ChevronUp, Copy, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
-import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
+import { useDeleteFrom, useEditAndResend, useFork, useRegenerate } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
@@ -71,15 +71,23 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
+  const { t } = useTranslation()
   const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
   const editResend = useEditAndResend()
   const deleteFrom = useDeleteFrom()
+  const fork = useFork()
   // 能編輯/刪除的條件:有 DB index、非 compacted、非 streaming 中、整體沒在跑
   const canMutate =
     typeof message.messageIndex === 'number' &&
     !message.compacted &&
     !message.streaming &&
     !busy
+  // Fork 條件比 mutate 寬:不影響原 session,所以 busy 也允許;只要不是
+  // compacted(壓縮過的看不到原訊息,fork 過去意義不大) + 有 DB index
+  const canFork =
+    typeof message.messageIndex === 'number' &&
+    !message.compacted &&
+    !message.streaming
 
   return (
     <div
@@ -198,6 +206,25 @@ export function MessageBubble({
                   }
                 }}
                 danger
+              />
+            )}
+            {/* Fork:從此訊息分叉新 session,原對話完全不動。輕量 prompt 問 title。 */}
+            {canFork && (
+              <ActionButton
+                icon={<GitBranch size={12} />}
+                label={t('message.fork')}
+                onClick={async () => {
+                  const customTitle = window.prompt(
+                    t('message.forkPromptTitle'),
+                    '',
+                  )
+                  // null = 使用者按 Cancel;空字串 = 沒輸 → 走 source title 自動產生
+                  if (customTitle === null) return
+                  await fork(
+                    message.messageIndex!,
+                    customTitle.trim() || undefined,
+                  )
+                }}
               />
             )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}

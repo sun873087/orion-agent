@@ -370,6 +370,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': 'Regenerate',
+  'message.fork': 'Fork',
+  'message.forkPromptTitle': 'Fork a new conversation from this message. New conversation title (blank = auto):',
   'message.copy': 'Copy',
   'message.copied': 'Copied',
   'message.expand': 'Show more',

@@ -1375,6 +1375,35 @@ export async function regenerateLast(
   )
 }
 
+/**
+ * 從 source session 第 N 筆訊息(inclusive)分叉出新 session — 原 session 完全不動。
+ * 新 session messages [0..upToMessageIndex] 來自 source,workspace / project 繼承,
+ * budget / plan 不繼承。回傳新 session_id。Phase 31-R。
+ */
+export async function forkConversation(
+  sourceSessionId: string,
+  upToMessageIndex: number,
+  title?: string,
+): Promise<string> {
+  let newSid: string | null = null
+  await window.agent.call(
+    'conversation.fork',
+    {
+      source_session_id: sourceSessionId,
+      up_to_message_index: upToMessageIndex,
+      ...(title ? { title } : {}),
+    },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event === 'conversation_forked' && f.data) {
+        newSid = String(f.data.session_id ?? '')
+      }
+    },
+  )
+  if (!newSid) throw new Error('conversation.fork returned no session_id')
+  return newSid
+}
+
 // ─── Schedule(對話排程)─────────────────────────────────────────────
 export type ScheduleScope = 'user' | 'project'
 export type ScheduleTriggerType = 'skill' | 'prompt'

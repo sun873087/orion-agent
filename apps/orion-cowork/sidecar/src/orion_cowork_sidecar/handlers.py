@@ -482,6 +482,7 @@ class Handlers:
             "workspace.list_files": self.workspace_list_files,
             "conversation.regenerate": self.conversation_regenerate,
             "conversation.truncate": self.conversation_truncate,
+            "conversation.fork": self.conversation_fork,
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
@@ -3389,6 +3390,80 @@ class Handlers:
                     await storage.append_messages(engine, sid, new_msgs)
                 except Exception:  # noqa: BLE001
                     pass
+
+    async def conversation_fork(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """從某 turn(含)分叉出新 session,原 session 完全不動。
+
+        Params:
+          source_session_id: 必填
+          up_to_message_index: 必填,raw chronological row index(inclusive)
+          title (optional): 新 session 的 title;沒給用「<source title> (fork)」
+
+        Source session messages [0..up_to_message_index] copy 進新 session,
+        workspace_dir / project_id 繼承,budget / plan state 不繼承。返回
+        新 session_id。
+        """
+        src_sid = params.get("source_session_id")
+        up_to = params.get("up_to_message_index")
+        title = params.get("title")
+        if not isinstance(src_sid, str) or not src_sid or not isinstance(up_to, int):
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "BAD_PARAMS",
+                    "message": "source_session_id + up_to_message_index required",
+                },
+                "final": True,
+            }
+            return
+        try:
+            UUID(src_sid)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": f"invalid UUID: {src_sid!r}"},
+                "final": True,
+            }
+            return
+        if title is not None and not isinstance(title, str):
+            title = None
+
+        engine = await self.ensure_engine()
+        try:
+            new_sid = await storage.fork_session(
+                engine,
+                source_session_id=src_sid,
+                up_to_message_index=up_to,
+                title=title,
+            )
+        except ValueError as e:
+            yield {
+                "event": "error",
+                "data": {"code": "FORK_FAILED", "message": str(e)},
+                "final": True,
+            }
+            return
+        except Exception as e:  # noqa: BLE001
+            yield {
+                "event": "error",
+                "data": {"code": "FORK_FAILED", "message": f"{type(e).__name__}: {e}"},
+                "final": True,
+            }
+            return
+
+        # In-memory cache 不需要先 build — 下次 conversation.send 走 lazy resume
+        # 路徑會自動從 DB load 進來,跟一般 session 一樣。
+        yield {
+            "event": "conversation_forked",
+            "data": {
+                "session_id": new_sid,
+                "source_session_id": src_sid,
+                "forked_from_message_index": up_to,
+            },
+            "final": True,
+        }
 
     async def conversation_regenerate(
         self, params: dict[str, Any]

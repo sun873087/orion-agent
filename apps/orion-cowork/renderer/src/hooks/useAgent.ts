@@ -54,6 +54,25 @@ export function useScheduleNotifications() {
     const off = window.schedulerApi.onFired((data) => {
       // 排程剛建立的 session 還在跑 LLM,sidebar 應立刻顯示
       refreshSessions()
+      // Loop fire 時 sidecar 把 messages 寫進 DB,但 messagesBySession[sid]
+      // 在 renderer 已有舊資料 → useSwitchConversation 也跳過 reload(避免
+      // 覆蓋 in-flight 進度)。Loop 結束後 fire 通知是 trigger reload 的最
+      // 好時機:若 session 已 hydrate 過(user 看過),重 load 新訊息;沒
+      // hydrate 過則跳過,user 切過去時自然會 load。
+      const sid = data.session_id
+      if (sid) {
+        const existing = useAgentStore.getState().messagesBySession[sid]
+        if (existing !== undefined) {
+          void (async () => {
+            try {
+              const loaded = await loadMessages(sid)
+              _hydrateMessages(sid, loaded)
+            } catch {
+              // sidecar 暫時不可達或 race — 不打擾 user,下次切 session 會補
+            }
+          })()
+        }
+      }
       // 對應 OS notification(若 user 授權)
       try {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -627,6 +646,30 @@ export function useDeleteFrom() {
     // Reload 對齊 DB 真實狀態 + 補上其他訊息的 messageIndex
     await reloadCurrentMessages(sid)
     refreshSessions()
+  }, [])
+}
+
+/** 從指定 messageIndex(inclusive)分叉出新 session — 原 session 完全不動。
+ *  Phase 31-R。新 session 自動切過去顯示;sidebar refresh 看得到。 */
+export function useFork() {
+  return useCallback(async (messageIndex: number, title?: string) => {
+    const store = useAgentStore.getState()
+    const sid = store.sessionId
+    if (!sid) return null
+    try {
+      const { forkConversation } = await import('../api/agent')
+      const newSid = await forkConversation(sid, messageIndex, title)
+      // 切到新 session + load messages 進 store(sidebar 點選同一條路徑)
+      useAgentStore.getState().switchToSession(newSid)
+      const loaded = await loadMessages(newSid)
+      _hydrateMessages(newSid, loaded)
+      refreshSessions()
+      return newSid
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      useAgentStore.getState().setError(sid, `Fork 失敗:${msg}`)
+      return null
+    }
   }, [])
 }
 

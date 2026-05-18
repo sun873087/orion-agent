@@ -69,7 +69,7 @@ apps/orion-cowork/
 
 | 類別 | Methods |
 |---|---|
-| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode,get_budget,set_budget,set_plan_mode,plan_approve,plan_reject,plan_status}` |
+| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,fork,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode,get_budget,set_budget,set_plan_mode,plan_approve,plan_reject,plan_status}` |
 | **Project** | `project.{list,get,create,update,delete}` |
 | **Memory** | `memory.{list,get,write,delete}` |
 | **Skill** | `skill.{list,get,write,import_folder,delete}` |
@@ -135,6 +135,7 @@ Phase 31-A~G 累積加上的功能:
 - **Compact 對話** — Auto-compact(threshold 可設)+ 手動 `/compact`;tombstone-based soft delete 保留 UI 歷史
 - **Edit / Delete** — 對任何訊息點 ⋯ 編輯送回原 session,或刪除「該則之後」
 - **Regenerate** — 重新生成最後一輪 assistant 回應
+- **Fork**(Phase 31-R) — 任意訊息 hover toolbar 的 🌿「分叉」按鈕:從那則訊息(含)複製到新 session,原對話完全不動。新 session 繼承 workspace / project,budget / plan 不繼承;標 `forked_from_*` 系譜。常用情境:AI 給多方案各試一條、做有風險改動先 fork 保險、回到分歧點換問法
 
 ### 排程 / Loop(Phase 31-G)
 共用同一張 `cowork_schedules` 表,差別在 `target_session_id`:
@@ -211,6 +212,7 @@ Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / 
 - ✅ 完整 Electron + React UI(Sidebar / RightSidebar / Settings)
 - ✅ Plan Mode wired(Phase 31-J)— `/plan` slash + 計畫審核 modal + read-only enforcement
 - ✅ Per-session cost dashboard + budget cap(Phase 31-Q)— 超 cap 自停 + 通知
+- ✅ 歷史對話 fork(Phase 31-R)— 任意 turn 分叉新 session,原對話不動
 - ✅ E2e 測試(Playwright Electron)
 
 **未實作 / Roadmap**:

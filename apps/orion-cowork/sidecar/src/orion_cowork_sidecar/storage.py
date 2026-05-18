@@ -190,6 +190,9 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             # Cost budget(Phase 31-Q)— 累積成本超 cap 自動 abort:
             "budget_usd_cap REAL",              # NULL = 不限,>0 = 上限(USD);0 視同 NULL
             "budget_exceeded INTEGER NOT NULL DEFAULT 0",  # 已觸發過 → 阻擋下一次 send
+            # Fork lineage(Phase 31-R)— 顯「分叉自 X」badge 用:
+            "forked_from_session_id TEXT",      # source session uuid
+            "forked_from_message_index INTEGER",  # 分叉點 chronological row index(inclusive)
         ):
             try:
                 await conn.exec_driver_sql(
@@ -782,6 +785,132 @@ async def list_referenced_plan_files(engine: AsyncEngine) -> set[str]:
         )
         rows = result.fetchall()
     return {r[0] for r in rows if r[0]}
+
+
+# ─── Fork(Phase 31-R)──────────────────────────────────────────────
+
+
+async def fork_session(
+    engine: AsyncEngine,
+    *,
+    source_session_id: str,
+    up_to_message_index: int,
+    title: str | None = None,
+) -> str:
+    """從 source session 第 N 筆訊息(inclusive)複製到新 session。
+
+    - 新 session 拿新 UUID,provider/model 從 source 抄
+    - Message rows 完整 copy(role + content_json + metadata_json + raw_text + created_at)
+      — blob_id ref 共用,blob store 是 content-hash 不會撞,delete 也用 ref counting GC
+    - cowork_session_ext:workspace_dir / project_id 一起繼承;budget / plan 等 per-session
+      state **不繼承**(fork 是新對話,自己跑自己的)
+    - 標 forked_from_* 記分叉系譜,UI 可顯 badge
+
+    Returns 新 session_id(uuid str)。Source session 完全不動。
+    """
+    from uuid import uuid4
+
+    blob = get_blob_store()
+    new_sid = str(uuid4())
+
+    async with db_session(engine) as s:
+        source = await s.get(SessionRow, source_session_id)
+        if source is None:
+            raise ValueError(f"source session {source_session_id!r} not found")
+
+        # 撈 source messages 排序(同 load_messages 順序)
+        stmt = (
+            select(
+                MessageRow.role,
+                MessageRow.content_json,
+                MessageRow.metadata_json,
+                MessageRow.raw_text,
+                MessageRow.created_at,
+            )
+            .where(MessageRow.session_id == source_session_id)
+            .order_by(MessageRow.created_at, MessageRow.id)
+        )
+        rows = list(await s.execute(stmt))
+        if up_to_message_index < 0 or up_to_message_index >= len(rows):
+            raise ValueError(
+                f"up_to_message_index {up_to_message_index} out of range "
+                f"(source has {len(rows)} messages)"
+            )
+
+        # 建新 session,provider/model 從 source 抄
+        s.add(SessionRow(
+            id=new_sid,
+            user_id=LOCAL_USER_ID,
+            provider=source.provider,
+            model=source.model,
+        ))
+        # Title:user 給 > source title + "(fork)" > 留空讓 LLM 自動取
+        source_meta = await s.get(MetaRow, source_session_id)
+        if title and title.strip():
+            new_title = title.strip()[:200]
+        elif source_meta is not None and source_meta.title:
+            new_title = f"{source_meta.title} (fork)"[:200]
+        else:
+            new_title = None
+        s.add(MetaRow(session_id=new_sid, title=new_title))
+
+        # Copy messages [0..up_to_message_index] inclusive
+        for role, content_json, meta, raw_text, created_at in rows[: up_to_message_index + 1]:
+            s.add(MessageRow(
+                session_id=new_sid,
+                role=role,
+                content_json=content_json,
+                metadata_json=meta,
+                raw_text=raw_text,
+                created_at=created_at,
+            ))
+
+        await s.commit()
+
+    # 繼承 workspace / project,標 lineage(同一個 transaction 順手解掉)
+    src_ext = await get_session_ext(engine, source_session_id)
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (
+                session_id, workspace_dir, project_id,
+                forked_from_session_id, forked_from_message_index
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                new_sid,
+                src_ext.get("workspace_dir"),
+                src_ext.get("project_id"),
+                source_session_id,
+                up_to_message_index,
+            ),
+        )
+        await conn.commit()
+
+    # blob ref 繼承自然有效 — content-hash 不會 collision,delete_session 走
+    # cleanup_orphan_blobs 後備掃描,不會在 source / fork 仍 ref 的時候誤刪
+    _ = blob  # 顯式留 ref 提醒讀者
+    return new_sid
+
+
+async def get_session_fork_lineage(
+    engine: AsyncEngine, session_id: str
+) -> dict[str, Any] | None:
+    """讀 session 的 fork 系譜(沒有則 None)。Sidebar 顯 badge 用。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT forked_from_session_id, forked_from_message_index "
+            "FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None or row[0] is None:
+        return None
+    return {
+        "forked_from_session_id": row[0],
+        "forked_from_message_index": row[1],
+    }
 
 
 async def append_messages(

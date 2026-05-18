@@ -370,6 +370,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '再生成',
+  'message.fork': '分岐',
+  'message.forkPromptTitle': 'このメッセージから新しい会話に分岐します。新会話のタイトル(空欄で自動):',
   'message.copy': 'コピー',
   'message.copied': 'コピーしました',
   'message.expand': '展開',

@@ -371,6 +371,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '重新生成',
+  'message.fork': '分叉',
+  'message.forkPromptTitle': '从这则消息分叉出新对话。输入新对话标题(留空自动取):',
   'message.copy': '复制',
   'message.copied': '已复制',
   'message.expand': '展开',

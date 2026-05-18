@@ -388,6 +388,8 @@ export default {
 
   // Message
   'message.regenerate': '重新生成',
+  'message.fork': '分叉',
+  'message.forkPromptTitle': '從這則訊息分叉出新對話。輸入新對話標題(留空自動取):',
   'message.copy': '複製',
   'message.copied': '已複製',
   'message.expand': '展開',

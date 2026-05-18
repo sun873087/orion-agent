@@ -97,6 +97,58 @@ async def test_delete_session_cascades_loop_schedules(data_dir: str) -> None:
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_fork_session_copies_messages_and_lineage(data_dir: str) -> None:
+    """fork_session 複製 [0..N] messages 到新 session,標 forked_from_* 系譜,
+    workspace/project 繼承,原 session 完全不動。"""
+    os.environ["ORION_COWORK_DATA_DIR"] = data_dir
+    from orion_model.types import NormalizedMessage
+    from orion_cowork_sidecar import storage
+
+    engine = await storage.init_storage()
+    src_sid = "33333333-3333-3333-3333-333333333333"
+    await storage.save_session_metadata(
+        engine, src_sid, provider="anthropic", model="claude-haiku-4-5",
+    )
+    await storage.set_session_workspace(engine, src_sid, "/tmp/ws-fork")
+    # 塞 4 筆訊息
+    await storage.append_messages(engine, src_sid, [
+        NormalizedMessage(role="user", content="Q1"),
+        NormalizedMessage(role="assistant", content="A1"),
+        NormalizedMessage(role="user", content="Q2"),
+        NormalizedMessage(role="assistant", content="A2"),
+    ])
+    # Fork up_to_index=1(inclusive)→ 新 session 應該只有 Q1 + A1
+    new_sid = await storage.fork_session(
+        engine,
+        source_session_id=src_sid,
+        up_to_message_index=1,
+        title="探索方案 A",
+    )
+    # 新 session 訊息正確
+    new_msgs = await storage.load_messages(engine, new_sid)
+    assert len(new_msgs) == 2
+    assert new_msgs[0].content == "Q1"
+    assert new_msgs[1].content == "A1"
+    # 原 session 不動
+    src_msgs = await storage.load_messages(engine, src_sid)
+    assert len(src_msgs) == 4
+    # 系譜 + workspace 繼承
+    lineage = await storage.get_session_fork_lineage(engine, new_sid)
+    assert lineage == {
+        "forked_from_session_id": src_sid,
+        "forked_from_message_index": 1,
+    }
+    ext = await storage.get_session_ext(engine, new_sid)
+    assert ext["workspace_dir"] == "/tmp/ws-fork"
+    # Bad index → ValueError
+    with pytest.raises(ValueError):
+        await storage.fork_session(
+            engine, source_session_id=src_sid, up_to_message_index=99,
+        )
+    await engine.dispose()
+
+
 def test_conversation_delete_persists(data_dir: str) -> None:
     # Create 2 sessions in process A
     frames_a = _run_sidecar([
