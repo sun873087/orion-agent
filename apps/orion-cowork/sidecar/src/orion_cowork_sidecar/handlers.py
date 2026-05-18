@@ -30,6 +30,7 @@ from orion_sdk.plan_mode.state import (
     reject_and_exit,
 )
 from orion_sdk.services.feature_flags import load_feature_flags
+from orion_sdk.tools.agent.agent_tool import AgentTool
 from orion_sdk.tools.builtin_set import build_default_tool_set
 from orion_sdk.tools.special.enter_plan_mode import EnterPlanModeTool
 from orion_sdk.tools.special.exit_plan_mode import ExitPlanModeTool
@@ -259,7 +260,33 @@ class Handlers:
                 asyncio.create_task(self._plan_mode_startup_recovery())
                 # Plan file GC — 孤兒 + 30 天舊
                 asyncio.create_task(self._cleanup_orphan_plan_files())
+                # AgentTool default-disabled seeding(Phase 31-K)
+                # 首次跑這版時把 "Agent" 加進 disabled_tools — LLM spawn 子 agent
+                # 會放大 token cost,user 自己在 Settings → 工具 開才放手。
+                try:
+                    await self._seed_default_disabled_tools()
+                except Exception as e:  # noqa: BLE001
+                    print(
+                        f"[storage] disabled_tools seeding failed: {e}",
+                        file=sys.stderr, flush=True,
+                    )
             return self._engine
+
+    async def _seed_default_disabled_tools(self) -> None:
+        """First-run-after-upgrade:把 host 認為「預設該關」的 tool 名一次性
+        seed 進 cowork_prefs.disabled_tools。Marker pref 防止重複 seed —
+        user 之後在 Settings UI 開關都被尊重。"""
+        if self._engine is None:
+            return
+        marker = await storage.get_pref(self._engine, "host_default_disabled_seeded")
+        if marker == "v1":
+            return
+        existing = await storage.get_pref(self._engine, "disabled_tools") or ""
+        items = {t.strip() for t in existing.split(",") if t.strip()}
+        # 目前只 seed Agent;將來想加更多 default-off 工具直接擴這 set
+        items.add("Agent")
+        await storage.set_pref(self._engine, "disabled_tools", ",".join(sorted(items)))
+        await storage.set_pref(self._engine, "host_default_disabled_seeded", "v1")
 
     async def _plan_mode_startup_recovery(self) -> None:
         """啟動時若有 session 卡在 AWAITING_APPROVAL,re-emit notification 讓
@@ -1860,12 +1887,17 @@ class Handlers:
         Browser group:Cowork host 自帶(從 `browser_tools` 注 `extra_groups`),
         即使 system 沒裝 Chrome / playwright 仍會列名 — 實際 build_default_tool_set
         註冊時 `is_browser_available()` 不通過就 skip,前端 UI 不需區分。
+        Agent group:同樣 Cowork-only(預設 disabled,user 自己開)。
         """
         from orion_cowork_sidecar.browser_tools import browser_tool_group
         from orion_sdk.tools.builtin_set import list_builtin_tool_groups
 
+        agent_group: dict[str, Any] = {
+            "group": "Agent",
+            "tools": [{"name": AgentTool.name, "description": AgentTool.description}],
+        }
         try:
-            groups = list_builtin_tool_groups(extra_groups=[browser_tool_group()])
+            groups = list_builtin_tool_groups(extra_groups=[browser_tool_group(), agent_group])
         except Exception as e:  # noqa: BLE001
             yield {
                 "event": "error",
@@ -2019,6 +2051,13 @@ class Handlers:
             )
             + mcp.tools
         )
+        # AgentTool(Phase 31-K)— spawn 子 agent 跑 self-contained 任務。
+        # child_tools 是當前已 build 的全套 tools(AgentTool 自身會過濾掉自己,
+        # 防止 sub-agent 再 spawn sub-agent;sub_agent_depth >= 1 也有守)。
+        # 預設 disabled(在 cowork_prefs.disabled_tools 內由 init_storage 一次性
+        # seed),user 在 Settings → 工具 自己開,避免 LLM 任意 spawn 推高 cost。
+        if "Agent" not in disabled_set:
+            tools.append(AgentTool(provider=llm, child_tools=list(tools), max_child_turns=10))
 
         # Resolve workspace_dir + custom_instructions:
         # session > project > app-level default(prefs)→ None
