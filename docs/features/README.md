@@ -11,6 +11,7 @@
 | [agent-loop.md](./agent-loop.md) | Conversation + QueryLoop + StreamingExecutor 怎麼跑 | `core/` |
 | [tools.md](./tools.md) | 30+ 內建工具集 + 自訂 Tool 介面 | `tools/` |
 | [streaming.md](./streaming.md) | LLM 事件流 → user-facing event 的轉換 | `core/`、`orion_model/events.py` |
+| [models.md](./models.md) | 3 個 LLM provider(Anthropic / OpenAI / Ollama)設定 + 行為 | `orion-model/` |
 | [permissions.md](./permissions.md) | Permission policy(always_allow / ask / DSL) | `permissions/` |
 
 ## 記憶與壓縮
