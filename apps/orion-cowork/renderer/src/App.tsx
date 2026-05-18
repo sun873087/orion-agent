@@ -29,7 +29,11 @@ export function App() {
   const editingProjectId = useSettingsStore((s) => s.editingProjectId)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const rightSidebarOpen = useSettingsStore((s) => s.rightSidebarOpen)
-  const isEmpty = useAgentStore((s) => s.messages.length === 0)
+  const isEmpty = useAgentStore((s) => {
+    const sid = s.sessionId
+    if (!sid) return true
+    return (s.messagesBySession[sid] ?? []).length === 0
+  })
 
   // 全頁 views 優先(取代 chat layout)
   if (settingsOpen) return <SettingsPage />

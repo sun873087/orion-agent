@@ -20,7 +20,10 @@ const OTHER = '__other__'
 
 export function AskUserQuestionInline({ assistantId }: { assistantId: string }) {
   const { t } = useTranslation()
-  const pending = useAgentStore((s) => s.pendingQuestion)
+  const sid = useAgentStore((s) => s.sessionId)
+  const pending: import('../store/agent').PendingQuestion | null = useAgentStore((s) =>
+    s.sessionId ? s.pendingQuestionBySession[s.sessionId] ?? null : null,
+  )
   const setPending = useAgentStore((s) => s.setPendingQuestion)
   const [drafts, setDrafts] = useState<Record<string, string[]>>({})
   // 每題的「其他」自填文字。即使 user 沒勾 Other 也可先打字,勾了才生效。
@@ -84,7 +87,7 @@ export function AskUserQuestionInline({ assistantId }: { assistantId: string }) 
       await sendAskUserReply(pending.requestId, answers)
     } finally {
       setBusy(false)
-      setPending(null)
+      if (sid) setPending(sid, null)
     }
   }
 

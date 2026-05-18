@@ -149,17 +149,15 @@ export function usePlanModeNotifications(): void {
 }
 
 /**
- * "New chat" 按鈕。只清空 local state,不立即建 DB session。首次 send 時
+ * "New chat" 按鈕。只清 currentSessionId,不立即建 DB session。首次 send 時
  * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
+ *
+ * 其他 session 的 messages / busy / pendingQuestion 仍留在 store 內背景跑,
+ * 切回去時 instantly visible(Phase 31-M)。
  */
 export function useNewConversation() {
   return useCallback(() => {
-    useAgentStore.setState({
-      sessionId: null,
-      messages: [],
-      error: null,
-      lastLoopStatus: null,
-    })
+    useAgentStore.setState({ sessionId: null })
   }, [])
 }
 
@@ -167,12 +165,15 @@ export function useSwitchConversation() {
   return useCallback(async (sid: string) => {
     const store = useAgentStore.getState()
     store.switchToSession(sid)
+    // 若已 hydrate 過(背景跑著的 session)跳過 reload,避免覆蓋 in-flight 進度
+    const existing = useAgentStore.getState().messagesBySession[sid]
+    if (existing && existing.length > 0) return
     try {
       const loaded = await loadMessages(sid)
       _hydrateMessages(sid, loaded)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(`failed to load history: ${msg}`)
+      useAgentStore.getState().setError(sid, `failed to load history: ${msg}`)
     }
   }, [])
 }
@@ -222,17 +223,18 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
     messageIndex: m.message_index,
     createdAt: Date.now(),
   }))
-  useAgentStore.setState({ messages })
+  useAgentStore.getState().hydrateMessages(sessionId, messages)
 }
 
 export function useRegenerate() {
   return useCallback(async () => {
     const store = useAgentStore.getState()
     const sid = store.sessionId
-    if (!sid || store.busy) return
+    if (!sid) return
+    if (store.busyBySession[sid]) return
 
     // Drop last assistant message (UI) — sidecar 同時 truncate DB + state
-    const msgs = store.messages
+    const msgs = store.messagesBySession[sid] ?? []
     let lastUserIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {
@@ -241,19 +243,19 @@ export function useRegenerate() {
       }
     }
     if (lastUserIdx < 0) return
-    useAgentStore.setState({ messages: msgs.slice(0, lastUserIdx + 1) })
+    store.truncateMessages(sid, lastUserIdx + 1)
 
-    const assistantId = store.beginAssistantMessage()
-    store.setError(null)
-    store.setBusy(true)
+    const assistantId = store.beginAssistantMessage(sid)
+    store.setError(sid, null)
+    store.setBusy(sid, true)
     try {
-      await regenerateLast(sid, (ev: SidecarEvent) => applyEvent(assistantId, ev))
+      await regenerateLast(sid, (ev: SidecarEvent) => applyEvent(sid, assistantId, ev))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
+      useAgentStore.getState().setError(sid, msg)
     } finally {
-      useAgentStore.getState().endAssistantMessage(assistantId)
-      useAgentStore.getState().setBusy(false)
+      useAgentStore.getState().endAssistantMessage(sid, assistantId)
+      useAgentStore.getState().setBusy(sid, false)
       refreshSessions()
       if (sid) void backfillMessageIndices(sid)
     }
@@ -267,13 +269,14 @@ export function useDeleteConversation() {
       const state = useAgentStore.getState()
       // 若刪的是當前 session,清空 sessionId(下個 init 或 new 觸發 create)
       if (state.sessionId === sid) {
-        state.switchToSession('')
         useAgentStore.setState({ sessionId: null })
       }
+      // 清掉這 session 的 in-memory state(messages / busy / pendingQuestion 等)
+      state.clearSessionLocalState(sid)
       await refreshSessions()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
+      useAgentStore.getState().setError(sid, msg)
     }
   }, [])
 }
@@ -288,9 +291,22 @@ export function useSendPrompt() {
   const locale = useSettingsStore((s) => s.locale)
   const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
   const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+  const maxConcurrent = useSettingsStore((s) => s.maxConcurrentSessions)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
+    // 並發上限 — 同時 in-flight 不超過 maxConcurrentSessions(Phase 31-M)
+    // 同一 session 的 re-send(continue)不算新並發,所以只在「新開一條」時擋
+    const runningCount = Object.values(store.busyBySession).filter(Boolean).length
+    const isContinuingExisting = sid && store.busyBySession[sid]
+    if (!isContinuingExisting && runningCount >= maxConcurrent) {
+      const errSid = sid ?? '__global__'
+      useAgentStore.getState().setError(
+        errSid,
+        `已達同時對話上限(${maxConcurrent})— 等其中一個跑完,或到 Settings 調高`,
+      )
+      return
+    }
     if (!sid) {
       // Lazy create — 首次 send 才建 DB session,讓空 New chat 不污染 sidebar
       try {
@@ -300,12 +316,16 @@ export function useSendPrompt() {
         useAgentStore.getState().setSessionId(sid)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        useAgentStore.getState().setError(msg)
+        useAgentStore.getState().setError('__global__', msg)
         return
       }
     }
+    // Capture sid in closure — 事件回來時 user 可能已切去別 session,
+    // 但 sid 不變,events 仍寫進對應的 messagesBySession[sid]
+    const targetSid: string = sid
 
     store.appendUserMessage(
+      targetSid,
       text,
       (attachments ?? []).map((a) => ({
         previewUrl: a.preview_url || `data:${a.media_type};base64,${a.data}`,
@@ -313,15 +333,15 @@ export function useSendPrompt() {
         media_type: a.media_type,
       })),
     )
-    const assistantId = store.beginAssistantMessage()
-    store.setError(null)
-    store.setBusy(true)
+    const assistantId = store.beginAssistantMessage(targetSid)
+    store.setError(targetSid, null)
+    store.setBusy(targetSid, true)
 
     try {
       await rpcSendPrompt(
-        sid,
+        targetSid,
         text,
-        (ev: SidecarEvent) => applyEvent(assistantId, ev),
+        (ev: SidecarEvent) => applyEvent(targetSid, assistantId, ev),
         attachments,
         permissionMode,
         {
@@ -334,22 +354,22 @@ export function useSendPrompt() {
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
+      useAgentStore.getState().setError(targetSid, msg)
     } finally {
       const state = useAgentStore.getState()
-      state.endAssistantMessage(assistantId)
-      state.setBusy(false)
+      state.endAssistantMessage(targetSid, assistantId)
+      state.setBusy(targetSid, false)
       // 本 turn 結束(自然 / abort / error)— 若還有屬於這 assistantId 的
       // pendingQuestion(例如 user abort 時 banner 卡住),清掉避免殘留。
-      const pq = state.pendingQuestion
+      const pq = state.pendingQuestionBySession[targetSid]
       if (pq && pq.assistantId === assistantId) {
-        state.setPendingQuestion(null)
+        state.setPendingQuestion(targetSid, null)
       }
       refreshSessions()
       // 補新訊息的 messageIndex,讓 edit / delete 立刻可用,不必等切換對話
-      if (sid) void backfillMessageIndices(sid)
+      void backfillMessageIndices(targetSid)
     }
-  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel])
+  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, maxConcurrent])
 }
 
 export function useAbort() {
@@ -364,12 +384,12 @@ export function useAbort() {
   }, [])
 }
 
-function applyEvent(assistantId: string, ev: SidecarEvent) {
+function applyEvent(sid: string, assistantId: string, ev: SidecarEvent) {
   const s = useAgentStore.getState()
   switch (ev.event) {
     case 'text_delta': {
       const data = ev.data as { text: string }
-      s.appendAssistantText(assistantId, data.text)
+      s.appendAssistantText(sid, assistantId, data.text)
       break
     }
     case 'thinking_delta': {
@@ -382,10 +402,12 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         tool_use_id: string
         input?: Record<string, unknown>
       }
-      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const message = (useAgentStore.getState().messagesBySession[sid] ?? []).find(
+        (m) => m.id === assistantId,
+      )
       const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
       if (!existing) {
-        s.beginToolCall(assistantId, {
+        s.beginToolCall(sid, assistantId, {
           toolUseId: data.tool_use_id,
           toolName: data.tool_name,
           input: data.input,
@@ -398,7 +420,7 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         request_id: string
         questions: import('../api/agent').AskQuestion[]
       }
-      s.setPendingQuestion({
+      s.setPendingQuestion(sid, {
         requestId: data.request_id,
         assistantId,
         questions: data.questions,
@@ -411,17 +433,18 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         tool_name: string
         input?: Record<string, unknown>
       }
-      // tool_start 一定先到,所以 toolCall 已存在;改 status 等 user 決定
-      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const message = (useAgentStore.getState().messagesBySession[sid] ?? []).find(
+        (m) => m.id === assistantId,
+      )
       const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
       if (!existing) {
-        s.beginToolCall(assistantId, {
+        s.beginToolCall(sid, assistantId, {
           toolUseId: data.tool_use_id,
           toolName: data.tool_name,
           input: data.input,
         })
       }
-      s.markToolAwaitingApproval(data.tool_use_id)
+      s.markToolAwaitingApproval(sid, data.tool_use_id)
       break
     }
     case 'tool_progress': {
@@ -430,16 +453,18 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         tool_use_id: string
         progress: unknown
       }
-      // 若該 tool 尚未在 message 上,start it now
-      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const message = (useAgentStore.getState().messagesBySession[sid] ?? []).find(
+        (m) => m.id === assistantId,
+      )
       const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
       if (!existing) {
-        s.beginToolCall(assistantId, {
+        s.beginToolCall(sid, assistantId, {
           toolUseId: data.tool_use_id,
           toolName: data.tool_name,
         })
       }
       s.appendToolProgress(
+        sid,
         data.tool_use_id,
         typeof data.progress === 'string'
           ? data.progress
@@ -449,7 +474,7 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
     }
     case 'tool_error': {
       const data = ev.data as { tool_use_id: string; message: string }
-      s.endToolCall(data.tool_use_id, { isError: true, text: data.message })
+      s.endToolCall(sid, data.tool_use_id, { isError: true, text: data.message })
       break
     }
     case 'tool_result': {
@@ -459,31 +484,32 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         is_error: boolean
         text: string
       }
-      const message = useAgentStore.getState().messages.find((m) => m.id === assistantId)
+      const message = (useAgentStore.getState().messagesBySession[sid] ?? []).find(
+        (m) => m.id === assistantId,
+      )
       const existing = message?.toolCalls?.find((t) => t.toolUseId === data.tool_use_id)
       if (!existing) {
-        s.beginToolCall(assistantId, {
+        s.beginToolCall(sid, assistantId, {
           toolUseId: data.tool_use_id,
           toolName: data.tool_name,
         })
       }
-      s.endToolCall(data.tool_use_id, {
+      s.endToolCall(sid, data.tool_use_id, {
         isError: data.is_error,
         text: data.text,
       })
       break
     }
     case 'turn_complete': {
-      // streaming 還沒徹底結束(可能還有下一個 turn),但目前 assistant 訊息可結束
       break
     }
     case 'loop_terminated': {
       const data = ev.data as { reason: string; total_turns: number }
-      s.finishLoop({ reason: data.reason, turns: data.total_turns })
+      s.finishLoop(sid, { reason: data.reason, turns: data.total_turns })
       break
     }
     case 'compact_started': {
-      s.setCompacting(true)
+      s.setCompacting(sid, true)
       break
     }
     case 'compact_complete': {
@@ -494,13 +520,10 @@ function applyEvent(assistantId: string, ev: SidecarEvent) {
         auto?: boolean
       }
       if (data.skipped) {
-        s.setCompacting(false)
+        s.setCompacting(sid, false)
       } else {
-        // Auto 路徑:剛 appendUserMessage + beginAssistantMessage,後 2 筆是
-        //          這次 send 的 live tail,不該被標 compacted。
-        // 手動 /compact:全部既存 messages 都進 compacted 區。
         const tail = data.auto ? 2 : 0
-        s.applyCompactComplete(data.summary, data.before_tokens, tail)
+        s.applyCompactComplete(sid, data.summary, data.before_tokens, tail)
       }
       break
     }
@@ -514,7 +537,7 @@ async function reloadCurrentMessages(sid: string): Promise<void> {
     _hydrateMessages(sid, loaded)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    useAgentStore.getState().setError(msg)
+    useAgentStore.getState().setError(sid, msg)
   }
 }
 
@@ -529,7 +552,7 @@ async function reloadCurrentMessages(sid: string): Promise<void> {
 async function backfillMessageIndices(sid: string): Promise<void> {
   try {
     const loaded = await loadMessages(sid)
-    const current = useAgentStore.getState().messages
+    const current = useAgentStore.getState().messagesBySession[sid] ?? []
     const updated = current.map((m, i) => {
       const l = loaded[i]
       if (!l) return m
@@ -547,7 +570,7 @@ async function backfillMessageIndices(sid: string): Promise<void> {
         kind: m.kind ?? l.kind,
       }
     })
-    useAgentStore.setState({ messages: updated })
+    useAgentStore.getState().hydrateMessages(sid, updated)
   } catch {
     // 失敗略過 — 下次 reload 還有機會;不擋 UI
   }
@@ -558,11 +581,13 @@ export function useDeleteFrom() {
   return useCallback(async (messageIndex: number) => {
     const store = useAgentStore.getState()
     const sid = store.sessionId
-    if (!sid || store.busy || store.compacting) return
+    if (!sid) return
+    if (store.busyBySession[sid] || store.compactingBySession[sid]) return
     // Optimistic UI:先把該 message 含以後砍掉
-    const cut = store.messages.findIndex((m) => m.messageIndex === messageIndex)
+    const msgs = store.messagesBySession[sid] ?? []
+    const cut = msgs.findIndex((m) => m.messageIndex === messageIndex)
     if (cut >= 0) {
-      useAgentStore.setState({ messages: store.messages.slice(0, cut) })
+      store.truncateMessages(sid, cut)
     }
     try {
       await rpcTruncate(sid, messageIndex, () => {
@@ -570,7 +595,7 @@ export function useDeleteFrom() {
       })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
+      useAgentStore.getState().setError(sid, msg)
     }
     // Reload 對齊 DB 真實狀態 + 補上其他訊息的 messageIndex
     await reloadCurrentMessages(sid)
@@ -586,12 +611,14 @@ export function useEditAndResend() {
     async (messageIndex: number, newText: string, attachments?: Attachment[]) => {
       const store = useAgentStore.getState()
       const sid = store.sessionId
-      if (!sid || store.busy || store.compacting) return
+      if (!sid) return
+      if (store.busyBySession[sid] || store.compactingBySession[sid]) return
       // Optimistic UI:砍舊 → push 新 user msg + assistant skeleton
-      const cut = store.messages.findIndex((m) => m.messageIndex === messageIndex)
-      const head = cut >= 0 ? store.messages.slice(0, cut) : store.messages
-      useAgentStore.setState({ messages: head })
+      const msgs = store.messagesBySession[sid] ?? []
+      const cut = msgs.findIndex((m) => m.messageIndex === messageIndex)
+      if (cut >= 0) store.truncateMessages(sid, cut)
       store.appendUserMessage(
+        sid,
         newText,
         (attachments ?? []).map((a) => ({
           previewUrl: a.preview_url || `data:${a.media_type};base64,${a.data}`,
@@ -599,14 +626,14 @@ export function useEditAndResend() {
           media_type: a.media_type,
         })),
       )
-      const assistantId = store.beginAssistantMessage()
-      store.setError(null)
-      store.setBusy(true)
+      const assistantId = store.beginAssistantMessage(sid)
+      store.setError(sid, null)
+      store.setBusy(sid, true)
       try {
         await rpcTruncate(
           sid,
           messageIndex,
-          (ev: SidecarEvent) => applyEvent(assistantId, ev),
+          (ev: SidecarEvent) => applyEvent(sid, assistantId, ev),
           {
             resendText: newText,
             resendImages: attachments,
@@ -616,11 +643,11 @@ export function useEditAndResend() {
         )
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        useAgentStore.getState().setError(msg)
+        useAgentStore.getState().setError(sid, msg)
       } finally {
         const st = useAgentStore.getState()
-        st.endAssistantMessage(assistantId)
-        st.setBusy(false)
+        st.endAssistantMessage(sid, assistantId)
+        st.setBusy(sid, false)
         refreshSessions()
         if (sid) void backfillMessageIndices(sid)
       }
@@ -638,26 +665,27 @@ export function useCompactConversation() {
   return useCallback(async () => {
     const store = useAgentStore.getState()
     const sid = store.sessionId
-    if (!sid || store.busy || store.compacting) return
-    store.setCompacting(true)
-    store.setError(null)
+    if (!sid) return
+    if (store.busyBySession[sid] || store.compactingBySession[sid]) return
+    store.setCompacting(sid, true)
+    store.setError(sid, null)
     try {
       await rpcCompact(
         sid,
         (ev: SidecarEvent) => {
           // 用 dummy assistantId — compact 不會 emit text_delta / tool 事件
-          applyEvent('compact-rpc', ev)
+          applyEvent(sid, 'compact-rpc', ev)
         },
         { locale, summaryProvider, summaryModel },
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      useAgentStore.getState().setError(msg)
-      useAgentStore.getState().setCompacting(false)
+      useAgentStore.getState().setError(sid, msg)
+      useAgentStore.getState().setCompacting(sid, false)
     } finally {
       // 萬一 sidecar 沒推 compact_complete(stale session 等)— 兜底清 flag
       const st = useAgentStore.getState()
-      if (st.compacting) st.setCompacting(false)
+      if (st.compactingBySession[sid]) st.setCompacting(sid, false)
     }
   }, [locale, summaryProvider, summaryModel])
 }

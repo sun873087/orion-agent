@@ -8,9 +8,9 @@ import { MessageBubble } from './MessageBubble'
 /** 訊息列表 + 自動 scroll 到底(僅在 user 已在底時)。 */
 export function MessageList() {
   const { t } = useTranslation()
-  const messages = useAgentStore((s) => s.messages)
-  const compacting = useAgentStore((s) => s.compacting)
   const sid = useAgentStore((s) => s.sessionId)
+  const messages = useAgentStore((s) => (sid ? s.messagesBySession[sid] ?? [] : []))
+  const compacting = useAgentStore((s) => (sid ? s.compactingBySession[sid] ?? false : false))
   const planStatus = useAgentStore((s) =>
     sid ? s.planModeStatusBySession[sid] : undefined,
   )

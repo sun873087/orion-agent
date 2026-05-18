@@ -3,6 +3,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Loader2,
   Edit3,
   Folder,
   FolderPlus,
@@ -282,6 +283,8 @@ function SessionRow({
   const { t } = useTranslation()
   const projects = useProjects()
   const refreshSidebar = useAgentStore((s) => s.setSessions)
+  // 是否這 session 還在跑(背景 streaming)— sidebar 顯轉圈圈,user 看得到
+  const isRunning = useAgentStore((s) => s.busyBySession[sessionId] ?? false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [submenuOpen, setSubmenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -348,7 +351,9 @@ function SessionRow({
       }`}
       onClick={editing ? undefined : onClick}
     >
-      {starred ? (
+      {isRunning ? (
+        <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
+      ) : starred ? (
         <Star size={14} className="shrink-0 fill-current text-warning" />
       ) : scheduledBy ? (
         <Clock size={14} className="shrink-0 text-accent" />

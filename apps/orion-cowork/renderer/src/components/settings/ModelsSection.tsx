@@ -95,6 +95,44 @@ export function ModelsSection() {
       </div>
       <SttPicker />
       <AutoCompactPicker />
+      <ConcurrentLimitPicker />
+    </div>
+  )
+}
+
+/** 同時 in-flight conversation 上限(Phase 31-M)— 避免一次跑 N 個 session 推爆 cost。 */
+function ConcurrentLimitPicker() {
+  const max = useSettingsStore((s) => s.maxConcurrentSessions)
+  const setMax = useSettingsStore((s) => s.setMaxConcurrentSessions)
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-fg-muted">
+        <Layers size={14} />
+        並發對話上限
+      </h3>
+      <p className="text-[11px] text-fg-subtle">
+        同時可以有幾個 conversation 在背景跑 LLM。切到另一個 session 時舊的繼續跑,
+        sidebar 顯轉圈圈;超過上限要等其中一個跑完才能開新。
+      </p>
+      <div className="mt-1 flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-fg-muted">
+          上限:<span className="font-mono text-fg-base">{max}</span>
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={20}
+          step={1}
+          value={max}
+          onChange={(e) => setMax(Number(e.target.value))}
+          className="w-64 accent-accent"
+        />
+        <div className="flex w-64 justify-between text-[10px] text-fg-subtle">
+          <span>1</span>
+          <span>5(預設)</span>
+          <span>20</span>
+        </div>
+      </div>
     </div>
   )
 }

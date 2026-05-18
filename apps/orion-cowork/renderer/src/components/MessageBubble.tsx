@@ -71,7 +71,7 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
-  const busy = useAgentStore((s) => s.busy)
+  const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
   const editResend = useEditAndResend()
   const deleteFrom = useDeleteFrom()
   // 能編輯/刪除的條件:有 DB index、非 compacted、非 streaming 中、整體沒在跑
@@ -412,7 +412,7 @@ function EditableUserBubble({
 function RegenerateButton() {
   const { t } = useTranslation()
   const regen = useRegenerate()
-  const busy = useAgentStore((s) => s.busy)
+  const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
   return (
     <button
       type="button"

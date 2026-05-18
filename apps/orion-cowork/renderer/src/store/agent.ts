@@ -1,10 +1,3 @@
-/**
- * Cowork agent state — zustand store。
- *
- * 一個 store 管:當前 session_id、訊息列表、busy 狀態、error。
- * Phase 31-C 範圍只有一個 session;multi-session 列表留 Phase 31-D 接持久化。
- */
-
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -12,11 +5,10 @@ import type { AskQuestion, ContextBreakdown } from '../api/agent'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
-/** Backend 推來的 AskUserQuestion 請求 — 等 user 在 inline UI 答完才 resolve。 */
+/** 對 sidecar AskUserQuestionTool 的 pending 狀態。 */
 export type PendingQuestion = {
-  /** 對應 sidecar 給的 request_id,reply RPC 用這個。 */
   requestId: string
-  /** 出現在哪個 assistant message 內(inline render 在這 message 下方)。 */
+  /** 對應的 assistant message id(UI 把 banner 嵌進去那則 message)。 */
   assistantId: string
   questions: AskQuestion[]
 }
@@ -25,15 +17,15 @@ export type ToolCallState = {
   toolUseId: string
   toolName: string
   status: 'running' | 'success' | 'error' | 'awaiting_approval'
-  /** Final result text (only set when status != 'running')。 */
+  /** Final result text(success / error 時 set);running / awaiting_approval 時為空。 */
   text: string
-  /** 中間 progress events(可顯示 / 摺疊)。 */
+  /** 中間 progress lines(可選)。 */
   progress: string[]
-  /** raw tool input(從 tool_start frame 拿到,給 UI 顯示「在跑什麼」)。 */
+  /** Tool input(LLM 解析完整 JSON 後填,用於 inline preview)。 */
   input?: Record<string, unknown>
 }
 
-/** 歷史 hydrate 出來的 lazy attachment:沒有 previewUrl,要靠 ref lazy 拿。 */
+/** 對 sidecar 上 image attachment 的 ref(blob lazy load 用,base64 才不會塞 store)。 */
 export type AttachmentRef = {
   sessionId: string
   messageIndex: number
@@ -41,18 +33,17 @@ export type AttachmentRef = {
 }
 
 export type AttachmentPreview = {
-  /** data URL — user 剛 upload 的圖立即有;從歷史 hydrate 的圖一開始為 undefined,
-   * MessageBubble 內 LazyImage 拿 ref 去 sidecar lazy fetch 後填入。 */
+  /** 上傳完成後仍要顯預覽:user message 沒 ref(尚未 persist),從 base64 來;
+   *  history reload 才走 ref + lazy fetch。 */
   previewUrl?: string
   filename: string
   media_type: string
-  /** 歷史 attachment 才有;新上傳的 attachment 無 ref(已立即有 previewUrl)。 */
+  /** History 載回時拿到的 sidecar ref;send 後 backfill 進 user message。 */
   ref?: AttachmentRef
 }
 
-/** 按 LLM emit 順序的 inline block — 讓 ToolCallGroup 出現在文字流的對位置。
- *  歷史 hydrate 出來的 message 沒這個欄位,UI fallback 純 text + toolCalls 渲染。
- */
+/** Assistant message 內的 block — 純文字 / tools 兩種。
+ *  解 LLM 「stream text → 呼 tool → stream text → 呼 tool」交錯場景的順序。 */
 export type AssistantBlock =
   | { type: 'text'; text: string }
   | { type: 'tools'; toolUseIds: string[] }
@@ -60,26 +51,25 @@ export type AssistantBlock =
 export type Message = {
   id: string
   role: MessageRole
-  /** Plain text(user / assistant 全段彙整;歷史 hydrate 也用這個)。 */
+  /** 顯示文字。Tool result 走 toolCalls;assistant text 仍寫這(blocks 順序由 blocks 顯)。 */
   text: string
-  /** assistant 訊息內附的工具呼叫(0..N)。 */
+  /** 若是 assistant message 含 tool calls,這 list 不為空。順序 = LLM emit 順序。 */
   toolCalls?: ToolCallState[]
-  /** Streaming 時的 inline 順序;hydrate 歷史時不設,UI 走 fallback 舊式 layout。 */
+  /** Inline rendering 順序 — text / tools 交錯。streaming 過程中 append。 */
   blocks?: AssistantBlock[]
-  /** user message 上傳的附件(只用來 UI 顯示;base64 上傳已送 sidecar)。 */
+  /** User message 上傳的圖。 */
   attachments?: AttachmentPreview[]
-  /** 若 streaming 還沒結束就 true,UI 用來顯示 cursor。 */
+  /** Assistant 正在 stream 中(SDK 還沒 emit message_stop)。 */
   streaming?: boolean
-  /** 系統訊息的特殊類型。 */
+  /** 系統卡(/compact summary / /context report 等)— 不送 LLM,純 UI。 */
   kind?: 'compact-summary' | 'context-report'
-  /** Compact summary card 才有:壓縮前的概略 token 數。 */
+  /** Compact card 才有;顯示「省了多少 token」。 */
   beforeTokens?: number
-  /** Context report card 才有:context window 分配資料。 */
+  /** Context report card 才有。 */
   contextReport?: ContextBreakdown
-  /** Compact 前的舊訊息 — UI 灰化,但仍 scroll 看得到(LLM 看不到)。 */
+  /** Compacted out 的舊 message(灰化顯示,LLM 不再看到)。 */
   compacted?: boolean
-  /** 對齊 DB row 的 raw index — 由 _to_ui_messages_from_raw 給,edit/delete RPC 用。
-   *  Live 串流出來的 message 沒有,要 reload 才會填上。 */
+  /** Backfilled message_index(history reload 後 attachment ref / regenerate / delete-from 用)。 */
   messageIndex?: number
   createdAt: number
 }
@@ -103,14 +93,17 @@ export type SessionSummary = {
 
 type AgentState = {
   sessionId: string | null
-  messages: Message[]
-  busy: boolean
-  error: string | null
-  lastLoopStatus: LoopStatus
+  // ─── Per-session state(Phase 31-M)— 切走的 session 仍然背景跑,events
+  //     寫進對應 sid 的 slot,sidebar 顯 busy 指示。同時最多
+  //     `maxConcurrentSessions` 條 in-flight 串流(預設 5,可 Settings 調)。
+  messagesBySession: Record<string, Message[]>
+  busyBySession: Record<string, boolean>
+  errorBySession: Record<string, string | null>
+  lastLoopStatusBySession: Record<string, LoopStatus>
+  pendingQuestionBySession: Record<string, PendingQuestion | null>
+  compactingBySession: Record<string, boolean>
   initError: string | null
   sessions: SessionSummary[]
-  /** 當前等使用者回答的 AskUserQuestion(同時間只會有一個)。 */
-  pendingQuestion: PendingQuestion | null
   /** Plan Mode(Phase 31-J)— 每 session 一個 state,從 sidecar notification
    *  跟 plan_status RPC 同步。不存 localStorage,sidecar DB 是 source of truth。 */
   planModeStatusBySession: Record<string, 'idle' | 'pending' | 'active' | 'awaiting_approval'>
@@ -123,9 +116,6 @@ type AgentState = {
   }>
   setPendingPlanApproval: (sid: string, data: { planId: string | null; planMarkdown: string; planFilePath: string | null }) => void
   clearPendingPlanApproval: (sid: string) => void
-  /** 對話壓縮進行中(UI 顯 banner)。 */
-  compacting: boolean
-  setCompacting: (v: boolean) => void
   /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
    *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
    *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
@@ -133,44 +123,55 @@ type AgentState = {
   addExtraOutputFile: (sessionId: string, path: string) => void
   /** /context — push user msg "/context" + system context-report card 到 messages。
    *  不進 sidecar state_messages / DB,純 UI snapshot。 */
-  appendContextReportCard: (report: ContextBreakdown) => void
+  appendContextReportCard: (sid: string, report: ContextBreakdown) => void
   /** 壓縮完成 — 把現有訊息標 compacted(灰化,不再 LLM 可見)+ 插入 summary card。
    *  `liveTailCount` 是要保留不標 compacted 的尾端訊息數
    *  (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
    *   手動 /compact 為 0)。 */
   applyCompactComplete: (
+    sid: string,
     summary: string,
     beforeTokens: number,
     liveTailCount: number,
   ) => void
+  setCompacting: (sid: string, v: boolean) => void
 
   // mutators
   setSessionId: (sid: string) => void
   setInitError: (err: string) => void
-  setError: (err: string | null) => void
-  setBusy: (b: boolean) => void
+  setError: (sid: string, err: string | null) => void
+  setBusy: (sid: string, b: boolean) => void
   setSessions: (s: SessionSummary[]) => void
+  /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
+   *  舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
+  /** Hydrate 一個 session 的 messages(從 DB load 後初始化或刷新)。 */
+  hydrateMessages: (sid: string, messages: Message[]) => void
+  /** Truncate session messages 到某 index(regenerate / edit-from / delete-from 用)。 */
+  truncateMessages: (sid: string, sliceEnd: number) => void
+  /** 清掉某 session 的 in-memory state(delete session 時用)。 */
+  clearSessionLocalState: (sid: string) => void
 
-  appendUserMessage: (text: string, attachments?: AttachmentPreview[]) => string
+  appendUserMessage: (sid: string, text: string, attachments?: AttachmentPreview[]) => string
   /** 起 assistant 訊息槽位(streaming 即將開始),回傳 message id。 */
-  beginAssistantMessage: () => string
-  appendAssistantText: (id: string, delta: string) => void
-  endAssistantMessage: (id: string) => void
+  beginAssistantMessage: (sid: string) => string
+  appendAssistantText: (sid: string, id: string, delta: string) => void
+  endAssistantMessage: (sid: string, id: string) => void
 
   /** Tool 開始 — append 一個 toolCall 到當前正在 stream 的 assistant message。 */
-  beginToolCall: (assistantId: string, call: Omit<ToolCallState, 'progress' | 'status' | 'text'>) => void
-  appendToolProgress: (toolUseId: string, line: string) => void
-  endToolCall: (toolUseId: string, payload: { isError: boolean; text: string }) => void
+  beginToolCall: (sid: string, assistantId: string, call: Omit<ToolCallState, 'progress' | 'status' | 'text'>) => void
+  appendToolProgress: (sid: string, toolUseId: string, line: string) => void
+  endToolCall: (sid: string, toolUseId: string, payload: { isError: boolean; text: string }) => void
   /** Ask 模式 — 標記 toolCall 在等使用者 approval(顯 banner)。 */
-  markToolAwaitingApproval: (toolUseId: string) => void
+  markToolAwaitingApproval: (sid: string, toolUseId: string) => void
   /** User 已決 — 把 awaiting_approval 拉回 running,banner 立刻消失,
    *  之後 tool_result 來再走 endToolCall 改 success / error。 */
-  clearToolApprovalUI: (toolUseId: string) => void
+  clearToolApprovalUI: (sid: string, toolUseId: string) => void
 
-  setPendingQuestion: (q: PendingQuestion | null) => void
+  setPendingQuestion: (sid: string, q: PendingQuestion | null) => void
 
-  finishLoop: (status: LoopStatus) => void
+  finishLoop: (sid: string, status: LoopStatus) => void
+  /** 全清(logout / 災難用 — 不常用)。 */
   reset: () => void
 }
 
@@ -179,38 +180,73 @@ const newId = (() => {
   return () => `m-${Date.now()}-${n++}`
 })()
 
+/** 從 messagesBySession[sid] map 出新值的 helper — 沒 sid 直接 no-op。 */
+function updateSession<K extends keyof AgentState>(
+  state: AgentState,
+  field: K,
+  sid: string | null,
+  updater: (prev: any) => any,  // eslint-disable-line @typescript-eslint/no-explicit-any
+): Partial<AgentState> {
+  if (!sid) return {}
+  const map = state[field] as Record<string, unknown>
+  return { [field]: { ...map, [sid]: updater(map[sid]) } } as Partial<AgentState>
+}
+
 export const useAgentStore = create<AgentState>()(persist((set) => ({
   sessionId: null,
-  messages: [],
-  busy: false,
-  error: null,
-  lastLoopStatus: null,
+  messagesBySession: {},
+  busyBySession: {},
+  errorBySession: {},
+  lastLoopStatusBySession: {},
+  pendingQuestionBySession: {},
+  compactingBySession: {},
   initError: null,
   sessions: [],
-  pendingQuestion: null,
   planModeStatusBySession: {},
   pendingPlanApprovalBySession: {},
-  compacting: false,
   extraOutputFiles: {},
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
-  setError: (err) => set({ error: err }),
-  setBusy: (b) => set({ busy: b }),
+  setError: (sid, err) =>
+    set((s) => updateSession(s, 'errorBySession', sid, () => err)),
+  setBusy: (sid, b) =>
+    set((s) => updateSession(s, 'busyBySession', sid, () => b)),
   setSessions: (s) => set({ sessions: s }),
-  switchToSession: (sid) =>
-    set({
-      sessionId: sid,
-      messages: [],
-      error: null,
-      lastLoopStatus: null,
+  switchToSession: (sid) => set({ sessionId: sid }),
+
+  hydrateMessages: (sid, messages) =>
+    set((s) => updateSession(s, 'messagesBySession', sid, () => messages)),
+
+  truncateMessages: (sid, sliceEnd) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).slice(0, sliceEnd),
+      ),
+    ),
+
+  clearSessionLocalState: (sid) =>
+    set((s) => {
+      const drop = <T extends Record<string, unknown>>(m: T): T => {
+        const next = { ...m }
+        delete next[sid]
+        return next
+      }
+      return {
+        messagesBySession: drop(s.messagesBySession),
+        busyBySession: drop(s.busyBySession),
+        errorBySession: drop(s.errorBySession),
+        lastLoopStatusBySession: drop(s.lastLoopStatusBySession),
+        pendingQuestionBySession: drop(s.pendingQuestionBySession),
+        compactingBySession: drop(s.compactingBySession),
+      }
     }),
 
-  appendUserMessage: (text, attachments) => {
+  appendUserMessage: (sid, text, attachments) => {
     const id = newId()
-    set((s) => ({
-      messages: [
-        ...s.messages,
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) => [
+        ...(prev ?? []),
         {
           id,
           role: 'user',
@@ -218,16 +254,16 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
           attachments: attachments && attachments.length ? attachments : undefined,
           createdAt: Date.now(),
         },
-      ],
-    }))
+      ]),
+    )
     return id
   },
 
-  beginAssistantMessage: () => {
+  beginAssistantMessage: (sid) => {
     const id = newId()
-    set((s) => ({
-      messages: [
-        ...s.messages,
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) => [
+        ...(prev ?? []),
         {
           id,
           role: 'assistant',
@@ -237,113 +273,124 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
           streaming: true,
           createdAt: Date.now(),
         },
-      ],
-    }))
+      ]),
+    )
     return id
   },
 
-  appendAssistantText: (id, delta) =>
-    set((s) => ({
-      messages: s.messages.map((m) => {
-        if (m.id !== id) return m
-        // text 仍 append 到 m.text(向後相容);同時 maintain blocks 順序
-        const newText = m.text + delta
-        const blocks = m.blocks ? [...m.blocks] : []
-        const last = blocks[blocks.length - 1]
-        if (last && last.type === 'text') {
-          blocks[blocks.length - 1] = { type: 'text', text: last.text + delta }
-        } else {
-          blocks.push({ type: 'text', text: delta })
-        }
-        return { ...m, text: newText, blocks }
-      }),
-    })),
-
-  endAssistantMessage: (id) =>
-    set((s) => ({
-      messages: s.messages.map((m) =>
-        m.id === id ? { ...m, streaming: false } : m,
-      ),
-    })),
-
-  beginToolCall: (assistantId, call) =>
-    set((s) => ({
-      messages: s.messages.map((m) => {
-        if (m.id !== assistantId) return m
-        const next: ToolCallState = {
-          ...call,
-          status: 'running',
-          text: '',
-          progress: [],
-        }
-        // 維持 blocks 順序:碰到新 tool 且最後 block 不是 tools → 新開一個 tools block
-        const blocks = m.blocks ? [...m.blocks] : []
-        const last = blocks[blocks.length - 1]
-        if (last && last.type === 'tools') {
-          blocks[blocks.length - 1] = {
-            type: 'tools',
-            toolUseIds: [...last.toolUseIds, next.toolUseId],
+  appendAssistantText: (sid, id, delta) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => {
+          if (m.id !== id) return m
+          const newText = m.text + delta
+          const blocks = m.blocks ? [...m.blocks] : []
+          const last = blocks[blocks.length - 1]
+          if (last && last.type === 'text') {
+            blocks[blocks.length - 1] = { type: 'text', text: last.text + delta }
+          } else {
+            blocks.push({ type: 'text', text: delta })
           }
-        } else {
-          blocks.push({ type: 'tools', toolUseIds: [next.toolUseId] })
-        }
-        return {
+          return { ...m, text: newText, blocks }
+        }),
+      ),
+    ),
+
+  endAssistantMessage: (sid, id) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => (m.id === id ? { ...m, streaming: false } : m)),
+      ),
+    ),
+
+  beginToolCall: (sid, assistantId, call) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => {
+          if (m.id !== assistantId) return m
+          const next: ToolCallState = {
+            ...call,
+            status: 'running',
+            text: '',
+            progress: [],
+          }
+          const blocks = m.blocks ? [...m.blocks] : []
+          const last = blocks[blocks.length - 1]
+          if (last && last.type === 'tools') {
+            blocks[blocks.length - 1] = {
+              type: 'tools',
+              toolUseIds: [...last.toolUseIds, next.toolUseId],
+            }
+          } else {
+            blocks.push({ type: 'tools', toolUseIds: [next.toolUseId] })
+          }
+          return {
+            ...m,
+            toolCalls: [...(m.toolCalls ?? []), next],
+            blocks,
+          }
+        }),
+      ),
+    ),
+
+  appendToolProgress: (sid, toolUseId, line) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => ({
           ...m,
-          toolCalls: [...(m.toolCalls ?? []), next],
-          blocks,
-        }
-      }),
-    })),
+          toolCalls: (m.toolCalls ?? []).map((t) =>
+            t.toolUseId === toolUseId
+              ? { ...t, progress: [...t.progress, line] }
+              : t,
+          ),
+        })),
+      ),
+    ),
 
-  appendToolProgress: (toolUseId, line) =>
-    set((s) => ({
-      messages: s.messages.map((m) => ({
-        ...m,
-        toolCalls: (m.toolCalls ?? []).map((t) =>
-          t.toolUseId === toolUseId
-            ? { ...t, progress: [...t.progress, line] }
-            : t,
-        ),
-      })),
-    })),
+  endToolCall: (sid, toolUseId, { isError, text }) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => ({
+          ...m,
+          toolCalls: (m.toolCalls ?? []).map((t) =>
+            t.toolUseId === toolUseId
+              ? { ...t, status: isError ? 'error' : 'success', text }
+              : t,
+          ),
+        })),
+      ),
+    ),
 
-  endToolCall: (toolUseId, { isError, text }) =>
-    set((s) => ({
-      messages: s.messages.map((m) => ({
-        ...m,
-        toolCalls: (m.toolCalls ?? []).map((t) =>
-          t.toolUseId === toolUseId
-            ? { ...t, status: isError ? 'error' : 'success', text }
-            : t,
-        ),
-      })),
-    })),
+  markToolAwaitingApproval: (sid, toolUseId) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => ({
+          ...m,
+          toolCalls: (m.toolCalls ?? []).map((t) =>
+            t.toolUseId === toolUseId && t.status === 'running'
+              ? { ...t, status: 'awaiting_approval' }
+              : t,
+          ),
+        })),
+      ),
+    ),
 
-  markToolAwaitingApproval: (toolUseId) =>
-    set((s) => ({
-      messages: s.messages.map((m) => ({
-        ...m,
-        toolCalls: (m.toolCalls ?? []).map((t) =>
-          t.toolUseId === toolUseId && t.status === 'running'
-            ? { ...t, status: 'awaiting_approval' }
-            : t,
-        ),
-      })),
-    })),
+  clearToolApprovalUI: (sid, toolUseId) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => ({
+          ...m,
+          toolCalls: (m.toolCalls ?? []).map((t) =>
+            t.toolUseId === toolUseId && t.status === 'awaiting_approval'
+              ? { ...t, status: 'running' }
+              : t,
+          ),
+        })),
+      ),
+    ),
 
-  clearToolApprovalUI: (toolUseId) =>
-    set((s) => ({
-      messages: s.messages.map((m) => ({
-        ...m,
-        toolCalls: (m.toolCalls ?? []).map((t) =>
-          t.toolUseId === toolUseId && t.status === 'awaiting_approval'
-            ? { ...t, status: 'running' }
-            : t,
-        ),
-      })),
-    })),
-
-  setPendingQuestion: (q) => set({ pendingQuestion: q }),
+  setPendingQuestion: (sid, q) =>
+    set((s) => updateSession(s, 'pendingQuestionBySession', sid, () => q)),
 
   setPlanModeStatus: (sid, status) =>
     set((state) => ({
@@ -360,14 +407,14 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       return { pendingPlanApprovalBySession: next }
     }),
 
-
-  setCompacting: (v) => set({ compacting: v }),
-  appendContextReportCard: (report) =>
-    set((s) => {
-      const now = Date.now()
-      return {
-        messages: [
-          ...s.messages,
+  setCompacting: (sid, v) =>
+    set((s) => updateSession(s, 'compactingBySession', sid, () => v)),
+  appendContextReportCard: (sid, report) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) => {
+        const now = Date.now()
+        return [
+          ...(prev ?? []),
           {
             id: newId(),
             role: 'user',
@@ -382,9 +429,9 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
             contextReport: report,
             createdAt: now + 1,
           },
-        ],
-      }
-    }),
+        ]
+      }),
+    ),
 
   addExtraOutputFile: (sessionId, path) =>
     set((s) => {
@@ -397,11 +444,10 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         },
       }
     }),
-  applyCompactComplete: (summary, beforeTokens, liveTailCount) => {
+  applyCompactComplete: (sid, summary, beforeTokens, liveTailCount) => {
     set((s) => {
-      const all = s.messages
+      const all = s.messagesBySession[sid] ?? []
       const cut = Math.max(0, all.length - Math.max(0, liveTailCount))
-      // 已是 compact-summary 的 row 不重複標,維持原 kind / compacted
       const compactedPrev = all.slice(0, cut).map((m) =>
         m.kind === 'compact-summary' ? m : { ...m, compacted: true },
       )
@@ -415,24 +461,29 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         createdAt: Date.now(),
       }
       return {
-        messages: [...compactedPrev, card, ...tail],
-        compacting: false,
+        messagesBySession: {
+          ...s.messagesBySession,
+          [sid]: [...compactedPrev, card, ...tail],
+        },
+        compactingBySession: { ...s.compactingBySession, [sid]: false },
       }
     })
   },
 
-  finishLoop: (status) => set({ lastLoopStatus: status }),
+  finishLoop: (sid, status) =>
+    set((s) => updateSession(s, 'lastLoopStatusBySession', sid, () => status)),
 
   reset: () =>
     set({
-      messages: [],
-      busy: false,
-      error: null,
-      lastLoopStatus: null,
-      pendingQuestion: null,
+      messagesBySession: {},
+      busyBySession: {},
+      errorBySession: {},
+      lastLoopStatusBySession: {},
+      pendingQuestionBySession: {},
+      compactingBySession: {},
     }),
 }), {
-  name: 'orion-cowork-agent/v1',
+  name: 'orion-cowork-agent/v2',
   // 只 persist 跨 session / 跨 app 重啟有意義的 — extraOutputFiles 記 /export 結果,
   // 即便 app 重開,只要 .zip 物理檔還在 workspace,sidebar 仍會顯(useExistingFiles
   // 會 filter 掉已刪的孤兒)。其他 state 是 in-memory / 由 sidecar 重建,不存。
@@ -440,3 +491,48 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
     extraOutputFiles: s.extraOutputFiles,
   }),
 }))
+
+// ─── Selector helpers — components 用這個 single-line 取 current session 的值 ────
+
+/** 當前 session 的 messages(沒 sid 或 session 沒 hydrate 過回空 array)。 */
+export function useCurrentMessages(): Message[] {
+  return useAgentStore((s) =>
+    s.sessionId ? s.messagesBySession[s.sessionId] ?? [] : [],
+  )
+}
+
+/** 當前 session 是否在跑(LLM 還在 stream / tool 還沒完)。 */
+export function useCurrentBusy(): boolean {
+  return useAgentStore((s) =>
+    s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
+  )
+}
+
+export function useCurrentError(): string | null {
+  return useAgentStore((s) =>
+    s.sessionId ? s.errorBySession[s.sessionId] ?? null : null,
+  )
+}
+
+export function useCurrentPendingQuestion(): PendingQuestion | null {
+  return useAgentStore((s) =>
+    s.sessionId ? s.pendingQuestionBySession[s.sessionId] ?? null : null,
+  )
+}
+
+export function useCurrentCompacting(): boolean {
+  return useAgentStore((s) =>
+    s.sessionId ? s.compactingBySession[s.sessionId] ?? false : false,
+  )
+}
+
+export function useCurrentLoopStatus(): LoopStatus {
+  return useAgentStore((s) =>
+    s.sessionId ? s.lastLoopStatusBySession[s.sessionId] ?? null : null,
+  )
+}
+
+/** 多少 session 正在跑(用來判 concurrent limit)。 */
+export function countRunningSessions(state: AgentState): number {
+  return Object.values(state.busyBySession).filter(Boolean).length
+}

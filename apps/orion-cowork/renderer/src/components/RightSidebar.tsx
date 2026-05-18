@@ -204,7 +204,9 @@ function extractSkills(toolCalls: Array<{ toolName: string; input?: Record<strin
 
 export function RightSidebar() {
   const { t } = useTranslation()
-  const messages = useAgentStore((s) => s.messages)
+  const messages = useAgentStore((s) =>
+    s.sessionId ? s.messagesBySession[s.sessionId] ?? [] : [],
+  )
 
   // 把所有 assistant message 的 toolCalls 全攤平,給三個 extractor 用
   const allCalls = useMemo(() => {
@@ -397,7 +399,9 @@ export function RightSidebar() {
 function UsageSection() {
   const { t } = useTranslation()
   const sessionId = useAgentStore((s) => s.sessionId)
-  const busy = useAgentStore((s) => s.busy)
+  const busy = useAgentStore((s) =>
+    s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
+  )
   const [stats, setStats] = useState<ConversationStats | null>(null)
   const [loading, setLoading] = useState(false)
 

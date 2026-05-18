@@ -118,6 +118,11 @@ type SettingsState = {
   setAutoCompactEnabled: (v: boolean) => void
   setAutoCompactThreshold: (v: number) => void
 
+  /** 同時 in-flight 的 conversation 上限(Phase 31-M)— 避免一次 spawn N 個
+   *  session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
+  maxConcurrentSessions: number
+  setMaxConcurrentSessions: (v: number) => void
+
   /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
    *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-4o-mini)。 */
   compactSummaryProvider: string | null
@@ -198,6 +203,7 @@ export const useSettingsStore = create<SettingsState>()(
       rightSidebarOpen: false,
       autoCompactEnabled: true,
       autoCompactThreshold: 0.8,
+      maxConcurrentSessions: 5,
       // 預設用便宜 model 摘要(Anthropic 端 Haiku),省 cost ~5x。
       // 跟 chat provider 對齊在 dispatch 時挑;User 也可手動改成任何 model。
       compactSummaryProvider: 'anthropic',
@@ -255,6 +261,8 @@ export const useSettingsStore = create<SettingsState>()(
         const clamped = Math.min(0.99, Math.max(0.1, v))
         set({ autoCompactThreshold: Math.round(clamped * 100) / 100 })
       },
+      setMaxConcurrentSessions: (v) =>
+        set({ maxConcurrentSessions: Math.max(1, Math.min(20, Math.round(v))) }),
       setCompactSummary: (provider, model) =>
         set({ compactSummaryProvider: provider, compactSummaryModel: model }),
 
@@ -281,6 +289,7 @@ export const useSettingsStore = create<SettingsState>()(
         autoCompactThreshold: s.autoCompactThreshold,
         compactSummaryProvider: s.compactSummaryProvider,
         compactSummaryModel: s.compactSummaryModel,
+        maxConcurrentSessions: s.maxConcurrentSessions,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) applyTheme(state.theme)

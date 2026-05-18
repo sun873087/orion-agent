@@ -130,14 +130,20 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
-  const busy = useAgentStore((s) => s.busy)
-  const compacting = useAgentStore((s) => s.compacting)
+  const busy = useAgentStore((s) =>
+    s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
+  )
+  const compacting = useAgentStore((s) =>
+    s.sessionId ? s.compactingBySession[s.sessionId] ?? false : false,
+  )
   const triggerCompact = useCompactConversation()
   // sidecar 啟動後一直可輸入;sessionId 為 null(New chat 後)時由 useSendPrompt
   // lazy create。只有 initError(sidecar 連不上)才完全 disable。
   const initError = useAgentStore((s) => s.initError)
   const inputReady = !initError
-  const messageCount = useAgentStore((s) => s.messages.length)
+  const messageCount = useAgentStore((s) =>
+    s.sessionId ? (s.messagesBySession[s.sessionId] ?? []).length : 0,
+  )
   const isEmpty = messageCount === 0
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -277,7 +283,7 @@ export function InputBox({ onSend, onAbort }: Props) {
           autoCompactThreshold: threshold,
         })
         if (report) {
-          useAgentStore.getState().appendContextReportCard(report)
+          useAgentStore.getState().appendContextReportCard(sid, report)
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
@@ -989,8 +995,12 @@ function ModelPill() {
 
 function FooterHint() {
   const { t } = useTranslation()
-  const error = useAgentStore((s) => s.error)
-  const status = useAgentStore((s) => s.lastLoopStatus)
+  const error = useAgentStore((s) =>
+    s.sessionId ? s.errorBySession[s.sessionId] ?? null : null,
+  )
+  const status = useAgentStore((s) =>
+    s.sessionId ? s.lastLoopStatusBySession[s.sessionId] ?? null : null,
+  )
   if (error) {
     return <p className="mt-1 px-2 text-xs text-error">⚠ {error}</p>
   }
