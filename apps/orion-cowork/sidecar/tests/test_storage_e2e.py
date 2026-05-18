@@ -59,6 +59,44 @@ def test_conversation_persists_across_process_restart(data_dir: str) -> None:
     assert any(s["provider"] == "anthropic" for s in sessions)
 
 
+@pytest.mark.asyncio
+async def test_delete_session_cascades_loop_schedules(data_dir: str) -> None:
+    """刪 session 時,綁該 session 的 Loop 排程一起刪;純 Schedule 不動。"""
+    os.environ["ORION_COWORK_DATA_DIR"] = data_dir
+    from orion_cowork_sidecar import storage
+
+    engine = await storage.init_storage()
+    # 建兩個 session
+    sid_with_loop = "11111111-1111-1111-1111-111111111111"
+    sid_keep = "22222222-2222-2222-2222-222222222222"
+    await storage.save_session_metadata(
+        engine, sid_with_loop, provider="anthropic", model="claude-haiku-4-5",
+    )
+    await storage.save_session_metadata(
+        engine, sid_keep, provider="anthropic", model="claude-haiku-4-5",
+    )
+    # 一筆 Loop 綁 sid_with_loop;一筆獨立 Schedule(target_session_id NULL)
+    loop = await storage.create_schedule(
+        engine, name="hi loop", cron_expr="* * * * *",
+        trigger_type="prompt", payload="ping",
+        target_session_id=sid_with_loop,
+    )
+    sched = await storage.create_schedule(
+        engine, name="daily news", cron_expr="0 8 * * *",
+        trigger_type="prompt", payload="news",
+    )
+    # 刪 sid_with_loop → loop 排程消失,但獨立 sched 仍在
+    assert await storage.delete_session(engine, sid_with_loop) is True
+    after = await storage.list_schedules(engine)
+    after_ids = {s.id for s in after}
+    assert loop.id not in after_ids, "Loop 綁該 session,應該 cascade delete"
+    assert sched.id in after_ids, "純 Schedule 不該被牽連"
+    # sid_keep 也還在
+    listed = await storage.list_sessions(engine)
+    assert any(s.session_id == sid_keep for s in listed)
+    await engine.dispose()
+
+
 def test_conversation_delete_persists(data_dir: str) -> None:
     # Create 2 sessions in process A
     frames_a = _run_sidecar([

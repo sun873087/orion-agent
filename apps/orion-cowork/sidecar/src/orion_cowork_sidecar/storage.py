@@ -391,10 +391,14 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
 
 
 async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
-    """Cascade delete:DB rows + 該 session 的 blob 檔。
+    """Cascade delete:DB rows + 該 session 的 blob 檔 + 綁該 session 的 Loop 排程。
 
     先撈 content_json 內所有 blob_id 收集,DB rows commit 後再 unlink blob 檔
     (中途 unlink fail 不影響 DB consistency,下次 cleanup_orphan_blobs 會撿)。
+
+    Loop 排程(`cowork_schedules.target_session_id = session_id`)同 transaction
+    一起刪 — 它本來就是綁這 session 的,session 沒了排程也沒意義。純 Schedule
+    (target_session_id IS NULL,fire 時開新 session)不在這範圍。
     """
     async with db_session(engine) as s:
         row = await s.get(SessionRow, session_id)
@@ -409,6 +413,16 @@ async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
         await s.execute(delete(MessageRow).where(MessageRow.session_id == session_id))
         await s.execute(delete(MetaRow).where(MetaRow.session_id == session_id))
         await s.delete(row)
+        # Loop 排程連同 cowork_session_ext 一起清(ext 沒 FK,raw SQL 處理)
+        conn = await s.connection()
+        await conn.exec_driver_sql(
+            "DELETE FROM cowork_schedules WHERE target_session_id = ?",
+            (session_id,),
+        )
+        await conn.exec_driver_sql(
+            "DELETE FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
         await s.commit()
     # DB 已 commit;unlink blob 檔。fail 不影響 DB,下次 cleanup 會撿。
     blob = get_blob_store()
