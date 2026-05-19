@@ -1035,6 +1035,7 @@ export type TtsResult = {
   mimeType: string
   charCount: number
   costUsd: number
+  cacheHit: boolean
 }
 
 /** 呼 sidecar 把 text → audio。Web Speech API 走另一條 path,不經這 RPC。 */
@@ -1050,6 +1051,7 @@ export async function synthesizeSpeech(opts: {
     mimeType: 'audio/mpeg',
     charCount: 0,
     costUsd: 0,
+    cacheHit: false,
   }
   let errMsg: string | null = null
   await window.agent.call(
@@ -1078,6 +1080,7 @@ export async function synthesizeSpeech(opts: {
           mimeType: typeof d.mime_type === 'string' ? d.mime_type : 'audio/mpeg',
           charCount: typeof d.char_count === 'number' ? d.char_count : 0,
           costUsd: typeof d.cost_usd === 'number' ? d.cost_usd : 0,
+          cacheHit: Boolean(d.cache_hit),
         }
       }
     },

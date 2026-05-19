@@ -141,6 +141,11 @@ async function playViaOpenAI(
     })
     // 若 user 中途按了 stop 或切到別則,別蓋掉新狀態
     if (currentMessageId !== messageId) return
+    if (result.cacheHit) {
+      // 開發 / debug 提示用 — user 看不到也沒差,留 console 紀錄
+      // eslint-disable-next-line no-console
+      console.log(`[TTS] cache hit · ${result.charCount} chars · $0`)
+    }
     const bytes = Uint8Array.from(atob(result.audioBase64), (c) => c.charCodeAt(0))
     const blob = new Blob([bytes], { type: result.mimeType })
     const url = URL.createObjectURL(blob)

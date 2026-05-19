@@ -277,6 +277,8 @@ class Handlers:
                 asyncio.create_task(self._plan_mode_startup_recovery())
                 # Plan file GC — 孤兒 + 30 天舊
                 asyncio.create_task(self._cleanup_orphan_plan_files())
+                # TTS cache GC(Phase 31-T)— 30 天舊 cache 自動清
+                asyncio.create_task(self._cleanup_tts_cache())
                 # AgentTool default-disabled seeding(Phase 31-K)
                 # 首次跑這版時把 "Agent" 加進 disabled_tools — LLM spawn 子 agent
                 # 會放大 token cost,user 自己在 Settings → 工具 開才放手。
@@ -381,6 +383,21 @@ class Handlers:
         if deleted:
             print(
                 f"[plan_mode] GC: deleted {deleted} orphan plan files",
+                file=sys.stderr, flush=True,
+            )
+
+    async def _cleanup_tts_cache(self) -> None:
+        """TTS cache GC — 30 天舊 unlink。fire-and-forget,fail 不影響 sidecar。"""
+        import sys
+        try:
+            stats = tts_handlers.cleanup_old_tts_cache(days=30)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tts] cache GC failed: {e}", file=sys.stderr, flush=True)
+            return
+        if stats["deleted"]:
+            print(
+                f"[tts] cache GC: deleted {stats['deleted']} files "
+                f"({stats['bytes_freed']} bytes)",
                 file=sys.stderr, flush=True,
             )
 

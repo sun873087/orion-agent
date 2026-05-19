@@ -10,8 +10,11 @@ Web Speech。
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
+import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,6 +24,43 @@ from orion_model.tts_catalog import get_tts_pricing, get_tts_voices, validate_tt
 
 def _err(code: str, msg: str) -> dict[str, Any]:
     return {"event": "error", "data": {"code": code, "message": msg}, "final": True}
+
+
+def _tts_cache_dir() -> Path:
+    """Cache 落 ~/.orion/tts-cache/(跟 plans / blobs 同層)。可由 storage.data_dir 覆寫。"""
+    # 避免循環 import:直接 expand HOME + ORION_COWORK_DATA_DIR
+    root_override = os.environ.get("ORION_COWORK_DATA_DIR")
+    root = Path(root_override) if root_override else Path.home() / ".orion"
+    return root / "tts-cache"
+
+
+def _cache_key(*, text: str, model: str, voice: str, speed: float, audio_format: str) -> str:
+    """穩定 hash:同樣 (text, model, voice, speed, format) → 同樣 key。speed 取小數
+    後 2 位避免浮點誤差讓 cache miss(1.0 vs 1.00 是同一個 key)。"""
+    norm_speed = f"{speed:.2f}"
+    raw = f"{model}|{voice}|{norm_speed}|{audio_format}|{text}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def cleanup_old_tts_cache(*, days: int = 30) -> dict[str, int]:
+    """掃 cache 目錄,mtime > N 天的 unlink。同 plan files GC pattern。
+    Sidecar 啟動 fire-and-forget 跑一次。idempotent。"""
+    cache_dir = _tts_cache_dir()
+    if not cache_dir.exists():
+        return {"deleted": 0, "bytes_freed": 0}
+    cutoff = time.time() - days * 86400
+    deleted = 0
+    bytes_freed = 0
+    for p in cache_dir.glob("*.mp3"):
+        try:
+            st = p.stat()
+            if st.st_mtime < cutoff:
+                bytes_freed += st.st_size
+                p.unlink()
+                deleted += 1
+        except OSError:
+            pass
+    return {"deleted": deleted, "bytes_freed": bytes_freed}
 
 
 async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
@@ -78,6 +118,39 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
         "flac": "audio/flac",
     }
     mime = mime_map.get(audio_format, "audio/mpeg")
+    char_count = len(text)
+    price_per_1m = get_tts_pricing(provider, model) or 0.0
+
+    # Cache 查詢 — 命中直接回(cost 算 0 因為不打 OpenAI)
+    cache_key = _cache_key(
+        text=text, model=model, voice=voice, speed=speed, audio_format=audio_format,
+    )
+    cache_dir = _tts_cache_dir()
+    cache_file = cache_dir / f"{cache_key}.mp3"
+    if cache_file.exists():
+        try:
+            audio_bytes = cache_file.read_bytes()
+            # 更新 mtime 讓 GC 不誤殺常用 cache
+            cache_file.touch()
+            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            yield {
+                "event": "tts_synthesized",
+                "data": {
+                    "audio_base64": audio_b64,
+                    "mime_type": mime,
+                    "provider": provider,
+                    "model": model,
+                    "voice": voice,
+                    "char_count": char_count,
+                    "cost_usd": 0.0,
+                    "cache_hit": True,
+                },
+                "final": True,
+            }
+            return
+        except OSError:
+            # Cache 檔讀失敗就當沒有,fall through 重打 OpenAI
+            pass
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -106,9 +179,14 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
         yield _err("HTTP_ERROR", str(e))
         return
 
+    # 寫進 cache — fail 不影響回應流程
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(audio_bytes)
+    except OSError:
+        pass
+
     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-    char_count = len(text)
-    price_per_1m = get_tts_pricing(provider, model) or 0.0
     cost_usd = round(char_count * price_per_1m / 1_000_000, 6)
 
     yield {
@@ -121,6 +199,7 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
             "voice": voice,
             "char_count": char_count,
             "cost_usd": cost_usd,
+            "cache_hit": False,
         },
         "final": True,
     }
@@ -151,4 +230,9 @@ async def tts_status(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:  
     }
 
 
-__all__ = ["tts_synthesize", "tts_status", "get_tts_voices"]
+__all__ = [
+    "tts_synthesize",
+    "tts_status",
+    "get_tts_voices",
+    "cleanup_old_tts_cache",
+]
