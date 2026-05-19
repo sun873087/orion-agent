@@ -1,13 +1,14 @@
 # Architecture
 
-orion-agent 是 multi-LLM agent harness — 用 anthropic + openai 兩個 SDK,**不**用第三方 agent framework。整個專案是 **uv workspace + npm workspaces 雙 monorepo**,拆成 2 個 package(reusable libs)跟 4 個 app(可獨立交付)。
+orion-agent 是 multi-LLM agent harness — 用 anthropic + openai + ollama 三個薄 SDK / HTTP client,**不**用第三方 agent framework。整個專案是 **uv workspace + npm workspaces 雙 monorepo**,拆成 3 個 package(reusable libs)跟 4 個 app(可獨立交付)。
 
 ## 結構速覽
 
 ```
 orion-agent/
 ├── packages/
-│   ├── orion-model/         純 LLM provider 抽象(Anthropic + OpenAI)
+│   ├── orion-model/         純 LLM provider 抽象(Anthropic + OpenAI + Ollama)
+│   ├── orion-model-proxy/   HTTP service 包 orion-model(可選,集中 key / cost)
 │   └── orion-sdk/           Agent runtime(Conversation loop + tools + ...)
 │
 └── apps/
@@ -23,26 +24,35 @@ orion-agent/
 ```
                   orion-model    (純 LLM,無 agent loop)
                        ▲
-                       │ depends on
-                       │
-                  orion-sdk      (agent runtime,依賴 orion-model)
-                       ▲
         ┌──────────────┼──────────────┐
         │              │              │
-   orion-cli      orion-chat-api  orion-cowork-sidecar
-        │              ▲              ▲
-                       │ HTTP/WS      │ stdio
-                       │              │
-                  orion-chat/web  orion-cowork/electron
-                  (React)         (Electron main + React renderer)
+        │ depends on   │ wraps via HTTP
+        │              │              │
+   orion-sdk    orion-model-proxy(opt-in;FastAPI service)
+   (agent runtime)     ▲
+        ▲              │ HTTP(env ORION_MODEL_PROXY_URL)
+        │              │
+        │      ┌───────┴───────┐
+        │      │               │
+   ┌────┴─orion-cli──orion-chat-api──orion-cowork-sidecar
+   │       │              ▲              ▲
+   │                      │ HTTP/WS      │ stdio
+   │                      │              │
+   │              orion-chat/web  orion-cowork/electron
+   │              (React)         (Electron main + React renderer)
+   │
+   注:host 經 orion_model.get_provider() 切兩條路:
+       ORION_MODEL_PROXY_URL 有設 → 走 HttpProxyProvider(集中 key / cost)
+       沒設                 → 直連對應 provider HTTP(舊行為,fallback)
 ```
 
 **規則**(由 import-linter 強制):
 
 1. `orion-model` 只 import 標準庫 + `anthropic` + `openai` + `httpx` + `pydantic` + `structlog`
-2. `orion-sdk` 可 import `orion-model`,**不可** import `typer` / `fastapi` / `uvicorn`
-3. App 層(cli / chat-api / sidecar)可 import sdk + model,**彼此不互相依賴**
-4. `orion-chat/web` 跟 `orion-cowork/electron` 是 TS,不直接 import Python 程式,透過協定通訊
+2. `orion-model-proxy` 可 import `orion-model` + `fastapi` + `uvicorn`,**不可** import `orion-sdk`(model layer 不認 agent loop)
+3. `orion-sdk` 可 import `orion-model`,**不可** import `typer` / `fastapi` / `uvicorn`
+4. App 層(cli / chat-api / sidecar)可 import sdk + model,**彼此不互相依賴**
+5. `orion-chat/web` 跟 `orion-cowork/electron` 是 TS,不直接 import Python 程式,透過協定通訊
 
 ## 深入
 

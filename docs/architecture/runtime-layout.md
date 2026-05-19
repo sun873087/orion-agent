@@ -274,6 +274,61 @@ load_all_skills(
 
 ---
 
+## 6. Model proxy(opt-in,Phase 31-X)
+
+跟前 5 個位置不同 — 這是**獨立 process / service**,不是磁碟資料夾。
+但 runtime 拓樸有影響,所以列在這。
+
+### Process model
+
+```
+不啟 proxy(預設 / fallback):
+   每個 host process 直連對應 provider HTTP
+   API key 從各 host 的 .env / env 讀
+
+啟 proxy:
+   一台機跑 orion-model-proxy(:9090),所有 host 走它
+   API key 只放 proxy 那台機,host 端不再需要
+```
+
+### Host 端切換
+
+由 env var 控,**code 完全不動**:
+
+| Env | 意義 |
+|---|---|
+| `ORION_MODEL_PROXY_URL` | Proxy base URL(e.g. `http://127.0.0.1:9090`)— 設了就走 proxy |
+| `ORION_MODEL_PROXY_KEY` | Bearer token,跟 proxy server 那邊 `ORION_MODEL_PROXY_KEY` 一致 |
+
+Host 怎麼 dispatch:`orion_model.provider.get_provider()`:
+
+1. `set_test_provider_factory()` 設了 → fake provider(e2e test)
+2. **`ORION_MODEL_PROXY_URL` 設了 → `HttpProxyProvider`**
+3. 否則直連對應 `AnthropicProvider` / `OpenAIProvider` / `OllamaProvider`
+
+### Proxy 端 env
+
+| Env | 預設 | 用途 |
+|---|---|---|
+| `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host(對外服務改 `0.0.0.0`) |
+| `ORION_MODEL_PROXY_PORT` | `9090` | listen port |
+| `ORION_MODEL_PROXY_KEY` | (unset) | 需要的 Bearer token;unset = 不認證(本機 dev) |
+| `ANTHROPIC_API_KEY` | — | 上游 provider key,從 host 移到這 |
+| `OPENAI_API_KEY` | — | 同上 |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama daemon 位置 |
+
+### 部署形態
+
+| 形態 | URL | 適用 |
+|---|---|---|
+| 本機 sidecar | `http://127.0.0.1:9090` | 單人多 app(`make dev-model-proxy`) |
+| 內網 | `http://proxy.lan:9090` | team 共用,多裝置 |
+| 雲端 | `https://proxy.example.com` | 跨地理 / 託管(需 nginx + TLS) |
+
+詳見 [`../features/model-proxy.md`](../features/model-proxy.md)。
+
+---
+
 ## 跟上游 Claude Code 的差異
 
 | 項目 | 上游 Claude Code | orion-agent |
@@ -287,13 +342,14 @@ load_all_skills(
 
 ---
 
-## 五個位置一句話總結
+## 六個位置一句話總結
 
 1. **bundled** = 內建,跟程式走
 2. **system**(`~/.orion/`)= 整台機器共用,admin 控
 3. **project**(`<cwd>/.orion/`)= 跟 repo 走,團隊共用,**web chat 模式幾乎沒用**
 4. **user**(`~/.orion/users/<uid>/`)= 個人,跨 project,**多租戶必用**
 5. **extra_dirs**(runtime)= 程式 / plugin 注入,最 dynamic
+6. **model proxy**(opt-in service)= API key / cost 集中點,host 端 env 切過去就走
 
 要客製預設行為:
 - 全 server 改 → 動 system

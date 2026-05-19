@@ -142,6 +142,31 @@
 
 ---
 
+## 11. Model proxy 用 Orion-native wire,opt-in 不破壞直連模式
+
+**情境**:3 個 host(CLI / chat-api / cowork sidecar)各自直連 Anthropic / OpenAI / Ollama,各 `.env` 一份 API key、各算 cost、未來想做 routing / cache / per-user budget 沒地方放。
+
+**選擇**:加一個獨立 package `packages/orion-model-proxy`(FastAPI service),host 端 `orion_model.get_provider()` 偵測 `ORION_MODEL_PROXY_URL` env 自動切過去走 `HttpProxyProvider`;沒設 env 維持直連。Wire 格式走 **Orion-native NormalizedMessage JSON over NDJSON**,不是 OpenAI-compat。
+
+**為什麼 opt-in via env(不強制全 proxy)**:
+- 既有 host code **零行不動**,只動 env;rollback 拿掉 env 就回直連
+- Proxy 掛了 host 不會卡死(unset env 立刻退回)
+- 單機開發、CI 跑 e2e 不用先起 proxy daemon
+- 將來想拆 client lib 瘦身(host 端不 bundle anthropic / openai SDK)是另一個 phase,**這次先不破壞**
+
+**為什麼 Orion-native wire 不走 OpenAI-compat**:
+- 三家 provider 行為差異(Anthropic thinking blocks / cache_control、OpenAI reasoning_tokens、Ollama vision)在 `orion_model.events.NormalizedEvent` 已抽象一次;OpenAI-compat 翻譯會失真(Anthropic cache breakpoint 在 OpenAI 沒對應、tool_use 語意不同)
+- Wire = SDK 內部 Pydantic model 直接 JSON 化,proxy / host 兩邊都 `model_validate`,**沒中間翻譯層**
+- 將來想對外公開 OpenAI-compat 給第三方接是另開 endpoint,不衝突
+
+**代價**:
+- Proxy 是 SPOF(緩解:env unset 立刻 fallback direct)
+- 多一跳網路延遲(localhost <1 ms,跨網路看實際 RTT)
+- NDJSON 非標準 streaming 格式(但實作簡單 — 每行 JSON,client 端 `aiter_lines()` 直接解,沒 SSE `data:` prefix / keepalive 雜訊)
+- Phase A MVP 只做 wire + auth;cost tracking / routing / cache / failover 分階段加(留 phasing 在 [`../features/model-proxy.md`](../features/model-proxy.md))
+
+---
+
 ## 看完繼續
 
 - [packages.md](./packages.md) — 各 package 具體做什麼
