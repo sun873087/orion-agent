@@ -21,33 +21,57 @@ orion-agent/
 
 ## 依賴流
 
-```
-                  orion-model    (純 LLM,無 agent loop)
-                       ▲
-                       │ depends on
-                       │
-        ┌──────────────┼──────────────┐
-        │              │              │
-   orion-sdk           │       orion-model-proxy(opt-in service)
-   (agent runtime)     │       FastAPI transparent reverse →
-        ▲              │       api.openai.com / api.anthropic.com
-        │              │
-        ├──────────────┤
-        │              │
-   orion-cli      orion-chat-api──orion-cowork-sidecar
-        │              ▲              ▲
-                       │ HTTP/WS      │ stdio
-                       │              │
-              orion-chat/web   orion-cowork/electron
-              (React)          (Electron main + React renderer)
+```mermaid
+flowchart TB
+    %% packages/ — Python libs
+    model["orion-model<br/>純 LLM provider 抽象<br/>(無 agent loop)"]
+    sdk["orion-sdk<br/>agent runtime"]
+    proxy["orion-model-proxy<br/>FastAPI transparent reverse<br/>opt-in service"]
 
-   注:host 用 orion_model 的 AnthropicProvider / OpenAIProvider,SDK init
-       時偵測 env:
-         ORION_MODEL_PROXY_URL 有設 → SDK base_url 換成 proxy(透傳)
-         沒設                 → SDK 預設打 api.{anthropic,openai}.com
-       Wire format 永遠 = OpenAI / Anthropic 原生(跟外部 SDK 共用)。
-       Ollama 本機 daemon,不經 proxy。
+    sdk -->|depends on| model
+    proxy -->|depends on| model
+
+    %% apps/ — Python entrypoints
+    cli["orion-cli"]
+    chatapi["orion-chat-api"]
+    sidecar["orion-cowork-sidecar"]
+
+    cli --> sdk
+    chatapi --> sdk
+    sidecar --> sdk
+
+    %% apps/ — TS frontends
+    web["orion-chat/web<br/>(React)"]
+    electron["orion-cowork/electron<br/>(main + renderer)"]
+
+    web -. HTTP/WS .-> chatapi
+    electron -. stdio .-> sidecar
+
+    %% Optional proxy routing
+    cli -. "ORION_MODEL_PROXY_URL" .-> proxy
+    chatapi -. "(env-gated)" .-> proxy
+    sidecar -.-> proxy
+
+    %% Upstream
+    upstream[("api.openai.com<br/>api.anthropic.com")]
+    proxy ==>|transparent reverse| upstream
+
+    classDef lib fill:#e8f0fe,stroke:#4285f4
+    classDef app fill:#fff3e0,stroke:#f57c00
+    classDef fe  fill:#f0f4c3,stroke:#827717
+    classDef ext fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 3
+    class model,sdk,proxy lib
+    class cli,chatapi,sidecar app
+    class web,electron fe
+    class upstream ext
 ```
+
+**Env gating**:host 用 `orion_model` 的 `AnthropicProvider` / `OpenAIProvider`,SDK init 時偵測 env:
+
+- `ORION_MODEL_PROXY_URL` 有設 → SDK `base_url` 換成 proxy(透傳)
+- 沒設 → SDK 預設打 `api.{anthropic,openai}.com`
+
+Wire format 永遠 = OpenAI / Anthropic 原生(跟外部 SDK 共用)。Ollama 本機 daemon,不經 proxy。
 
 **規則**(由 import-linter 強制):
 
