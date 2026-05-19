@@ -89,3 +89,4 @@ echo '{"id":"1","method":"ping"}' | \
 - 對 architecture 沒概念 → [`../architecture/README.md`](../architecture/README.md)
 - 想看某 feature → [`../features/README.md`](../features/README.md)
 - 想改 code → [`run-tests.md`](./run-tests.md) 跟 [`manual-testing.md`](./manual-testing.md)
+- 想 build Cowork 成 `.dmg` 給人裝 → [`build.md`](./build.md)

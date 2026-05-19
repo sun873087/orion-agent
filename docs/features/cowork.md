@@ -117,7 +117,7 @@ await window.agent.call(
 
 `sidecar.ts:SidecarClient`:
 - spawn 時用 `uv run --package orion-cowork-sidecar python -m orion_cowork_sidecar`(dev mode)
-- production 改打 PyInstaller binary(尚未實作)
+- production 打 PyInstaller binary(Phase 31-W,`Contents/Resources/sidecar/orion-cowork-sidecar`),`main.ts:packagedSidecarPath()` 在 `app.isPackaged` 時偵測切換 spawn path
 - 監聽 child exit event,死掉時 reject 所有 pending requests + reset state
 - buffer 處理:stdout 可能一次拿到多行 / 半行,split `\n` 處理 boundary
 
@@ -218,7 +218,7 @@ Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / 
 - ✅ E2e 測試(Playwright Electron)
 
 **未實作 / Roadmap**:
-- ❌ PyInstaller 單檔打包 + electron-builder cross-platform .app/.exe/.AppImage
+- ✅ PyInstaller 單檔打包 + electron-builder .dmg(Phase 31-W,macOS arm64/x64;Win/Linux 設定齊但要對應 OS build)— `pnpm dist:mac` 一鍵 build,詳見 [`../guides/build.md`](../guides/build.md)
 - ❌ macOS notarization / Windows code signing
 - ❌ Auto-update(electron-updater)
 - ❌ OS-level 排程(app 關了仍跑)— 目前 app 必須開
