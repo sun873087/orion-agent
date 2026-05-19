@@ -1,6 +1,6 @@
 """Real-API integration:多模態(text + image)是否能透過 SDK 真實傳到模型。
 
-兩個 test:Anthropic Claude + OpenAI gpt-4o-mini,都送一張紅色純色 PNG
+兩個 test:Anthropic Claude + OpenAI gpt-5-mini,都送一張紅色純色 PNG
 要模型描述。如果壞掉,模型回答不會提到 "red" / "色" 之類。
 
 驗證的是 Conversation.send(prompt, images=[ImageBlock]) 一路到 provider 的
@@ -68,8 +68,8 @@ async def test_anthropic_vision_sees_red_image() -> None:
 )
 @pytest.mark.asyncio
 async def test_openai_vision_sees_red_image() -> None:
-    """重點:Cowork 預設 default model 是 OpenAI gpt-4o-mini,vision 必須通。"""
-    provider = get_provider("openai", "gpt-4o-mini")
+    """重點:Cowork 預設 default model 是 OpenAI gpt-5-mini,vision 必須通。"""
+    provider = get_provider("openai", "gpt-5-mini")
     conv = Conversation(
         provider=provider,
         system_prompt="Describe images you see briefly.",

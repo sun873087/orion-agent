@@ -153,7 +153,7 @@ type SettingsState = {
   toggleForkCollapse: (sessionId: string) => void
 
   /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
-   *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-4o-mini)。 */
+   *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-5-mini)。 */
   compactSummaryProvider: string | null
   compactSummaryModel: string | null
   setCompactSummary: (provider: string | null, model: string | null) => void

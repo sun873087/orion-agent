@@ -37,7 +37,7 @@ def _red_png_base64() -> str:
 
 @pytest.mark.parametrize("provider,model", [
     ("anthropic", "claude-haiku-4-5"),
-    ("openai", "gpt-4o-mini"),  # User reported case — UI default
+    ("openai", "gpt-5-mini"),
 ])
 def test_sidecar_passes_attachment_to_model(provider: str, model: str) -> None:
     """End-to-end:sidecar → SDK → provider → response 應提到 red。"""

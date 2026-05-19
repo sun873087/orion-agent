@@ -19,8 +19,9 @@ _KNOWN_MODELS = (
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
-    "gpt-4o",
-    "gpt-4o-mini",
+    "gpt-5.5",
+    "gpt-5",
+    "gpt-5-mini",
 )
 
 

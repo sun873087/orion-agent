@@ -27,7 +27,7 @@ async def test_multi_turn_with_file_read(tmp_path: object) -> None:
     p = Path(tmp_path) / "secret.txt"  # type: ignore[arg-type]
     p.write_text("MAGIC-NUMBER-9988\n", encoding="utf-8")
 
-    provider = get_provider("openai", "gpt-4o-mini")
+    provider = get_provider("openai", "gpt-5-mini")
     conv = Conversation(
         provider=provider,
         system_prompt="Use tools when needed. Be concise.",

@@ -54,8 +54,8 @@ def test_m01_adds_default_model() -> None:
 
 def test_m01_does_not_overwrite() -> None:
     runner = MigrationRunner([M01])
-    s, _ = runner.migrate({"model": "gpt-4o"})
-    assert s["model"] == "gpt-4o"
+    s, _ = runner.migrate({"model": "gpt-5"})
+    assert s["model"] == "gpt-5"
 
 
 def test_m02_wraps_string_mcp_command() -> None:

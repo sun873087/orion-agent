@@ -28,8 +28,8 @@ def test_validate_known_anthropic_models() -> None:
 
 def test_validate_known_openai_models() -> None:
     assert validate("openai", "gpt-5")
-    assert validate("openai", "gpt-4o-mini")
-    assert validate("openai", "o3")
+    assert validate("openai", "gpt-5-mini")
+    assert validate("openai", "gpt-5.5")
 
 
 def test_validate_unknown_provider() -> None:
@@ -83,18 +83,18 @@ def test_get_max_output_tokens_unknown() -> None:
 def test_get_max_context_tokens() -> None:
     assert get_max_context_tokens("anthropic", "claude-sonnet-4-6") == 200_000
     assert get_max_context_tokens("openai", "gpt-5") == 1_000_000
-    assert get_max_context_tokens("openai", "gpt-4o") == 128_000
+    assert get_max_context_tokens("openai", "gpt-5-mini") == 1_000_000
     assert get_max_context_tokens("anthropic", "fake") is None
 
 
 def test_get_supports_reasoning() -> None:
     # Reasoning-supporting models
     assert get_supports_reasoning("anthropic", "claude-opus-4-7") is True
-    assert get_supports_reasoning("openai", "o3") is True
+    assert get_supports_reasoning("openai", "gpt-5.5") is True
     assert get_supports_reasoning("openai", "gpt-5") is True
-    # Non-reasoning models
+    # Non-reasoning models — 目前 catalog 內 OpenAI 全是 reasoning 系列,
+    # 只剩 Anthropic Sonnet 是 non-reasoning(Opus / Haiku 4.5 都 reasoning)。
     assert get_supports_reasoning("anthropic", "claude-sonnet-4-6") is False
-    assert get_supports_reasoning("openai", "gpt-4o") is False
     # Unknown → False (safe default)
     assert get_supports_reasoning("anthropic", "fake") is False
 
@@ -117,8 +117,8 @@ def test_find_pricing_by_model_reverse_lookup() -> None:
     # Used by cost_tracker which only has model name, not provider
     p = find_pricing_by_model("claude-haiku-4-5")
     assert p is not None and p["input"] == 1.0
-    p = find_pricing_by_model("gpt-4o-mini")
-    assert p is not None and p["input"] == 0.15
+    p = find_pricing_by_model("gpt-5-mini")
+    assert p is not None and p["input"] == 0.25
     assert find_pricing_by_model("not-a-model") is None
 
 
@@ -128,7 +128,7 @@ def test_iter_all_entries_flat_list() -> None:
     # both providers' models flattened together
     assert "claude-sonnet-4-6" in ids
     assert "gpt-5" in ids
-    assert "o3" in ids
+    assert "gpt-5-mini" in ids
 
 
 def test_json_override_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

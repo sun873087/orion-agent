@@ -250,7 +250,7 @@ class Conversation:
     compact_summary_provider: LLMProvider | None = None
     """摘要要用的 provider override。None → 用 self.provider(跟對話同一個 model)。
     Caller(例如 Cowork sidecar)可注入一個便宜模型的 provider(Haiku /
-    gpt-4o-mini 等),把每次壓縮的 LLM cost 降到 1/5~1/10。"""
+    gpt-5-mini 等),把每次壓縮的 LLM cost 降到 1/5~1/10。"""
 
     # ─── Phase 27 ─────────────────────────────────────────────────────────
     db_engine: object | None = None

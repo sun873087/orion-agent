@@ -2,7 +2,7 @@
 
 跑法:
   orion --provider anthropic --model claude-sonnet-4-6 "Look at /etc and tell me about it"
-  orion --provider openai    --model gpt-4o-mini       "..."
+  orion --provider openai    --model gpt-5-mini         "..."
 
 支援多 turn 對話、平行工具執行、permission policy(預設 always_allow)、
 streaming text + tool 進度顯示。
