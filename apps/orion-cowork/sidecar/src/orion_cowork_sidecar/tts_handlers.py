@@ -17,8 +17,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import httpx
-
+from orion_model.audio import synthesize as audio_synthesize
 from orion_model.tts_catalog import get_tts_pricing, get_tts_voices, validate_tts
 
 
@@ -98,12 +97,8 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
         speed = 1.0
     speed = max(0.25, min(4.0, speed))
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        yield _err("NO_API_KEY", "OPENAI_API_KEY not set")
-        return
-
-    # OpenAI tts-1 單次 input 上限 4096 chars,超過要 caller 自己切句
+    # OpenAI 4096 chars 上限 — 在 orion_model.audio.tts 也會擋,這裡為了好錯誤
+    # 訊息先 check(直接回 sidecar 自己 error code)
     if len(text) > 4096:
         yield _err(
             "TEXT_TOO_LONG",
@@ -119,9 +114,11 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
     }
     mime = mime_map.get(audio_format, "audio/mpeg")
     char_count = len(text)
-    price_per_1m = get_tts_pricing(provider, model) or 0.0
 
-    # Cache 查詢 — 命中直接回(cost 算 0 因為不打 OpenAI)
+    # ─── Cache 查詢(sidecar 端 ~/.orion/tts-cache/)──────────────
+    # 不走 orion_model.audio 是因為 cache 路徑 / mtime 都跟 Cowork 既有
+    # blobs / plans GC 對齊,屬於 host 範疇。Cache key 含 model+voice+speed
+    # +format+text → 同樣 sha256 → 同 mp3 檔。
     cache_key = _cache_key(
         text=text, model=model, voice=voice, speed=speed, audio_format=audio_format,
     )
@@ -130,8 +127,7 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
     if cache_file.exists():
         try:
             audio_bytes = cache_file.read_bytes()
-            # 更新 mtime 讓 GC 不誤殺常用 cache
-            cache_file.touch()
+            cache_file.touch()  # 更新 mtime 讓 GC 不誤殺
             audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
             yield {
                 "event": "tts_synthesized",
@@ -149,56 +145,43 @@ async def tts_synthesize(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]
             }
             return
         except OSError:
-            # Cache 檔讀失敗就當沒有,fall through 重打 OpenAI
-            pass
+            pass  # Cache 讀失敗 fall through 走 audio_synthesize
 
+    # ─── 真正去合成(env-gate:proxy / direct)──────────────────────
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/audio/speech",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "voice": voice,
-                    "input": text,
-                    "speed": speed,
-                    "response_format": audio_format,
-                },
-            )
-            if resp.status_code != 200:
-                yield _err(
-                    "OPENAI_ERROR",
-                    f"status {resp.status_code}: {resp.text[:200]}",
-                )
-                return
-            audio_bytes = resp.content
-    except httpx.HTTPError as e:
-        yield _err("HTTP_ERROR", str(e))
+        result = await audio_synthesize(
+            provider=provider,
+            model=model,
+            voice=voice,
+            speed=speed,
+            text=text,
+            audio_format=audio_format,
+        )
+    except ValueError as e:
+        yield _err("BAD_PARAMS", str(e))
+        return
+    except RuntimeError as e:
+        yield _err("API_FAILED", str(e))
         return
 
-    # 寫進 cache — fail 不影響回應流程
+    # 寫進 cache — fail 不影響回應
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file.write_bytes(audio_bytes)
+        cache_file.write_bytes(result.audio_bytes)
     except OSError:
         pass
 
-    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-    cost_usd = round(char_count * price_per_1m / 1_000_000, 6)
-
+    audio_b64 = base64.b64encode(result.audio_bytes).decode("ascii")
     yield {
         "event": "tts_synthesized",
         "data": {
             "audio_base64": audio_b64,
-            "mime_type": mime,
-            "provider": provider,
-            "model": model,
-            "voice": voice,
-            "char_count": char_count,
-            "cost_usd": cost_usd,
+            "mime_type": result.mime_type,
+            "provider": result.provider,
+            "model": result.model,
+            "voice": result.voice,
+            "char_count": result.char_count,
+            "cost_usd": result.cost_usd,
             "cache_hit": False,
         },
         "final": True,

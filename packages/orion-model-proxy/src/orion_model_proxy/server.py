@@ -31,8 +31,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from orion_model.audio import stt as audio_stt
+from orion_model.audio import tts as audio_tts
 from orion_model.catalog import list_catalog
+from orion_model.stt_catalog import list_stt_catalog
 from orion_model.tool_def import ToolDefinition
+from orion_model.tts_catalog import list_tts_catalog
 from orion_model.types import NormalizedMessage
 
 
@@ -60,6 +64,24 @@ class MessagesRequest(BaseModel):
     temperature: float | None = None
     cache_breakpoints: list[int] | None = None
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+
+
+class TranscribeRequest(BaseModel):
+    provider: Literal["openai", "google"]
+    model: str = "whisper-1"
+    audio_base64: str
+    mime_type: str = "audio/webm"
+    locale: str | None = None
+    duration_seconds: float | None = None
+
+
+class SynthesizeRequest(BaseModel):
+    provider: Literal["openai"] = "openai"
+    model: str = "tts-1"
+    voice: str = "nova"
+    speed: float = 1.0
+    text: str
+    format: Literal["mp3", "opus", "aac", "flac"] = "mp3"
 
 
 def _check_auth(req: Request) -> None:
@@ -134,6 +156,79 @@ def create_app() -> FastAPI:
             _stream(),
             media_type="application/x-ndjson",
         )
+
+    @app.get("/v1/stt/models")
+    async def stt_models() -> dict[str, Any]:
+        """STT catalog(openai whisper / gpt-4o transcribe / google)。"""
+        return list_stt_catalog()
+
+    @app.get("/v1/tts/models")
+    async def tts_models() -> dict[str, Any]:
+        """TTS catalog(openai tts-1 / tts-1-hd × 6 voices)。"""
+        return list_tts_catalog()
+
+    @app.post("/v1/audio/transcribe")
+    async def audio_transcribe(req: Request) -> JSONResponse:
+        """STT — multipart audio_base64 in,text out。"""
+        _check_auth(req)
+        try:
+            body = await req.json()
+            payload = TranscribeRequest.model_validate(body)
+        except (json.JSONDecodeError, Exception) as e:  # noqa: BLE001 - pydantic validation
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        try:
+            result = await audio_stt.transcribe(
+                provider=payload.provider,
+                model=payload.model,
+                audio_base64=payload.audio_base64,
+                mime_type=payload.mime_type,
+                locale=payload.locale,
+                duration_seconds=payload.duration_seconds,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        return JSONResponse({
+            "text": result.text,
+            "provider": result.provider,
+            "model": result.model,
+            "duration_seconds": result.duration_seconds,
+            "cost_usd": result.cost_usd,
+        })
+
+    @app.post("/v1/audio/speech")
+    async def audio_speech(req: Request) -> JSONResponse:
+        """TTS — text in,audio_base64 out(client 自己 decode 播放)。"""
+        _check_auth(req)
+        try:
+            body = await req.json()
+            payload = SynthesizeRequest.model_validate(body)
+        except (json.JSONDecodeError, Exception) as e:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        try:
+            result = await audio_tts.synthesize(
+                provider=payload.provider,
+                model=payload.model,
+                voice=payload.voice,
+                speed=payload.speed,
+                text=payload.text,
+                audio_format=payload.format,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        import base64 as _b64
+        return JSONResponse({
+            "audio_base64": _b64.b64encode(result.audio_bytes).decode("ascii"),
+            "mime_type": result.mime_type,
+            "provider": result.provider,
+            "model": result.model,
+            "voice": result.voice,
+            "char_count": result.char_count,
+            "cost_usd": result.cost_usd,
+        })
 
     # /v1/health/{provider} — per-provider ping(可選 — health 已 cover)
     @app.get("/v1/health/{provider}")
