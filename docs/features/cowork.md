@@ -78,6 +78,7 @@ apps/orion-cowork/
 | **Permissions** | `permissions.{get,set}` |
 | **MCP** | `mcp.{list,reconnect,config_list,config_upsert}` |
 | **STT**(Phase 31-D) | `stt.{transcribe,status}` |
+| **TTS**(Phase 31-T) | `tts.{synthesize,status}` |
 | **Models** | `models.list` |
 
 Notifications(sidecar 主動 push,無 `id`):
@@ -181,6 +182,7 @@ Cowork 從獨立 root `~/.orion-cowork/` 搬進 `~/.orion/`,**skills / memory / 
 ### 桌面 OS 整合
 - 圖檔附件:拖入 / paste / dialog 選檔三條 path,blob store(content hash)去重
 - STT(Phase 31-D):麥克風錄音 → 上傳 OpenAI Whisper / GPT-4o transcribe
+- TTS(Phase 31-T):每則 AI 回應 hover 有 🔊 念出按鈕。預設 Web Speech API(免費系統聲音);Settings 可切 OpenAI tts-1 / tts-1-hd × 6 voices × speed 0.5-2x。markdown / code 自動 strip;autoplay 開關「每則自動念」。全域單實例播放器,切下一則自動停舊的
 - Browser use(Phase 31-F):AI 用 Playwright 控 system Chrome(headful)— `BrowserNavigate / Click / Type / Screenshot / ...`
 - OS notifications:排程觸發完成 / 工具失敗等用 Web Notifications API
 

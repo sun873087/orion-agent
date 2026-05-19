@@ -375,6 +375,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': 'Regenerate',
+  'message.ttsPlay': 'Read aloud',
+  'message.ttsStop': 'Stop',
   'message.fork': 'Fork',
   'message.forkPromptHeadingUser': 'Fork from this prompt (rephrase or retry)',
   'message.forkPromptHeadingAssistant': 'Fork from this answer (set branch title)',

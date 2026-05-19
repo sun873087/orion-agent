@@ -375,6 +375,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '再生成',
+  'message.ttsPlay': '読み上げ',
+  'message.ttsStop': '停止',
   'message.fork': '分岐',
   'message.forkPromptHeadingUser': 'この質問から分岐(言い換えるか再試行)',
   'message.forkPromptHeadingAssistant': 'この回答から分岐(分岐タイトルを設定)',

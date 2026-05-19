@@ -42,6 +42,7 @@ from orion_cowork_sidecar import (
     skill_handlers,
     storage,
     stt_handlers,
+    tts_handlers,
 )
 from orion_cowork_sidecar.desktop_tools import OpenPathTool, OpenUrlTool
 from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
@@ -500,6 +501,8 @@ class Handlers:
             "permissions.set": self.permissions_set,
             "stt.transcribe": stt_handlers.stt_transcribe,
             "stt.status": self.stt_status,
+            "tts.synthesize": tts_handlers.tts_synthesize,
+            "tts.status": tts_handlers.tts_status,
             "mcp.list": self.mcp_list,
             "mcp.reconnect": self.mcp_reconnect,
             "mcp.config_list": self.mcp_config_list,

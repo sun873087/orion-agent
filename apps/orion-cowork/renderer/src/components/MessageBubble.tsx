@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, ChevronDown, ChevronUp, Copy, GitBranch, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, X as XIcon } from 'lucide-react'
+import { useSyncExternalStore } from 'react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
 import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
+import { getPlayingMessageId, isPlaying as isMsgPlaying, play as ttsPlay, stop as ttsStop, subscribe as ttsSubscribe } from '../utils/ttsPlayer'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
@@ -226,12 +228,55 @@ export function MessageBubble({
                 }
               />
             )}
+            {/* TTS 念出 — assistant 訊息才顯,且要有文字。 */}
+            {!isUser && message.text && <TtsButton messageId={message.id} text={message.text} />}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+/** 訂閱 ttsPlayer 狀態 — 哪一則正在念。stable identity 給 useSyncExternalStore。 */
+function useTtsPlayingId(): string | null {
+  return useSyncExternalStore(ttsSubscribe, getPlayingMessageId, () => null)
+}
+
+function TtsButton({ messageId, text }: { messageId: string; text: string }) {
+  const { t } = useTranslation()
+  const provider = useSettingsStore((s) => s.ttsProvider)
+  const model = useSettingsStore((s) => s.ttsModel)
+  const voice = useSettingsStore((s) => s.ttsVoice)
+  const speed = useSettingsStore((s) => s.ttsSpeed)
+  const locale = useSettingsStore((s) => s.locale)
+  const playingId = useTtsPlayingId()
+  const isThis = isMsgPlaying(messageId) && playingId === messageId
+  // provider='off' 時整顆按鈕不顯
+  if (provider === 'off') return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (isThis) {
+          ttsStop()
+        } else {
+          ttsPlay(messageId, text, {
+            provider,
+            model,
+            voice,
+            speed,
+            locale,
+          })
+        }
+      }}
+      title={isThis ? t('message.ttsStop') : t('message.ttsPlay')}
+      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+    >
+      {isThis ? <Square size={12} /> : <Volume2 size={12} />}
+      <span>{isThis ? t('message.ttsStop') : t('message.ttsPlay')}</span>
+    </button>
   )
 }
 

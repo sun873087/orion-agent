@@ -1028,6 +1028,64 @@ export async function sttTranscribe(
   return result
 }
 
+// ─── TTS(Phase 31-T)──────────────────────────────────────────────────
+
+export type TtsResult = {
+  audioBase64: string
+  mimeType: string
+  charCount: number
+  costUsd: number
+}
+
+/** 呼 sidecar 把 text → audio。Web Speech API 走另一條 path,不經這 RPC。 */
+export async function synthesizeSpeech(opts: {
+  text: string
+  provider: 'openai'
+  model: string
+  voice: string
+  speed: number
+}): Promise<TtsResult> {
+  let result: TtsResult = {
+    audioBase64: '',
+    mimeType: 'audio/mpeg',
+    charCount: 0,
+    costUsd: 0,
+  }
+  let errMsg: string | null = null
+  await window.agent.call(
+    'tts.synthesize',
+    {
+      provider: opts.provider,
+      model: opts.model,
+      voice: opts.voice,
+      speed: opts.speed,
+      text: opts.text,
+      format: 'mp3',
+    },
+    (frame) => {
+      const f = frame as {
+        event?: string
+        data?: Record<string, unknown>
+        error?: { message?: string }
+      }
+      if (f.error?.message) errMsg = f.error.message
+      else if (f.event === 'error' && typeof f.data?.message === 'string')
+        errMsg = f.data.message as string
+      else if (f.event === 'tts_synthesized' && f.data) {
+        const d = f.data
+        result = {
+          audioBase64: typeof d.audio_base64 === 'string' ? d.audio_base64 : '',
+          mimeType: typeof d.mime_type === 'string' ? d.mime_type : 'audio/mpeg',
+          charCount: typeof d.char_count === 'number' ? d.char_count : 0,
+          costUsd: typeof d.cost_usd === 'number' ? d.cost_usd : 0,
+        }
+      }
+    },
+  )
+  if (errMsg) throw new Error(errMsg)
+  return result
+}
+
 /** 覆寫單一 scope 的 policy(整批替換,非 patch)。 */
 export async function setPermissions(
   scope: PermissionScope,

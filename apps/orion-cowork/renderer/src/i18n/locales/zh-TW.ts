@@ -393,6 +393,8 @@ export default {
 
   // Message
   'message.regenerate': '重新生成',
+  'message.ttsPlay': '念出',
+  'message.ttsStop': '停止',
   'message.fork': '分叉',
   'message.forkPromptHeadingUser': '從這個問題分叉(換問法或重試)',
   'message.forkPromptHeadingAssistant': '從這個回答分叉(取分支標題)',

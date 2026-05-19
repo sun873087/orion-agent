@@ -94,9 +94,130 @@ export function ModelsSection() {
       ))}
       </div>
       <SttPicker />
+      <TtsPicker />
       <AutoCompactPicker />
       <ConcurrentLimitPicker />
       <BudgetPicker />
+    </div>
+  )
+}
+
+/** TTS 設定(Phase 31-T)— 預設 Web Speech API(免費、系統聲音),也可切 OpenAI cloud。 */
+function TtsPicker() {
+  const provider = useSettingsStore((s) => s.ttsProvider)
+  const setProvider = useSettingsStore((s) => s.setTtsProvider)
+  const model = useSettingsStore((s) => s.ttsModel)
+  const setModel = useSettingsStore((s) => s.setTtsModel)
+  const voice = useSettingsStore((s) => s.ttsVoice)
+  const setVoice = useSettingsStore((s) => s.setTtsVoice)
+  const speed = useSettingsStore((s) => s.ttsSpeed)
+  const setSpeed = useSettingsStore((s) => s.setTtsSpeed)
+  const autoplay = useSettingsStore((s) => s.ttsAutoplay)
+  const setAutoplay = useSettingsStore((s) => s.setTtsAutoplay)
+  const VOICES: Array<{ id: 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer'; label: string }> = [
+    { id: 'alloy', label: 'Alloy(中性)' },
+    { id: 'echo', label: 'Echo(男聲)' },
+    { id: 'fable', label: 'Fable(英倫)' },
+    { id: 'nova', label: 'Nova(女聲,推薦)' },
+    { id: 'onyx', label: 'Onyx(低沉男聲)' },
+    { id: 'shimmer', label: 'Shimmer(柔和女聲)' },
+  ]
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-fg-muted">
+        <Layers size={14} />
+        TTS(念出 AI 回應)
+      </h3>
+      <p className="text-[11px] text-fg-subtle">
+        Assistant 訊息下方有 🔊 按鈕,點下去念出該則回應。Web Speech 用系統聲音免費;
+        OpenAI 走 cloud /audio/speech 較自然但每百萬字 ${'{'}15{'}'} 美金。
+      </p>
+      <div className="mt-1 flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-fg-muted">Provider</label>
+        <div className="flex gap-2">
+          {([
+            { value: 'off' as const, label: '停用' },
+            { value: 'web' as const, label: 'Web Speech(免費)' },
+            { value: 'openai' as const, label: 'OpenAI(付費)' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setProvider(opt.value)}
+              className={`rounded-md border px-3 py-1 text-xs ${
+                provider === opt.value
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-bg-hover bg-bg-panel text-fg-muted hover:border-accent/40'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {provider === 'openai' && (
+        <>
+          <div className="mt-1 flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-fg-muted">Model</label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value as 'tts-1' | 'tts-1-hd')}
+              className="w-64 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs focus:border-accent focus:outline-none"
+            >
+              <option value="tts-1">tts-1(標準 · $15/1M 字)</option>
+              <option value="tts-1-hd">tts-1-hd(高品質 · $30/1M 字)</option>
+            </select>
+          </div>
+          <div className="mt-1 flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-fg-muted">Voice</label>
+            <select
+              value={voice}
+              onChange={(e) =>
+                setVoice(e.target.value as 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer')
+              }
+              className="w-64 rounded-md border border-bg-hover bg-bg-input px-2 py-1 text-xs focus:border-accent focus:outline-none"
+            >
+              {VOICES.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+      {provider !== 'off' && (
+        <div className="mt-1 flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-fg-muted">
+            播放速度:<span className="font-mono text-fg-base">{speed.toFixed(2)}x</span>
+          </label>
+          <input
+            type="range"
+            min={0.5}
+            max={2.0}
+            step={0.05}
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+            className="w-64 accent-accent"
+          />
+          <div className="flex w-64 justify-between text-[10px] text-fg-subtle">
+            <span>0.5x</span>
+            <span>1.0x(預設)</span>
+            <span>2.0x</span>
+          </div>
+        </div>
+      )}
+      {provider !== 'off' && (
+        <label className="mt-1 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-bg-hover bg-bg-panel px-3 py-1.5 text-sm hover:border-accent/40 hover:bg-bg-hover">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={autoplay}
+            onChange={(e) => setAutoplay(e.target.checked)}
+          />
+          <span>每則 AI 回應結束後自動念</span>
+        </label>
+      )}
     </div>
   )
 }

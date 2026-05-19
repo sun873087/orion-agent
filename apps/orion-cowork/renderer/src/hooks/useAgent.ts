@@ -414,6 +414,25 @@ export function useSendPrompt() {
       refreshSessions()
       // 補新訊息的 messageIndex,讓 edit / delete 立刻可用,不必等切換對話
       void backfillMessageIndices(targetSid)
+      // TTS autoplay(Phase 31-T)— 開啟且 turn 自然結束就念這則
+      const settings = useSettingsStore.getState()
+      if (settings.ttsAutoplay && settings.ttsProvider !== 'off') {
+        const msgs = useAgentStore.getState().messagesBySession[targetSid] ?? []
+        const lastAssistant = [...msgs].reverse().find(
+          (m) => m.id === assistantId && m.role === 'assistant',
+        )
+        if (lastAssistant && lastAssistant.text) {
+          void import('../utils/ttsPlayer').then(({ play }) => {
+            play(lastAssistant.id, lastAssistant.text, {
+              provider: settings.ttsProvider === 'web' ? 'web' : 'openai',
+              model: settings.ttsModel,
+              voice: settings.ttsVoice,
+              speed: settings.ttsSpeed,
+              locale: settings.locale,
+            })
+          })
+        }
+      }
     }
   }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, maxConcurrent])
 }

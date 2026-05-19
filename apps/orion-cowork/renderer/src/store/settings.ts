@@ -29,6 +29,12 @@ export type OpenAiSttModel =
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
 
+/** TTS provider 偏好(Phase 31-T)。'off' = 完全停用按鈕,'web' = Web Speech API
+ *  瀏覽器內建(免費),'openai' = cloud /audio/speech。 */
+export type TtsProvider = 'off' | 'web' | 'openai'
+export type OpenAiTtsModel = 'tts-1' | 'tts-1-hd'
+export type OpenAiTtsVoice = 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer'
+
 export type ModelEntry = {
   id: string
   label: string
@@ -100,6 +106,18 @@ type SettingsState = {
   sttProvider: SttProvider
   setSttProvider: (p: SttProvider) => void
   openaiSttModel: OpenAiSttModel
+
+  /** TTS 設定(Phase 31-T)。 */
+  ttsProvider: TtsProvider
+  setTtsProvider: (p: TtsProvider) => void
+  ttsModel: OpenAiTtsModel
+  setTtsModel: (m: OpenAiTtsModel) => void
+  ttsVoice: OpenAiTtsVoice
+  setTtsVoice: (v: OpenAiTtsVoice) => void
+  ttsSpeed: number  // 0.25 ~ 4.0
+  setTtsSpeed: (v: number) => void
+  ttsAutoplay: boolean  // assistant 訊息 streaming 結束自動念
+  setTtsAutoplay: (v: boolean) => void
   setOpenaiSttModel: (m: OpenAiSttModel) => void
   setCatalog: (providers: Provider[]) => void
   openSettings: (section?: string) => void
@@ -167,6 +185,11 @@ export const useSettingsStore = create<SettingsState>()(
       userAvatar: null,
       sttProvider: 'openai',
       openaiSttModel: 'gpt-4o-mini-transcribe',
+      ttsProvider: 'web',
+      ttsModel: 'tts-1',
+      ttsVoice: 'nova',
+      ttsSpeed: 1.0,
+      ttsAutoplay: false,
       providers: [],
       catalogLoaded: false,
       ollama: {
@@ -244,6 +267,14 @@ export const useSettingsStore = create<SettingsState>()(
       setUserAvatar: (d) => set({ userAvatar: d }),
       setSttProvider: (p) => set({ sttProvider: p }),
       setOpenaiSttModel: (m) => set({ openaiSttModel: m }),
+      setTtsProvider: (p) => set({ ttsProvider: p }),
+      setTtsModel: (m) => set({ ttsModel: m }),
+      setTtsVoice: (v) => set({ ttsVoice: v }),
+      setTtsSpeed: (v) => {
+        const clamped = Math.max(0.25, Math.min(4.0, v))
+        set({ ttsSpeed: Math.round(clamped * 100) / 100 })
+      },
+      setTtsAutoplay: (v) => set({ ttsAutoplay: v }),
 
       setCatalog: (providers) => set({ providers, catalogLoaded: true }),
 
@@ -309,6 +340,11 @@ export const useSettingsStore = create<SettingsState>()(
         userAvatar: s.userAvatar,
         sttProvider: s.sttProvider,
         openaiSttModel: s.openaiSttModel,
+        ttsProvider: s.ttsProvider,
+        ttsModel: s.ttsModel,
+        ttsVoice: s.ttsVoice,
+        ttsSpeed: s.ttsSpeed,
+        ttsAutoplay: s.ttsAutoplay,
         sidebarCollapsed: s.sidebarCollapsed,
         rightSidebarOpen: s.rightSidebarOpen,
         autoCompactEnabled: s.autoCompactEnabled,

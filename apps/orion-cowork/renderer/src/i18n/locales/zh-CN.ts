@@ -376,6 +376,8 @@ export default {
   'lang.ja': '日本語',
 
   'message.regenerate': '重新生成',
+  'message.ttsPlay': '朗读',
+  'message.ttsStop': '停止',
   'message.fork': '分叉',
   'message.forkPromptHeadingUser': '从这个问题分叉(换问法或重试)',
   'message.forkPromptHeadingAssistant': '从这个回答分叉(取分支标题)',

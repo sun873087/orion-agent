@@ -1,0 +1,32 @@
+{
+  "_comment": "Single source of truth for TTS (text-to-speech) per-(provider, model) attributes. Pricing is USD per 1M characters. Parallel layout to stt_models.json. Web Speech API (browser) is a free renderer-side option, not listed here — only cloud providers need catalog.",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "models": [
+        {
+          "id": "tts-1",
+          "label": "TTS · standard",
+          "pricing_per_1m_chars_usd": 15.0,
+          "recommended": true,
+          "notes": "低延遲、品質夠用。中文 voice 較平,但通順。"
+        },
+        {
+          "id": "tts-1-hd",
+          "label": "TTS · HD",
+          "pricing_per_1m_chars_usd": 30.0,
+          "notes": "音質更乾淨,延遲稍高。長段落較明顯差別。"
+        }
+      ],
+      "voices": [
+        {"id": "alloy", "label": "Alloy(中性)"},
+        {"id": "echo", "label": "Echo(男聲)"},
+        {"id": "fable", "label": "Fable(英倫)"},
+        {"id": "nova", "label": "Nova(女聲,推薦)"},
+        {"id": "onyx", "label": "Onyx(低沉男聲)"},
+        {"id": "shimmer", "label": "Shimmer(柔和女聲)"}
+      ]
+    }
+  ]
+}
