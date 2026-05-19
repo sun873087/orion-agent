@@ -56,27 +56,6 @@ def create_app() -> FastAPI:
             },
         }
 
-    @app.get("/v1/catalog")
-    async def catalog() -> dict[str, Any]:
-        """Orion 自家 catalog(chat / stt / tts)— pricing / label /
-        recommended / max_context_tokens / supports_reasoning。
-
-        跟動態 `/openai/v1/models`(OpenAI native)或 `/anthropic/v1/models`
-        並存:那是「OpenAI / Anthropic 現在 server 上能用什麼」,**這個是**
-        「Orion 認可 + 帶元資料的子集」(外部 SDK / 工具想知道我們的推薦
-        + 計費資訊用這個)。
-
-        三段獨立:不是所有 model 都同時有 chat/stt/tts。
-        """
-        from orion_model.catalog import list_catalog
-        from orion_model.stt_catalog import list_stt_catalog
-        from orion_model.tts_catalog import list_tts_catalog
-        return {
-            "chat": list_catalog(),
-            "stt": list_stt_catalog(),
-            "tts": list_tts_catalog(),
-        }
-
     @app.get("/v1/health/{provider}")
     async def health_per_provider(provider: str) -> JSONResponse:
         if provider == "anthropic":
