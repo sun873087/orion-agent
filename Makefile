@@ -1,6 +1,6 @@
 .PHONY: help install test test-model test-sdk test-cli test-chat-api test-e2e-chat-api test-e2e-cowork test-sidecar test-all lint typecheck \
         gen-types \
-        dev-cli dev-api dev-web dev-cowork \
+        dev-cli dev-api dev-web dev-cowork dev-model-proxy \
         demo-anthropic demo-openai \
         build-web build-cowork build-sidecar build-cowork-dist \
         clean
@@ -31,6 +31,7 @@ help:
 	@echo "  dev-api                  orion-chat-api serve --reload --port 8000"
 	@echo "  dev-web                  vite dev (apps/orion-chat/web)"
 	@echo "  dev-cowork               Electron + Vite + sidecar (apps/orion-cowork)"
+	@echo "  dev-model-proxy          orion-model-proxy FastAPI (default :9090)"
 	@echo "  demo-anthropic           跑 Claude demo:讀 /etc/hosts"
 	@echo "  demo-openai              跑 GPT demo:讀 /etc/hosts"
 	@echo ""
@@ -113,6 +114,15 @@ dev-web:
 
 dev-cowork:
 	npm run dev -w @orion/cowork
+
+# Phase 31-X — Model proxy server。env vars(全可選):
+#   ORION_MODEL_PROXY_HOST  listen host(default 127.0.0.1;對外服 0.0.0.0)
+#   ORION_MODEL_PROXY_PORT  listen port(default 9090)
+#   ORION_MODEL_PROXY_KEY   Bearer token,沒設 = 不認證(本機 dev)
+#   ANTHROPIC_API_KEY / OPENAI_API_KEY / OLLAMA_HOST  上游 provider keys
+# Host 端切過去:export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
+dev-model-proxy:
+	uv run --package orion-model-proxy orion-model-proxy
 
 # ───── Build ─────
 build-web:
