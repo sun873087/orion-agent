@@ -39,6 +39,19 @@ async for event in provider.stream(system=..., messages=..., tools=...):
 
 ---
 
+## `packages/orion-model-proxy`
+
+**HTTP proxy in front of `orion-model`**(Phase 31-X)。讓 CLI / Chat / Cowork
+透過 env `ORION_MODEL_PROXY_URL` 統一走這個 service,集中管 API key / cost /
+routing(下階段)。Wire format = Orion-native NormalizedMessage NDJSON
+streaming,不是 OpenAI-compat。
+
+- 上游依賴:`orion-model` + `fastapi` + `uvicorn`
+- 跑法:`uv run --package orion-model-proxy orion-model-proxy`(default :9090)
+- 詳見 [`../features/model-proxy.md`](../features/model-proxy.md)
+
+---
+
 ## `packages/orion-sdk`
 
 **Agent runtime SDK**。Conversation loop、tools、MCP、sandbox、memory、permission policy 等核心邏輯。

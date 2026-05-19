@@ -1,6 +1,7 @@
 [tool.uv.workspace]
 members = [
     "packages/orion-model",
+    "packages/orion-model-proxy",
     "packages/orion-sdk",
     "apps/orion-cli",
     "apps/orion-chat/api",

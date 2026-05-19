@@ -104,16 +104,24 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
     """工廠函式。
 
     Args:
-        provider_name: "anthropic" / "openai"
+        provider_name: "anthropic" / "openai" / "ollama"
         model: 模型 ID(e.g. "claude-sonnet-4-6", "gpt-5")
 
     Returns:
         對應的 LLMProvider 實例。
 
-    Phase 31-E:`set_test_provider_factory` 設定後,所有 get_provider 都走 fake。
+    優先順序:
+        1. `set_test_provider_factory()` 設定(Phase 31-E e2e)→ 回 fake
+        2. `ORION_MODEL_PROXY_URL` env 設(Phase 31-X)→ 回 HttpProxyProvider
+           統一走 model proxy(集中 key / cost / routing)
+        3. 否則照舊直連對應 provider HTTP API
     """
     if _TEST_PROVIDER_FACTORY is not None:
         return _TEST_PROVIDER_FACTORY(provider_name, model)
+    import os
+    if os.environ.get("ORION_MODEL_PROXY_URL"):
+        from orion_model.http_proxy_provider import HttpProxyProvider
+        return HttpProxyProvider(provider_name=provider_name, model=model)
     if provider_name == "anthropic":
         from orion_model.anthropic_provider import AnthropicProvider
 
