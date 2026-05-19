@@ -100,6 +100,28 @@ def _parse(
     return out_models, out_voices, out_labels
 
 
+def _fetch_from_proxy() -> tuple[
+    dict[str, list[TtsModelEntry]],
+    dict[str, list[TtsVoiceEntry]],
+    dict[str, str],
+] | None:
+    """Phase 31-X — ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 tts 段。"""
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if not proxy:
+        return None
+    try:
+        import httpx
+        resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001
+        return None
+    tts_section = data.get("tts") if isinstance(data, dict) else None
+    if not isinstance(tts_section, dict):
+        return None
+    return _parse(tts_section)
+
+
 def _read_packaged() -> tuple[
     dict[str, list[TtsModelEntry]],
     dict[str, list[TtsVoiceEntry]],
@@ -120,6 +142,9 @@ def _load() -> tuple[
     dict[str, list[TtsVoiceEntry]],
     dict[str, str],
 ]:
+    from_proxy = _fetch_from_proxy()
+    if from_proxy is not None:
+        return from_proxy
     override = _override_path()
     if override is not None:
         try:

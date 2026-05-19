@@ -56,6 +56,27 @@ def create_app() -> FastAPI:
             },
         }
 
+    @app.get("/v1/catalog")
+    async def catalog() -> dict[str, Any]:
+        """Orion catalog(chat / stt / tts metadata)。
+
+        Host 端設 ORION_MODEL_PROXY_URL 後,orion_model.{catalog,stt_catalog,
+        tts_catalog} 內部 list_*() 函式會 fetch 這個 endpoint(同 process 內
+        cache),不再直接讀本地 packaged json — 確保**唯一 source of truth 在
+        proxy**(將來 routing alias / pricing 變更等都先改 proxy)。
+
+        Proxy 不可達 / fetch 失敗時 host 自動 fallback 到 packaged json,
+        保持 dev / CI 不必先起 proxy daemon 的 ergonomics。
+        """
+        from orion_model.catalog import list_catalog
+        from orion_model.stt_catalog import list_stt_catalog
+        from orion_model.tts_catalog import list_tts_catalog
+        return {
+            "chat": list_catalog(),
+            "stt": list_stt_catalog(),
+            "tts": list_tts_catalog(),
+        }
+
     @app.get("/v1/health/{provider}")
     async def health_per_provider(provider: str) -> JSONResponse:
         if provider == "anthropic":

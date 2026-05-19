@@ -139,6 +139,36 @@ def _parse_config(data: object) -> tuple[dict[str, list[ModelEntry]], dict[str, 
     return models, labels
 
 
+def _fetch_from_proxy() -> tuple[dict[str, list[ModelEntry]], dict[str, str]] | None:
+    """Phase 31-X — 若 ORION_MODEL_PROXY_URL 有設,從 proxy /v1/catalog 拿
+    chat 段。失敗(連不上 / schema 不對 / timeout)回 None,caller fallback
+    到 packaged json 不擋 dev / CI。
+
+    Sync httpx call(_load 是 sync function),只在啟動一次因為 @cache。
+    """
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if not proxy:
+        return None
+    try:
+        import httpx
+        resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001 - 任何錯都 fallback,不阻擋 host
+        _log.warning("orion-model-proxy catalog fetch failed (%s) — fallback to packaged", e)
+        return None
+    chat_section = data.get("chat") if isinstance(data, dict) else None
+    if not isinstance(chat_section, dict):
+        _log.warning("orion-model-proxy /v1/catalog missing 'chat' section — fallback")
+        return None
+    parsed = _parse_config(chat_section)
+    if parsed is None:
+        _log.warning("orion-model-proxy /v1/catalog schema invalid — fallback")
+        return None
+    _log.info("loaded chat catalog from orion-model-proxy %s", proxy)
+    return parsed
+
+
 def _read_packaged() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
     raw = json.loads(_PACKAGED_RESOURCE.read_text(encoding="utf-8"))
     parsed = _parse_config(raw)
@@ -151,7 +181,14 @@ def _read_packaged() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
 
 @cache
 def _load() -> tuple[dict[str, list[ModelEntry]], dict[str, str]]:
-    """Load catalog. Override path takes priority; otherwise use packaged JSON."""
+    """Load catalog. Priority:
+    1. orion-model-proxy /v1/catalog(若 ORION_MODEL_PROXY_URL 有設且 fetch 成功)
+    2. ORION_MODELS_FILE override path
+    3. Packaged models.json(fallback)
+    """
+    from_proxy = _fetch_from_proxy()
+    if from_proxy is not None:
+        return from_proxy
     override = _resolve_override_path()
     if override is not None:
         if not override.is_file():

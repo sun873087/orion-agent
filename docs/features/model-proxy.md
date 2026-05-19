@@ -138,6 +138,7 @@ curl http://proxy.local:9090/openai/v1/chat/completions \
 |---|---|
 | `GET /v1/health` | proxy 自家 health + 顯各 provider key 是否設好 |
 | `GET /v1/health/{provider}` | per-provider key 狀態 |
+| `GET /v1/catalog` | Orion catalog(chat / stt / tts)— **host 必 fetch 這個**,proxy 是唯一 source of truth |
 | `ANY /openai/{path:path}` | catch-all transparent proxy → api.openai.com |
 | `ANY /anthropic/{path:path}` | catch-all transparent proxy → api.anthropic.com |
 
@@ -164,7 +165,11 @@ proxy:  ① 比對 client token 是否 = ORION_MODEL_PROXY_KEY(若有設)
 
 ## 自家 host 怎麼接
 
-`orion_model` 的 provider 在 SDK init 時偵測 env:
+`orion_model` 三個層次都靠 env `ORION_MODEL_PROXY_URL` 自動切到 proxy:
+
+### 1. Chat / Audio API call
+
+provider 在 SDK init 時換 base_url:
 
 ```python
 # packages/orion-model/src/orion_model/anthropic_provider.py
@@ -180,6 +185,47 @@ else:
 Caller 完全不必動 — `get_provider("anthropic", "claude-...")` 回的還是 `AnthropicProvider` 實例,只是裡面 SDK 連的是 proxy 不是 api.anthropic.com。
 
 `orion_model.audio.stt` / `audio.tts` 內部 `httpx.post` 的 URL 也走同樣 env-gate(`_openai_base()`)。
+
+### 2. Catalog metadata
+
+`orion_model.catalog.list_catalog()` / `stt_catalog.list_stt_catalog()` /
+`tts_catalog.list_tts_catalog()` 內部的 `_load()` 函式優先順序:
+
+1. **proxy `/v1/catalog`**(設了 env 就 fetch)
+2. `ORION_MODELS_FILE` override path
+3. Packaged `models.json` fallback
+
+```python
+# packages/orion-model/src/orion_model/catalog.py
+def _fetch_from_proxy() -> ... | None:
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if not proxy:
+        return None
+    try:
+        resp = httpx.get(f"{proxy}/v1/catalog", timeout=5.0)
+        return _parse_config(resp.json()["chat"])
+    except Exception:
+        return None  # 失敗 fallback packaged
+
+@cache
+def _load():
+    if from_proxy := _fetch_from_proxy():
+        return from_proxy
+    ...  # 既有 override / packaged path
+```
+
+`@functools.cache` 保證一次 process 內只 fetch 一次(proxy 改 catalog 後
+host 要重啟才看見;production 想 hot-reload 後續可加 TTL)。
+
+Fetch fail / proxy 不可達自動 fallback 到 packaged json — dev / CI 不必先
+起 proxy daemon。但 production 部署時 proxy = source of truth,**catalog
+變更(新 model / 改 pricing)只在 proxy 那台機改**,host 重啟就同步。
+
+### 3. 下游函式(自動受惠)
+
+`validate(provider, model)` / `get_pricing(provider, model)` /
+`get_max_context_tokens(...)` 等所有讀 catalog 的函式都走 `_load()` 拿同份
+資料,**caller 完全不必動**就跟著切到 proxy 來源。
 
 ## Phasing
 

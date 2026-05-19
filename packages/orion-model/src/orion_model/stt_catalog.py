@@ -83,6 +83,25 @@ def _parse(
     return out_models, out_labels
 
 
+def _fetch_from_proxy() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]] | None:
+    """Phase 31-X — ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 stt 段。
+    失敗回 None,caller fallback。"""
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if not proxy:
+        return None
+    try:
+        import httpx
+        resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 - 任何錯都 fallback
+        return None
+    stt_section = data.get("stt") if isinstance(data, dict) else None
+    if not isinstance(stt_section, dict):
+        return None
+    return _parse(stt_section)
+
+
 def _read_packaged() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]]:
     data = json.loads(
         resources.files("orion_model").joinpath("stt_models.json").read_text(encoding="utf-8")
@@ -95,6 +114,9 @@ def _read_packaged() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]]:
 
 @cache
 def _load() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]]:
+    from_proxy = _fetch_from_proxy()
+    if from_proxy is not None:
+        return from_proxy
     override = _override_path()
     if override is not None:
         try:
