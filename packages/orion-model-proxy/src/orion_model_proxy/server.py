@@ -20,19 +20,35 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+# auto_error=False:讓 missing header 走我們自己的 401(才能跟 env 沒設時
+# 的 skip 邏輯共存)。description 在 Swagger UI 的 Authorize dialog 出現。
+_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    description=(
+        "Bearer token = ORION_MODEL_PROXY_KEY env on server. "
+        "Leave blank if server didn't set the key (local dev mode)."
+    ),
+)
 
 
-def _check_auth(req: Request) -> None:
-    """Bearer-token auth。env 沒設 → skip(本機 dev)。"""
+def require_auth(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> None:
+    """env 沒設 → skip(本機 dev);設了 → 必須帶對的 Bearer。
+
+    用 FastAPI `Depends` 而非手寫 header 解析,Swagger UI 才能從 OpenAPI
+    `security` schema 長出 🔒 icon + 右上 Authorize 按鈕。
+    """
     expected = os.environ.get("ORION_MODEL_PROXY_KEY")
     if not expected:
         return
-    auth = req.headers.get("authorization", "")
-    if not auth.startswith("Bearer "):
+    if creds is None:
         raise HTTPException(status_code=401, detail="missing Bearer token")
-    if auth[len("Bearer "):].strip() != expected:
+    if creds.credentials != expected:
         raise HTTPException(status_code=403, detail="invalid token")
 
 
@@ -97,17 +113,17 @@ def create_app() -> FastAPI:
     @app.api_route(
         "/openai/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        dependencies=[Depends(require_auth)],
     )
     async def openai_compat(req: Request, path: str) -> StreamingResponse:
-        _check_auth(req)
         return await openai_reverse_proxy(req, path)
 
     @app.api_route(
         "/anthropic/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        dependencies=[Depends(require_auth)],
     )
     async def anthropic_compat(req: Request, path: str) -> StreamingResponse:
-        _check_auth(req)
         return await anthropic_reverse_proxy(req, path)
 
     return app

@@ -8,13 +8,15 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Annotated
 
 import typer
 import uvicorn
 from dotenv import load_dotenv
 
-load_dotenv()
+# 只讀 per-app .env(apps/orion-chat/.env);不抓 project root .env。
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 

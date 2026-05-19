@@ -49,7 +49,8 @@ from orion_cowork_sidecar.mcp_integration import CoworkMcpManager
 from orion_cowork_sidecar.scheduler import SchedulerEngine
 from orion_cowork_sidecar.streaming import to_rpc_frame
 
-load_dotenv()
+# 只讀 per-app .env(apps/orion-cowork/.env);不抓 project root .env。
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 
 def _walk_workspace(root: Path, skip_dirs: set[str]):

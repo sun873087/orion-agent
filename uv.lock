@@ -1710,6 +1710,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "orion-model" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1725,6 +1726,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "orion-model", editable = "packages/orion-model" },
     { name = "pydantic", specifier = ">=2.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 

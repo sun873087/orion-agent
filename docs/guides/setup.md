@@ -23,7 +23,13 @@
 git clone <repo-url>
 cd orion-agent
 
-cp .env.example .env  # (若有)填 ANTHROPIC_API_KEY / OPENAI_API_KEY
+# Per-app .env(只複製你要跑的那個 app):
+cp apps/orion-cli/.env.example      apps/orion-cli/.env       # CLI
+cp apps/orion-chat/.env.example     apps/orion-chat/.env      # Chat server
+cp apps/orion-cowork/.env.example   apps/orion-cowork/.env    # Cowork 桌機
+cp packages/orion-model-proxy/.env.example packages/orion-model-proxy/.env  # Proxy
+# 填 ANTHROPIC_API_KEY / OPENAI_API_KEY,或設 ORION_MODEL_PROXY_URL 走 proxy
+
 make install          # uv sync + npm install
 ```
 

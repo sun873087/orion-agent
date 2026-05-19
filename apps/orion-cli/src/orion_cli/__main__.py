@@ -14,11 +14,14 @@ import asyncio
 import sys
 from typing import Annotated, Any
 
+from pathlib import Path
+
 import typer
 from dotenv import load_dotenv
 
-# 載入 .env(若存在)— 注入 API keys。必須在 import provider 之前。
-load_dotenv()
+# 載入 per-app .env(apps/orion-cli/.env)— 注入 API keys。必須在 import
+# provider 之前。不抓 project root .env;每 app 各自隔離 secret。
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from orion_sdk.core.conversation import Conversation  # noqa: E402
 from orion_sdk.core.query_loop import (  # noqa: E402

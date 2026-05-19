@@ -16,10 +16,15 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 
 def main() -> None:
     import uvicorn
+    from dotenv import load_dotenv
+
+    # 只讀 per-app .env(packages/orion-model-proxy/.env);不抓 project root .env。
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
     from orion_model_proxy.server import create_app
 

@@ -14,11 +14,13 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 載入 .env 讓 API key 等可用 — main.py 已 load,但獨立啟 app(uvicorn 直跑)需要
-load_dotenv()
+# 載入 per-app .env(apps/orion-chat/.env)讓 API key 等可用 — cli.py 已 load,
+# 但獨立啟 app(uvicorn 直跑)需要。不抓 project root .env。
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
