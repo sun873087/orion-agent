@@ -23,6 +23,12 @@ export type ToolCallState = {
   progress: string[]
   /** Tool input(LLM 解析完整 JSON 後填,用於 inline preview)。 */
   input?: Record<string, unknown>
+  /** Edit / Write / NotebookEdit 跑完後 sidecar 推的 diff snapshot(Phase 31-V)。 */
+  editSnapshot?: {
+    filePath: string | null
+    beforeBlobId: string | null
+    afterBlobId: string | null
+  }
 }
 
 /** 對 sidecar 上 image attachment 的 ref(blob lazy load 用,base64 才不會塞 store)。 */
@@ -198,6 +204,12 @@ type AgentState = {
   beginToolCall: (sid: string, assistantId: string, call: Omit<ToolCallState, 'progress' | 'status' | 'text'>) => void
   appendToolProgress: (sid: string, toolUseId: string, line: string) => void
   endToolCall: (sid: string, toolUseId: string, payload: { isError: boolean; text: string }) => void
+  /** Edit/Write/NotebookEdit 跑完後接 tool_edit_snapshot frame 寫進對應 toolCall。Phase 31-V。 */
+  setToolCallEditSnapshot: (
+    sid: string,
+    toolUseId: string,
+    snapshot: { filePath: string | null; beforeBlobId: string | null; afterBlobId: string | null },
+  ) => void
   /** Ask 模式 — 標記 toolCall 在等使用者 approval(顯 banner)。 */
   markToolAwaitingApproval: (sid: string, toolUseId: string) => void
   /** User 已決 — 把 awaiting_approval 拉回 running,banner 立刻消失,
@@ -395,6 +407,18 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
             t.toolUseId === toolUseId
               ? { ...t, status: isError ? 'error' : 'success', text }
               : t,
+          ),
+        })),
+      ),
+    ),
+
+  setToolCallEditSnapshot: (sid, toolUseId, snapshot) =>
+    set((s) =>
+      updateSession(s, 'messagesBySession', sid, (prev: Message[] | undefined) =>
+        (prev ?? []).map((m) => ({
+          ...m,
+          toolCalls: (m.toolCalls ?? []).map((t) =>
+            t.toolUseId === toolUseId ? { ...t, editSnapshot: snapshot } : t,
           ),
         })),
       ),

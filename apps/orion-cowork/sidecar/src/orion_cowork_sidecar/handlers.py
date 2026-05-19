@@ -503,6 +503,8 @@ class Handlers:
             "conversation.truncate": self.conversation_truncate,
             "conversation.fork": self.conversation_fork,
             "conversation.count_fork_descendants": self.conversation_count_fork_descendants,
+            "conversation.read_blob_text": self.conversation_read_blob_text,
+            "conversation.undo_last_turn": self.conversation_undo_last_turn,
             "conversation.tool_approval": self.conversation_tool_approval,
             "conversation.ask_user_reply": self.conversation_ask_user_reply,
             "conversation.set_permission_mode": self.conversation_set_permission_mode,
@@ -939,9 +941,70 @@ class Handlers:
                     },
                 }
 
+        # Edit / Write / NotebookEdit snapshot 機制(Phase 31-V)— diff viewer
+        # + 整輪 undo 共用。before/after 兩個 blob_id 寫進該 turn 的 assistant
+        # 訊息 metadata_json,renderer 拿來顯 inline diff;undo 時用 before 還原。
+        from orion_cowork_sidecar.edit_snapshot import (
+            extract_file_path as _es_extract_path,
+            is_snapshottable_tool as _es_snapshottable,
+            snapshot_file as _es_snapshot,
+        )
+        from orion_sdk.core.tool_execution import (
+            ToolResultUpdate as _ToolResultUpdate,
+            ToolUseStartUpdate as _ToolUseStartUpdate,
+        )
+        pending_edit_snapshots: dict[str, dict[str, Any]] = {}
+        completed_edit_snapshots: list[dict[str, Any]] = []
+        blob_for_snapshot = storage.get_blob_store()
+
         async def _producer() -> None:
             try:
                 async for ev in conv.send(prompt, ctx=ctx, images=images or None):
+                    # 攔 Edit/Write/NotebookEdit:read file 兩次 → before/after blob
+                    if isinstance(ev, _ToolUseStartUpdate) and _es_snapshottable(ev.tool_name):
+                        fp = _es_extract_path(ev.input)
+                        if fp:
+                            try:
+                                before_id, _size = _es_snapshot(fp, blob_for_snapshot)
+                                pending_edit_snapshots[ev.tool_use_id] = {
+                                    "tool_use_id": ev.tool_use_id,
+                                    "tool_name": ev.tool_name,
+                                    "file_path": fp,
+                                    "before_blob_id": before_id,
+                                }
+                            except Exception as _e:  # noqa: BLE001
+                                print(
+                                    f"[edit_snapshot] before snapshot failed for {fp}: {_e}",
+                                    file=sys.stderr, flush=True,
+                                )
+                    elif (
+                        isinstance(ev, _ToolResultUpdate)
+                        and ev.tool_use_id in pending_edit_snapshots
+                    ):
+                        info = pending_edit_snapshots.pop(ev.tool_use_id)
+                        if not ev.is_error:
+                            try:
+                                after_id, _size = _es_snapshot(
+                                    info["file_path"], blob_for_snapshot,
+                                )
+                                info["after_blob_id"] = after_id
+                                completed_edit_snapshots.append(info)
+                                await out_queue.put({
+                                    "event": "tool_edit_snapshot",
+                                    "data": {
+                                        "tool_use_id": info["tool_use_id"],
+                                        "tool_name": info["tool_name"],
+                                        "file_path": info["file_path"],
+                                        "before_blob_id": info["before_blob_id"],
+                                        "after_blob_id": info["after_blob_id"],
+                                    },
+                                })
+                            except Exception as _e:  # noqa: BLE001
+                                print(
+                                    f"[edit_snapshot] after snapshot failed: {_e}",
+                                    file=sys.stderr, flush=True,
+                                )
+
                     f = to_rpc_frame(ev)
                     if f is not None:
                         await out_queue.put(f)
@@ -990,6 +1053,21 @@ class Handlers:
                 except Exception:  # noqa: BLE001
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
+            # ─── Edit snapshots persist(Phase 31-V)──────────────────
+            # 把這 turn 累積的 edit snapshots 寫到 last assistant row 的
+            # metadata_json — renderer reload session 時 _to_ui_messages_from_raw
+            # 會把它合進對應 tool_call。
+            if completed_edit_snapshots:
+                try:
+                    await storage.set_last_assistant_metadata(
+                        engine, sid,
+                        {"edit_snapshots": completed_edit_snapshots},
+                    )
+                except Exception as e:  # noqa: BLE001
+                    print(
+                        f"[edit_snapshot] persist metadata failed for {sid[:8]}: {e}",
+                        file=__import__('sys').stderr, flush=True,
+                    )
             # ─── Plan Mode persist + notification(Phase 31-J)──────────
             # Read ctx 上被 tools 修改過的 state,寫回 DB。狀態變化時 emit
             # 對應 notification 讓 renderer 更新 UI。
@@ -3560,6 +3638,120 @@ class Handlers:
             "final": True,
         }
 
+    async def conversation_read_blob_text(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀 blob 內容回 utf-8 文字(diff viewer 用)。binary 回 hex placeholder。
+        Phase 31-V。"""
+        from orion_cowork_sidecar.edit_snapshot import read_blob_text
+        blob_id = params.get("blob_id")
+        if not isinstance(blob_id, str) or not blob_id:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "blob_id required"},
+                "final": True,
+            }
+            return
+        blob = storage.get_blob_store()
+        try:
+            text = read_blob_text(blob_id, blob)
+        except FileNotFoundError:
+            yield {
+                "event": "error",
+                "data": {"code": "BLOB_NOT_FOUND", "message": f"blob {blob_id[:12]}... not found"},
+                "final": True,
+            }
+            return
+        yield {
+            "event": "blob_text",
+            "data": {"blob_id": blob_id, "text": text},
+            "final": True,
+        }
+
+    async def conversation_undo_last_turn(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """整輪 undo(Phase 31-V):
+
+        1. 抓最後一筆 assistant row 的 metadata_json.edit_snapshots
+        2. 依 file_path 去重(同檔多次 edit 只 restore 最早的 before_blob_id),
+           還原檔案內容
+        3. 找這 turn 的 user prompt 起始 idx,truncate 從那筆(含)之後
+        4. 回 {files_restored, files_failed, messages_truncated}
+
+        in-flight turn 不允許 undo — caller 自己擋(busy 時 button 不顯)。
+        """
+        from orion_cowork_sidecar.edit_snapshot import restore_file
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        try:
+            UUID(sid)
+        except (ValueError, TypeError):
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_SESSION_ID", "message": f"invalid UUID: {sid!r}"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        meta = await storage.get_last_assistant_metadata(engine, sid)
+        snapshots = (
+            meta.get("edit_snapshots") if isinstance(meta, dict) else None
+        ) or []
+
+        # File 去重:同檔多次 edit 只取最早的 before(snapshots 是時間順序 list)
+        seen_files: set[str] = set()
+        files_to_restore: list[dict[str, Any]] = []
+        for snap in snapshots:
+            fp = snap.get("file_path") if isinstance(snap, dict) else None
+            if not isinstance(fp, str) or fp in seen_files:
+                continue
+            seen_files.add(fp)
+            files_to_restore.append(snap)
+
+        blob = storage.get_blob_store()
+        restored = 0
+        failed: list[str] = []
+        for snap in files_to_restore:
+            fp = snap["file_path"]
+            before_id = snap.get("before_blob_id")
+            try:
+                if restore_file(fp, before_id, blob):
+                    restored += 1
+                else:
+                    failed.append(fp)
+            except Exception as e:  # noqa: BLE001
+                failed.append(f"{fp}: {e}")
+
+        # 找 turn 起點 + truncate
+        turn_start = await storage.find_last_turn_start_index(engine, sid)
+        msgs_truncated = 0
+        if turn_start is not None:
+            msgs_truncated = await storage.truncate_messages_from(
+                engine, sid, raw_index=turn_start,
+            )
+
+        # In-memory cache 清掉,下次 send 走 lazy resume 重 build
+        self._conversations.pop(sid, None)
+
+        yield {
+            "event": "turn_undone",
+            "data": {
+                "session_id": sid,
+                "files_restored": restored,
+                "files_failed": failed,
+                "messages_truncated": msgs_truncated,
+            },
+            "final": True,
+        }
+
     async def conversation_regenerate(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
@@ -3809,6 +4001,22 @@ def _to_ui_messages_from_raw(
                 "is_error": bool(b.get("is_error", False)),
             }
 
+    # Edit snapshots(Phase 31-V):assistant row 的 metadata_json.edit_snapshots
+    # 是 list,key 一個 dict by tool_use_id 給 merged_tool_calls 拿。
+    edit_snap_map: dict[str, dict[str, Any]] = {}
+    for _, _cj, meta in rows:
+        if not isinstance(meta, dict):
+            continue
+        snaps = meta.get("edit_snapshots")
+        if not isinstance(snaps, list):
+            continue
+        for snap in snaps:
+            if not isinstance(snap, dict):
+                continue
+            tuid = snap.get("tool_use_id")
+            if isinstance(tuid, str):
+                edit_snap_map[tuid] = snap
+
     out: list[dict[str, Any]] = []
     i = 0
     while i < len(rows):
@@ -3898,13 +4106,22 @@ def _to_ui_messages_from_raw(
                         tuid = b.get("id") or ""
                         if isinstance(tuid, str) and tuid:
                             r = result_map.get(tuid, {"text": "", "is_error": False})
-                            merged_tool_calls.append({
+                            entry: dict[str, Any] = {
                                 "tool_use_id": tuid,
                                 "tool_name": b.get("name") or "",
                                 "input": b.get("input") or {},
                                 "status": "error" if r["is_error"] else "success",
                                 "text": r["text"],
-                            })
+                            }
+                            # Phase 31-V — Edit/Write/NotebookEdit 的 snapshot
+                            snap = edit_snap_map.get(tuid)
+                            if isinstance(snap, dict):
+                                entry["edit_snapshot"] = {
+                                    "file_path": snap.get("file_path"),
+                                    "before_blob_id": snap.get("before_blob_id"),
+                                    "after_blob_id": snap.get("after_blob_id"),
+                                }
+                            merged_tool_calls.append(entry)
                             tools_buffer.append(tuid)
                     elif btype == "image":
                         # assistant message 通常不含 image,但 defensive 處理

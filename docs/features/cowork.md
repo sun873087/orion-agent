@@ -69,7 +69,7 @@ apps/orion-cowork/
 
 | 類別 | Methods |
 |---|---|
-| **Conversation** | `conversation.{create,send,abort,list,search,delete,messages,attachment,regenerate,truncate,fork,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode,get_budget,set_budget,set_plan_mode,plan_approve,plan_reject,plan_status}` |
+| **Conversation** | `conversation.{create,send,abort,list,search,delete,delete_many,messages,attachment,regenerate,truncate,fork,count_fork_descendants,rename,set_starred,stats,context_breakdown,compact,get_workspace,set_workspace,set_project,tool_approval,ask_user_reply,set_permission_mode,get_budget,set_budget,set_plan_mode,plan_approve,plan_reject,plan_status,read_blob_text,undo_last_turn}` |
 | **Project** | `project.{list,get,create,update,delete}` |
 | **Memory** | `memory.{list,get,write,delete}` |
 | **Skill** | `skill.{list,get,write,import_folder,delete}` |
@@ -137,6 +137,7 @@ Phase 31-A~G 累積加上的功能:
 - **Edit / Delete** — 對任何訊息點 ⋯ 編輯送回原 session,或刪除「該則之後」
 - **Regenerate** — 重新生成最後一輪 assistant 回應
 - **Fork**(Phase 31-R) — 任意訊息 hover toolbar 的 🌿「分叉」按鈕:從那則訊息(含)複製到新 session,原對話完全不動。新 session 繼承 workspace / project,budget / plan 不繼承;標 `forked_from_*` 系譜。常用情境:AI 給多方案各試一條、做有風險改動先 fork 保險、回到分歧點換問法
+- **Diff viewer + Undo turn**(Phase 31-V) — Edit / Write / NotebookEdit 跑前後各 snapshot blob(blob_store 共用,content-hash 自動 dedup),ToolCallGroup 內顯 inline unified diff(`+M / −N` 縮排,點開展全 diff)。最後 assistant msg 有 ↶「還原本輪」按鈕,把該 turn 改過的檔還原 + truncate 本 turn 訊息
 
 ### 排程 / Loop(Phase 31-G)
 共用同一張 `cowork_schedules` 表,差別在 `target_session_id`:
