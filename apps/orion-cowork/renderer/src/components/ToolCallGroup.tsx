@@ -34,7 +34,6 @@ import {
 import { getPermissions, sendToolApproval, setPermissions } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type ToolCallState } from '../store/agent'
-import { DiffViewer } from './DiffViewer'
 
 type Display = {
   icon: LucideIcon
@@ -459,10 +458,6 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
                       <pre className="scrollbar-thin mb-2 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-subtle">
                         {JSON.stringify(t.input, null, 2)}
                       </pre>
-                    )}
-                    {/* Phase 31-V — Edit/Write/NotebookEdit 顯實際 unified diff */}
-                    {t.editSnapshot && (
-                      <DiffViewer snapshot={t.editSnapshot} />
                     )}
                     {isRunning && !detailText ? (
                       <div className="text-[11px] italic text-fg-muted">running…</div>

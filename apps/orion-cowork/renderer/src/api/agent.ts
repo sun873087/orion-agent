@@ -1403,12 +1403,6 @@ export type LoadedToolCall = {
   input: Record<string, unknown>
   status: 'success' | 'error'
   text: string
-  /** Phase 31-V — Edit/Write/NotebookEdit 跑完寫進 message metadata 的 snapshot ref。 */
-  edit_snapshot?: {
-    file_path: string | null
-    before_blob_id: string | null
-    after_blob_id: string | null
-  }
 }
 
 export type LoadedBlock =
@@ -1480,57 +1474,6 @@ export async function regenerateLast(
     { session_id: sessionId },
     (frame) => onEvent(frame as unknown as SidecarEvent),
   )
-}
-
-/** 讀 blob 的 utf-8 內容 — diff viewer 拉 before / after 用。Phase 31-V。 */
-export async function readBlobText(blobId: string): Promise<string> {
-  let text = ''
-  let errMsg: string | null = null
-  await window.agent.call(
-    'conversation.read_blob_text',
-    { blob_id: blobId },
-    (frame) => {
-      const f = frame as { event?: string; data?: Record<string, unknown>; error?: { message?: string } }
-      if (f.error?.message) errMsg = f.error.message
-      else if (f.event === 'error' && typeof f.data?.message === 'string') errMsg = f.data.message as string
-      else if (f.event === 'blob_text' && typeof f.data?.text === 'string') {
-        text = f.data.text as string
-      }
-    },
-  )
-  if (errMsg) throw new Error(errMsg)
-  return text
-}
-
-export type UndoTurnResult = {
-  filesRestored: number
-  filesFailed: string[]
-  messagesTruncated: number
-}
-
-/** 整輪 undo:還原本 turn 動過的檔 + truncate messages。Phase 31-V。 */
-export async function undoLastTurn(sessionId: string): Promise<UndoTurnResult> {
-  let result: UndoTurnResult = {
-    filesRestored: 0,
-    filesFailed: [],
-    messagesTruncated: 0,
-  }
-  await window.agent.call(
-    'conversation.undo_last_turn',
-    { session_id: sessionId },
-    (frame) => {
-      const f = frame as { event?: string; data?: Record<string, unknown> }
-      if (f.event === 'turn_undone' && f.data) {
-        const d = f.data
-        result = {
-          filesRestored: typeof d.files_restored === 'number' ? d.files_restored : 0,
-          filesFailed: Array.isArray(d.files_failed) ? (d.files_failed as string[]) : [],
-          messagesTruncated: typeof d.messages_truncated === 'number' ? d.messages_truncated : 0,
-        }
-      }
-    },
-  )
-  return result
 }
 
 /** 算該 session 有幾個 fork 子孫(遞迴往下,不含 self)— delete confirm 顯警告用。 */

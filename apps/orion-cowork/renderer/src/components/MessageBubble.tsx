@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSyncExternalStore } from 'react'
-import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Square, Undo2, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
@@ -230,11 +230,6 @@ export function MessageBubble({
             )}
             {/* TTS 念出 — assistant 訊息才顯,且要有文字。 */}
             {!isUser && message.text && <TtsButton messageId={message.id} text={message.text} />}
-            {/* Undo this turn — 最後一個 assistant 且有 edit snapshots(Phase 31-V)。 */}
-            {!isUser && isLastAssistant && !message.compacted && !busy &&
-              (message.toolCalls?.some((tc) => tc.editSnapshot) ?? false) && (
-                <UndoTurnButton />
-              )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
@@ -488,47 +483,6 @@ function EditableUserBubble({
         </button>
       </div>
     </div>
-  )
-}
-
-/** 整輪 undo(Phase 31-V)— 還原本 turn 改過的檔案 + truncate messages。 */
-function UndoTurnButton() {
-  const { t } = useTranslation()
-  const sid = useAgentStore((s) => s.sessionId)
-  const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
-  const [running, setRunning] = useState(false)
-  async function onClick() {
-    if (!sid || busy || running) return
-    if (!window.confirm(t('message.undoTurnConfirm'))) return
-    setRunning(true)
-    try {
-      const { undoLastTurn } = await import('../api/agent')
-      const { reloadSessionMessages } = await import('../hooks/useAgent')
-      const result = await undoLastTurn(sid)
-      await reloadSessionMessages(sid)
-      if (result.filesFailed.length > 0) {
-        window.alert(
-          t('message.undoTurnPartialFail', { files: result.filesFailed.join(', ') }),
-        )
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      window.alert(`Undo failed: ${msg}`)
-    } finally {
-      setRunning(false)
-    }
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy || running}
-      title={t('message.undoTurn')}
-      className="mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      <Undo2 size={12} />
-      <span>{t('message.undoTurn')}</span>
-    </button>
   )
 }
 

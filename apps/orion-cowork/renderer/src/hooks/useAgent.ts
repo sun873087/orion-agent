@@ -248,13 +248,6 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
           status: t.status as 'success' | 'error',
           text: t.text,
           progress: [] as string[],
-          editSnapshot: t.edit_snapshot
-            ? {
-                filePath: t.edit_snapshot.file_path,
-                beforeBlobId: t.edit_snapshot.before_blob_id,
-                afterBlobId: t.edit_snapshot.after_blob_id,
-              }
-            : undefined,
         }))
       : undefined,
     blocks: m.blocks?.length
@@ -572,21 +565,6 @@ function applyEvent(sid: string, assistantId: string, ev: SidecarEvent) {
       })
       break
     }
-    case 'tool_edit_snapshot': {
-      const data = ev.data as {
-        tool_use_id: string
-        tool_name: string
-        file_path: string | null
-        before_blob_id: string | null
-        after_blob_id: string | null
-      }
-      s.setToolCallEditSnapshot(sid, data.tool_use_id, {
-        filePath: data.file_path,
-        beforeBlobId: data.before_blob_id,
-        afterBlobId: data.after_blob_id,
-      })
-      break
-    }
     case 'turn_complete': {
       break
     }
@@ -615,11 +593,6 @@ function applyEvent(sid: string, assistantId: string, ev: SidecarEvent) {
       break
     }
   }
-}
-
-/** 公開版本:由外部(如 UndoTurnButton)觸發 DB 重 hydrate 進 store。 */
-export async function reloadSessionMessages(sid: string): Promise<void> {
-  return reloadCurrentMessages(sid)
 }
 
 /** 從 DB 重新載入當前 session 的訊息(delete 後 / 編輯後同步 UI 用)。 */
