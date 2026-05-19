@@ -549,6 +549,9 @@ class Handlers:
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
         }
+        # 走 proxy 時 client 不必有直接 key — proxy 那台才有真 key,UI 不該嗆
+        # 「API 金鑰未設」。proxy 那邊缺 key 的話 request 時會 503,不在這裡擋。
+        via_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
         # list_catalog() 回 {"providers": [{"id", "label", "models": [...]}, ...]}
         providers = catalog.get("providers", [])
         if isinstance(providers, list):
@@ -560,6 +563,8 @@ class Handlers:
                     # Ollama 不需要 API key,但要標 "available" 看 Ollama daemon 是否在跑
                     p["api_key_configured"] = True
                     p["dynamic"] = True
+                elif pid in env_map and via_proxy:
+                    p["api_key_configured"] = True
                 else:
                     env_name = env_map.get(pid)
                     p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
@@ -1144,15 +1149,22 @@ class Handlers:
         catalog = list_stt_catalog()
         env_map = {
             "openai": "OPENAI_API_KEY",
-            "google": "GOOGLE_STT_API_KEY",
+            "google": "GOOGLE_STT_API_KEY",  # Google STT 沒走 proxy,直連檢查
         }
+        # OpenAI 走 proxy 時 client 不必直接有 key。Google 不走 proxy(audio/stt.py
+        # 的 _google_base 永遠回真實 https://speech.googleapis.com),維持直連檢查。
+        openai_via_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
         providers = catalog.get("providers", [])
         if isinstance(providers, list):
             for p in providers:
                 if not isinstance(p, dict):
                     continue
-                env_name = env_map.get(p.get("id", ""))
-                p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
+                pid = p.get("id", "")
+                if pid == "openai" and openai_via_proxy:
+                    p["api_key_configured"] = True
+                else:
+                    env_name = env_map.get(pid)
+                    p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
         yield {
             "event": "stt_status",
             "data": catalog,

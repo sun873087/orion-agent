@@ -87,11 +87,15 @@ async def transcribe(
 
     if provider == "openai":
         use_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            if use_proxy:
-                api_key = "via-proxy"
-            else:
+        # 走 proxy 時 Bearer 改用 PROXY_KEY(若 proxy 有開 auth);proxy reverse
+        # 那層會把 Authorization 覆寫成真實 OPENAI_API_KEY 才 forward。
+        if use_proxy:
+            bearer = os.environ.get("ORION_MODEL_PROXY_KEY") or os.environ.get(
+                "OPENAI_API_KEY"
+            ) or "via-proxy"
+        else:
+            bearer = os.environ.get("OPENAI_API_KEY")
+            if not bearer:
                 raise RuntimeError("OPENAI_API_KEY not set")
         lang = _lang_to_whisper(locale)
         ext = mime_type.split("/")[-1].split(";")[0] or "webm"
@@ -103,7 +107,7 @@ async def transcribe(
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
                     f"{_openai_base()}/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {api_key}"},
+                    headers={"Authorization": f"Bearer {bearer}"},
                     files=files,
                     data=data,
                 )

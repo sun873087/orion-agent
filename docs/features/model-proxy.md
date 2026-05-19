@@ -163,6 +163,21 @@ proxy:  ① 比對 client token 是否 = ORION_MODEL_PROXY_KEY(若有設)
         ③ forward 到 upstream
 ```
 
+### Client 端怎麼傳 Bearer
+
+`ORION_MODEL_PROXY_KEY` 同名 env 在 client 端設了就會自動帶上:
+
+- **Anthropic SDK**(只送 `x-api-key`,沒這個 fix 會直接 401):
+  `orion_model.anthropic_provider` init 時把 token 塞 `default_headers={"Authorization": f"Bearer ..."}`
+- **OpenAI SDK**(本來會送 `Authorization: Bearer <api_key>`):同樣用 `default_headers`
+  蓋掉 SDK 自動生成的 Authorization,**不要**把 PROXY token 塞 `api_key` 欄位 — 那是給
+  upstream 用的(雖然會被 proxy 覆寫,但語意混淆)
+- **`orion_model.audio.stt` / `tts`**(httpx 直發)— Bearer 來源從 `OPENAI_API_KEY`
+  改成 `ORION_MODEL_PROXY_KEY`(若 proxy URL 設了)
+
+外部 SDK / 工具(LangChain / Cursor / aider / curl)— 你自己控 Authorization,
+直接帶 PROXY token 即可,Orion 不介入。
+
 ## 自家 host 怎麼接
 
 `orion_model` 三個層次都靠 env `ORION_MODEL_PROXY_URL` 自動切到 proxy:

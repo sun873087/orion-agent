@@ -193,12 +193,14 @@ async def tts_status(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:  
     from orion_model.tts_catalog import list_tts_catalog
 
     catalog = list_tts_catalog()
+    # OpenAI TTS 走 proxy 時 client 不必直接有 OPENAI_API_KEY — proxy 那邊有。
+    openai_via_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
     providers_meta = []
     for p in catalog.get("providers", []) or []:
         pid = p.get("id") if isinstance(p, dict) else None
         has_key = False
         if pid == "openai":
-            has_key = bool(os.environ.get("OPENAI_API_KEY"))
+            has_key = openai_via_proxy or bool(os.environ.get("OPENAI_API_KEY"))
         providers_meta.append({
             "id": pid,
             "label": p.get("label") if isinstance(p, dict) else pid,

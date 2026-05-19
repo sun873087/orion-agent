@@ -100,9 +100,18 @@ class AnthropicProvider:
                 # SDK init 階段 strict 要求 api_key 不為 None,proxy 那邊才有
                 # 真 key,host 端塞 placeholder 騙過 SDK。proxy reverse 那層
                 # 會用真實 ANTHROPIC_API_KEY 覆寫 x-api-key header。
+                #
+                # 若 proxy 端設了 ORION_MODEL_PROXY_KEY(要求 Bearer auth),
+                # client 也讀同名 env 並透過 default_headers 塞 Authorization
+                # — Anthropic SDK 本來只送 x-api-key,沒這條會直接撞 401。
+                extra_headers: dict[str, str] = {}
+                proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
+                if proxy_key:
+                    extra_headers["Authorization"] = f"Bearer {proxy_key}"
                 client = AsyncAnthropic(
                     base_url=f"{proxy.rstrip('/')}/anthropic",
                     api_key=_os.environ.get("ANTHROPIC_API_KEY") or "via-proxy",
+                    default_headers=extra_headers or None,
                 )
             else:
                 client = AsyncAnthropic()

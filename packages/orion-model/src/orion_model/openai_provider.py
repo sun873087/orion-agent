@@ -61,9 +61,17 @@ class OpenAIProvider:
                 # SDK strict 要求 api_key non-empty;proxy 那邊有真 key,host
                 # 端塞 placeholder 騙過 SDK。proxy reverse 那層用真實
                 # OPENAI_API_KEY 覆寫 Authorization header。
+                #
+                # ORION_MODEL_PROXY_KEY(proxy 端開了 Bearer auth 時)用
+                # default_headers 蓋掉 api_key 自動生成的 Authorization。
+                extra_headers: dict[str, str] = {}
+                proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
+                if proxy_key:
+                    extra_headers["Authorization"] = f"Bearer {proxy_key}"
                 client = AsyncOpenAI(
                     base_url=f"{proxy.rstrip('/')}/openai/v1",
                     api_key=_os.environ.get("OPENAI_API_KEY") or "via-proxy",
+                    default_headers=extra_headers or None,
                 )
             else:
                 client = AsyncOpenAI()
