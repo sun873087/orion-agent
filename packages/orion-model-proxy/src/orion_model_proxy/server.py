@@ -230,6 +230,33 @@ def create_app() -> FastAPI:
             "cost_usd": result.cost_usd,
         })
 
+    # ─── External SDK compat (Phase 31-X.3)──────────────────────────────
+    # /openai/* / /anthropic/* 是 transparent reverse proxy。外部任何用
+    # OpenAI / Anthropic SDK 寫的 client(LangChain / Cursor / curl / aider 等)
+    # 把 base_url 指這 endpoint,wire 完全不動,proxy 只換 auth header → 上游
+    # 真實 API。Streaming SSE / NDJSON 都 byte-for-byte 透傳。
+    from orion_model_proxy.upstream_proxy import (
+        anthropic_reverse_proxy,
+        openai_reverse_proxy,
+    )
+
+    @app.api_route(
+        "/openai/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        # 故意不寫 response_model — catch-all,format 是 OpenAI 原生
+    )
+    async def openai_compat(req: Request, path: str) -> StreamingResponse:
+        _check_auth(req)
+        return await openai_reverse_proxy(req, path)
+
+    @app.api_route(
+        "/anthropic/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    )
+    async def anthropic_compat(req: Request, path: str) -> StreamingResponse:
+        _check_auth(req)
+        return await anthropic_reverse_proxy(req, path)
+
     # /v1/health/{provider} — per-provider ping(可選 — health 已 cover)
     @app.get("/v1/health/{provider}")
     async def health_per_provider(provider: str) -> JSONResponse:
