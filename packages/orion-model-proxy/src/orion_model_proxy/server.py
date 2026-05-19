@@ -32,7 +32,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from orion_model.catalog import list_catalog
-from orion_model.events import NormalizedEvent
 from orion_model.tool_def import ToolDefinition
 from orion_model.types import NormalizedMessage
 

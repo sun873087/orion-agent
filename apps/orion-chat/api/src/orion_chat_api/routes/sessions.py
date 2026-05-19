@@ -36,6 +36,11 @@ router = APIRouter()
 _PROVIDER_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    # Ollama 走本機 daemon 沒 API key 概念 — 空字串 → os.environ.get(...) 永遠
+    # 回 falsy → "available": false。將來 ollama_provider 加 OLLAMA_HOST ping
+    # 可以再升級 — 目前 ollama 在 chat-api 沒整合,留 unavailable 防 catalog
+    # 撈到 ollama 時 KeyError 炸。
+    "ollama": "",
 }
 
 
@@ -242,7 +247,7 @@ async def list_models(
     providers = [
         {
             **p,
-            "available": bool(os.environ.get(_PROVIDER_KEY_ENV[p["id"]])),
+            "available": bool(os.environ.get(_PROVIDER_KEY_ENV.get(p["id"], ""))),
         }
         for p in providers_raw
     ]
