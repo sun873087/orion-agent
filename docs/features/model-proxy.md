@@ -138,10 +138,45 @@ curl http://proxy.local:9090/openai/v1/chat/completions \
 |---|---|
 | `GET /v1/health` | proxy 自家 health + 顯各 provider key 是否設好 |
 | `GET /v1/health/{provider}` | per-provider key 狀態 |
+| `GET /v1/catalog` | **Orion 自家** catalog(chat + stt + tts metadata) |
 | `ANY /openai/{path:path}` | catch-all transparent proxy → api.openai.com |
 | `ANY /anthropic/{path:path}` | catch-all transparent proxy → api.anthropic.com |
 
 **Catch-all 設計**:OpenAI / Anthropic 未來新加任何 endpoint(image / video / files / fine-tuning / vector store / batch ...) **proxy 不必改 code 自動支援**。
+
+## Model 資訊兩條路徑
+
+| 想知道什麼 | 打哪 | 來源 |
+|---|---|---|
+| **OpenAI server 上現在能用什麼 model**(動態完整列表) | `GET /openai/v1/models` | OpenAI 原生(透傳) |
+| **Anthropic server 上能用什麼**(動態) | `GET /anthropic/v1/models` | Anthropic 原生(透傳) |
+| **Orion 推薦哪些 model + 我們的 metadata**(label / pricing / `max_context_tokens` / `supports_reasoning` / `recommended`) | `GET /v1/catalog` | Orion 自家 `models.json` |
+
+兩條互補:OpenAI 動態列表包含一大堆 fine-tuned / legacy / deprecated model,我們的 catalog 是**精選 + 帶價格 + 帶能力旗標**的子集。
+
+### `/v1/catalog` response shape
+
+```json
+{
+  "chat": {"providers": [
+    {"id": "anthropic", "label": "Anthropic", "models": [
+      {"id": "claude-opus-4-7", "label": "Claude Opus 4.7",
+       "max_context_tokens": 200000, "supports_reasoning": true,
+       "pricing": {"input": 15.0, "output": 75.0, ...}},
+      ...
+    ]},
+    {"id": "openai", ...},
+    {"id": "ollama", ...}
+  ]},
+  "stt": {"providers": [{"id": "openai", "models": [...]}, {"id": "google", ...}]},
+  "tts": {"providers": [{"id": "openai", "models": [...], "voices": [...]}]}
+}
+```
+
+自家 host(orion-cowork sidecar / chat-api / cli)目前是**直接 `import orion_model.catalog`**(在同個 Python process 內,沒 HTTP cost),不必繞 proxy。`/v1/catalog` 主要給:
+- **跨網路 / 跨語言的外部 client**(JS / Go / Rust / ...)
+- 想動態知道「我們推薦哪幾個 model」的工具
+- 將來 web admin dashboard
 
 ## Auth
 
