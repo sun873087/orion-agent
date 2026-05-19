@@ -142,6 +142,16 @@ type AgentState = {
     originalText: string,
   ) => void
   closeForkRequest: () => void
+
+  /** Sidebar 多選模式(Phase 31-U)— 啟用時 row 顯 checkbox 取代 icon,
+   *  點 row toggle 選取(不切 session)。退出時清空。Ephemeral,不 persist。 */
+  sidebarSelectionMode: boolean
+  selectedSessionIds: string[]
+  enterSidebarSelection: () => void
+  exitSidebarSelection: () => void
+  toggleSessionSelected: (sid: string) => void
+  selectAllSessions: (ids: string[]) => void
+  clearSessionSelection: () => void
   /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
    *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
    *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
@@ -232,6 +242,8 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   pendingPlanApprovalBySession: {},
   extraOutputFiles: {},
   forkRequest: null,
+  sidebarSelectionMode: false,
+  selectedSessionIds: [],
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -439,6 +451,22 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       forkRequest: { sessionId, messageIndex, forkPointRole, originalText },
     }),
   closeForkRequest: () => set({ forkRequest: null }),
+
+  enterSidebarSelection: () =>
+    set({ sidebarSelectionMode: true, selectedSessionIds: [] }),
+  exitSidebarSelection: () =>
+    set({ sidebarSelectionMode: false, selectedSessionIds: [] }),
+  toggleSessionSelected: (sid) =>
+    set((s) => {
+      const has = s.selectedSessionIds.includes(sid)
+      return {
+        selectedSessionIds: has
+          ? s.selectedSessionIds.filter((x) => x !== sid)
+          : [...s.selectedSessionIds, sid],
+      }
+    }),
+  selectAllSessions: (ids) => set({ selectedSessionIds: ids }),
+  clearSessionSelection: () => set({ selectedSessionIds: [] }),
 
   setCompacting: (sid, v) =>
     set((s) => updateSession(s, 'compactingBySession', sid, () => v)),

@@ -471,6 +471,7 @@ class Handlers:
             "conversation.list": self.conversation_list,
             "conversation.search": self.conversation_search,
             "conversation.delete": self.conversation_delete,
+            "conversation.delete_many": self.conversation_delete_many,
             "conversation.rename": self.conversation_rename,
             "conversation.set_starred": self.conversation_set_starred,
             "conversation.get_workspace": self.conversation_get_workspace,
@@ -2972,6 +2973,57 @@ class Handlers:
         yield {
             "event": "conversation_deleted",
             "data": {"session_id": sid},
+            "final": True,
+        }
+
+    async def conversation_delete_many(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Bulk delete:對每個 sid 跑 cascade delete(含 fork 子孫 + Loop 排程)。
+
+        傳入 session_ids 內非 str / 非 valid uuid / 重複 都會被略過,不會炸。
+        """
+        raw_ids = params.get("session_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_ids required"},
+                "final": True,
+            }
+            return
+        valid: list[str] = []
+        seen: set[str] = set()
+        for x in raw_ids:
+            if not isinstance(x, str) or x in seen:
+                continue
+            try:
+                UUID(x)
+            except (ValueError, TypeError):
+                continue
+            seen.add(x)
+            valid.append(x)
+        if not valid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "no valid session_ids"},
+                "final": True,
+            }
+            return
+
+        engine = await self.ensure_engine()
+        # Abort in-flight + 清 in-memory cache
+        for sid in valid:
+            ctx = self._aborts.get(sid)
+            if ctx is not None:
+                ctx.abort_event.set()
+            self._conversations.pop(sid, None)
+            self._aborts.pop(sid, None)
+            self._title_done.discard(sid)
+
+        stats = await storage.delete_many_sessions(engine, valid)
+        yield {
+            "event": "conversation_deleted_many",
+            "data": stats,
             "final": True,
         }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
+  CheckSquare,
   ChevronRight,
   Clock,
   GitBranch,
@@ -15,6 +16,7 @@ import {
   Plus,
   Search,
   Settings as SettingsIcon,
+  Square,
   Star,
   Trash2,
   User,
@@ -132,6 +134,8 @@ export function Sidebar() {
           onClose={toggleSearch}
         />
       )}
+      <SelectionToolbar visibleSessions={baseSessions} />
+
       <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
         {showHits ? (
           searching && hits.length === 0 ? (
@@ -190,6 +194,106 @@ export function Sidebar() {
 
       <UserMenu />
     </aside>
+  )
+}
+
+/** 多選模式 toolbar(Phase 31-U)— 入口 + 全選 / 取消 / 批次刪 toolbar。
+ *  visibleSessions 是當前 sidebar 看得到的 session(已過 project filter)— 全選
+ *  只選這些,不會誤選別 project 的。 */
+function SelectionToolbar({ visibleSessions }: { visibleSessions: SessionSummary[] }) {
+  const { t } = useTranslation()
+  const mode = useAgentStore((s) => s.sidebarSelectionMode)
+  const selected = useAgentStore((s) => s.selectedSessionIds)
+  const enter = useAgentStore((s) => s.enterSidebarSelection)
+  const exit = useAgentStore((s) => s.exitSidebarSelection)
+  const selectAll = useAgentStore((s) => s.selectAllSessions)
+  const refreshSidebar = useAgentStore((s) => s.setSessions)
+
+  const visibleIds = useMemo(
+    () => visibleSessions.map((s) => s.session_id),
+    [visibleSessions],
+  )
+  const allSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id))
+
+  async function doBulkDelete() {
+    if (selected.length === 0) return
+    // 先 async 撈 fork 子孫總數,confirm 訊息提示
+    const { countForkDescendants, deleteConversations, listConversations } = await import(
+      '../api/agent'
+    )
+    let extra = 0
+    try {
+      const counts = await Promise.all(selected.map(countForkDescendants))
+      extra = counts.reduce((a, b) => a + b, 0)
+    } catch {
+      // ignore
+    }
+    const msg =
+      extra > 0
+        ? t('sidebar.bulkDeleteConfirmWithForks', {
+            count: selected.length,
+            total: selected.length + extra,
+          })
+        : t('sidebar.bulkDeleteConfirm', { count: selected.length })
+    if (!window.confirm(msg)) return
+    try {
+      await deleteConversations(selected)
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e)
+      window.alert(`刪除失敗:${err}`)
+    }
+    exit()
+    refreshSidebar(await listConversations())
+  }
+
+  if (!mode) {
+    return (
+      <div className="px-3 pb-1">
+        <button
+          type="button"
+          onClick={enter}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-bg-hover px-2 py-1 text-[11px] text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+        >
+          <CheckSquare size={12} />
+          <span>{t('sidebar.selectMultiple')}</span>
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1 border-b border-bg-hover bg-bg-hover/30 px-3 py-2">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-mono text-fg-base">
+          {t('sidebar.selectedCount', { count: selected.length })}
+        </span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => (allSelected ? selectAll([]) : selectAll(visibleIds))}
+            className="rounded px-2 py-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          >
+            {allSelected ? t('sidebar.deselectAll') : t('sidebar.selectAll')}
+          </button>
+          <button
+            type="button"
+            onClick={exit}
+            className="rounded px-2 py-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => void doBulkDelete()}
+        disabled={selected.length === 0}
+        className="flex items-center justify-center gap-1.5 rounded-md bg-error/15 px-2 py-1 text-[11px] text-error hover:bg-error/25 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Trash2 size={12} />
+        <span>{t('sidebar.deleteSelected', { count: selected.length })}</span>
+      </button>
+    </div>
   )
 }
 
@@ -424,6 +528,10 @@ function SessionRow({
   const refreshSidebar = useAgentStore((s) => s.setSessions)
   // 是否這 session 還在跑(背景 streaming)— sidebar 顯轉圈圈,user 看得到
   const isRunning = useAgentStore((s) => s.busyBySession[sessionId] ?? false)
+  // 多選模式狀態(Phase 31-U):mode on 時 row 顯 checkbox 取代 icon,點 row toggle 選取
+  const selectionMode = useAgentStore((s) => s.sidebarSelectionMode)
+  const selected = useAgentStore((s) => s.selectedSessionIds.includes(sessionId))
+  const toggleSelected = useAgentStore((s) => s.toggleSessionSelected)
   const [menuOpen, setMenuOpen] = useState(false)
   const [submenuOpen, setSubmenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -492,20 +600,43 @@ function SessionRow({
       })
     : undefined
 
+  // Selection mode 時 row click 改 toggle 選取(不切 session);active 視覺改為「已選」
+  const rowOnClick = editing
+    ? undefined
+    : selectionMode
+      ? () => toggleSelected(sessionId)
+      : onClick
+  const rowActiveClass = selectionMode
+    ? selected
+      ? 'bg-accent/15 text-fg-base'
+      : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+    : active
+      ? 'bg-bg-hover text-fg-base'
+      : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+
   return (
     <div
       ref={wrapRef}
       className={`group relative flex items-center gap-2 rounded-md px-2 py-2 text-sm ${
         editing ? '' : 'cursor-pointer'
-      } ${
-        active ? 'bg-bg-hover text-fg-base' : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
-      } ${depth > 0 ? 'border-l-2 border-bg-hover' : ''}`}
+      } ${rowActiveClass} ${depth > 0 ? 'border-l-2 border-bg-hover' : ''}`}
       style={indentStyle}
-      onClick={editing ? undefined : onClick}
+      onClick={rowOnClick}
       title={forkTooltip}
     >
+      {/* Selection mode 時最左顯 checkbox,取代 chevron 位置 */}
+      {selectionMode ? (
+        <span className="shrink-0 text-fg-muted">
+          {selected ? (
+            <CheckSquare size={14} className="text-accent" />
+          ) : (
+            <Square size={14} />
+          )}
+        </span>
+      ) : null}
       {/* Chevron toggle:有 children 才顯;點擊只摺/展,不切 session。沒
-          children 用 spacer 同寬 12px 保持其他 row 的 icon 對齊。 */}
+          children 用 spacer 同寬 12px 保持其他 row 的 icon 對齊。Selection
+          mode 時 chevron 仍要可用(摺/展不該被禁) */}
       {hasChildren ? (
         <button
           type="button"

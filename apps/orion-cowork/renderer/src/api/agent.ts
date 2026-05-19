@@ -1259,6 +1259,42 @@ export async function searchConversations(query: string): Promise<SearchHit[]> {
   return result
 }
 
+export type BulkDeleteStats = {
+  requested: number
+  deleted: number
+  descendantsDeleted: number
+  totalTargets: number
+}
+
+/** Bulk delete 多個 session — 每個都 cascade fork 子孫。回統計。Phase 31-U。 */
+export async function deleteConversations(
+  sessionIds: string[],
+): Promise<BulkDeleteStats> {
+  let stats: BulkDeleteStats = {
+    requested: sessionIds.length,
+    deleted: 0,
+    descendantsDeleted: 0,
+    totalTargets: 0,
+  }
+  await window.agent.call(
+    'conversation.delete_many',
+    { session_ids: sessionIds },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event === 'conversation_deleted_many' && f.data) {
+        const d = f.data
+        stats = {
+          requested: typeof d.requested === 'number' ? d.requested : sessionIds.length,
+          deleted: typeof d.deleted === 'number' ? d.deleted : 0,
+          descendantsDeleted: typeof d.descendants_deleted === 'number' ? d.descendants_deleted : 0,
+          totalTargets: typeof d.total_targets === 'number' ? d.total_targets : 0,
+        }
+      }
+    },
+  )
+  return stats
+}
+
 export async function deleteConversation(sessionId: string): Promise<void> {
   await window.agent.call(
     'conversation.delete',

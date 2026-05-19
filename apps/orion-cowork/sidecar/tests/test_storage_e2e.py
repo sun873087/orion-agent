@@ -150,6 +150,44 @@ async def test_fork_session_copies_messages_and_lineage(data_dir: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_many_sessions_bulk(data_dir: str) -> None:
+    """Bulk delete:傳一組 sids,各自跑 cascade(含 fork 子孫);無關 session 不動。"""
+    os.environ["ORION_COWORK_DATA_DIR"] = data_dir
+    from orion_cowork_sidecar import storage
+
+    engine = await storage.init_storage()
+    keep_sid = "66666666-6666-6666-6666-666666666666"
+    drop1 = "77777777-7777-7777-7777-777777777777"
+    drop2 = "88888888-8888-8888-8888-888888888888"
+    for sid in (keep_sid, drop1, drop2):
+        await storage.save_session_metadata(
+            engine, sid, provider="anthropic", model="claude-haiku-4-5",
+        )
+    # drop1 有 1 個 fork 子孫
+    from orion_model.types import NormalizedMessage
+    await storage.append_messages(engine, drop1, [
+        NormalizedMessage(role="user", content="Q1"),
+        NormalizedMessage(role="assistant", content="A1"),
+    ])
+    drop1_fork = await storage.fork_session(
+        engine, source_session_id=drop1, up_to_message_index=1, title="fork",
+    )
+
+    stats = await storage.delete_many_sessions(engine, [drop1, drop2])
+    assert stats["requested"] == 2
+    assert stats["deleted"] == 2
+    assert stats["descendants_deleted"] == 1  # drop1_fork
+
+    listed = await storage.list_sessions(engine)
+    ids = {s.session_id for s in listed}
+    assert keep_sid in ids
+    assert drop1 not in ids
+    assert drop2 not in ids
+    assert drop1_fork not in ids, "fork 子孫該被 cascade"
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_delete_session_cascades_fork_descendants(data_dir: str) -> None:
     """刪 parent session 時,fork 出去的所有子孫(含孫子)一併刪掉。
     原本只刪 parent 會留孤兒,sidebar tree 看起來變 root,user 直覺不對。"""

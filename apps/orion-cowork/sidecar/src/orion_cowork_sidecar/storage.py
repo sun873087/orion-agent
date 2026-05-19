@@ -411,6 +411,41 @@ async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
         return out
 
 
+async def delete_many_sessions(
+    engine: AsyncEngine, session_ids: list[str],
+) -> dict[str, int]:
+    """Bulk delete:對每個 sid 跑 cascade delete(messages / meta / ext /
+    schedules / blobs / fork 子孫)。回 {requested, deleted, descendants_deleted}。
+
+    fork 子孫去重:多個請求 session 可能互為祖孫關係,先撈所有子孫聯集,
+    避免同一 session 被算進兩次刪除。
+    """
+    if not session_ids:
+        return {"requested": 0, "deleted": 0, "descendants_deleted": 0}
+    # 先找每個 sid 的所有子孫,union 起來
+    all_descendants: set[str] = set()
+    for sid in session_ids:
+        all_descendants.update(await find_fork_descendants(engine, sid))
+    # 子孫 set 扣掉本來就在 request 內的(避免重複處理)
+    request_set = set(session_ids)
+    extra_descendants = all_descendants - request_set
+    total_targets = list(request_set | all_descendants)
+    deleted = 0
+    for sid in session_ids:
+        # 用 delete_session 標準路徑;它內部也會找 descendants — 但因為我們
+        # 已經一起列在 total_targets,實際刪重複只是 no-op(get/SessionRow
+        # 已被前一輪刪掉,直接 skip 就 return False)
+        ok = await delete_session(engine, sid)
+        if ok:
+            deleted += 1
+    return {
+        "requested": len(session_ids),
+        "deleted": deleted,
+        "descendants_deleted": len(extra_descendants),
+        "total_targets": len(total_targets),
+    }
+
+
 async def find_fork_descendants(
     engine: AsyncEngine, session_id: str,
 ) -> list[str]:
