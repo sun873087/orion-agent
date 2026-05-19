@@ -89,7 +89,24 @@ class AnthropicProvider:
         client: AsyncAnthropic | None = None,
     ) -> None:
         self.model = model
-        self.client = client or AsyncAnthropic()
+        # Phase 31-X — ORION_MODEL_PROXY_URL 有設就把 SDK 的 base_url 指到 proxy
+        # /anthropic;沒設走 Anthropic 預設 https://api.anthropic.com。
+        # 整個透傳邏輯由 anthropic SDK 自己處理(它本來就支援 base_url),
+        # proxy 對它而言是 transparent reverse proxy。
+        if client is None:
+            import os as _os
+            proxy = _os.environ.get("ORION_MODEL_PROXY_URL")
+            if proxy:
+                # SDK init 階段 strict 要求 api_key 不為 None,proxy 那邊才有
+                # 真 key,host 端塞 placeholder 騙過 SDK。proxy reverse 那層
+                # 會用真實 ANTHROPIC_API_KEY 覆寫 x-api-key header。
+                client = AsyncAnthropic(
+                    base_url=f"{proxy.rstrip('/')}/anthropic",
+                    api_key=_os.environ.get("ANTHROPIC_API_KEY") or "via-proxy",
+                )
+            else:
+                client = AsyncAnthropic()
+        self.client = client
         self.capabilities = ProviderCapabilities(
             prompt_caching=True,
             auto_caching=False,

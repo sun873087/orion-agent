@@ -1,249 +1,129 @@
 # Orion Model Proxy
 
-**Phase 31-X MVP**。HTTP service 統一接 Anthropic / OpenAI / Ollama,3 個 app
-(CLI / Chat / Cowork)透過 env var 切過去就用 proxy,不必各自管 API key。
+**Phase 31-X**。Transparent reverse proxy 包 OpenAI / Anthropic。3 個自家 host
+(CLI / Chat / Cowork)透過 env var 把 SDK 的 `base_url` 切過去就走 proxy,
+外部任何用 OpenAI / Anthropic SDK 寫的工具也能用同個 endpoint。
 
 **實作位置**:`packages/orion-model-proxy/`
-
-```
-packages/orion-model-proxy/
-├── pyproject.toml
-└── src/orion_model_proxy/
-    ├── __init__.py
-    ├── __main__.py        entrypoint(uv run orion-model-proxy)
-    └── server.py          FastAPI app
-```
 
 ## 為什麼
 
 | 痛點 | Proxy 解什麼 |
 |---|---|
-| `OPENAI_API_KEY` 等 3 個 app 各放 `.env` | 一處(proxy 機)放完所有 host 共用 |
-| Cost 每 app 各算各的 | 集中 DB 看全 user 花費 |
-| Cowork 90 MB sidecar 內 bundle 全 provider SDK | 將來可瘦身(下一階段) |
-| 想做 routing(`auto-fast` → cheap model)| Proxy 集中 routing config(下階段)|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 各 host 各放 `.env` | 1 處(proxy 機)放完所有 host + 工具共用 |
+| Cost 各 host 各算 | 集中觀測點(下階段可加 DB 紀錄)|
+| 外部工具(LangChain / Cursor / aider)沒辦法跟我們共用 key | base_url 指 proxy 就 work |
+| 想 routing / cache / rate limit / failover | 集中加在 proxy(下階段)|
 
-## 架構
+## 架構(極簡)
 
 ```
-┌──────────────────────────────────────────┐
-│  orion-model-proxy(FastAPI, :9090)        │
-│                                            │
-│  POST /v1/messages          ← Orion native │
-│  GET  /v1/models            ← merged catalog│
-│  GET  /v1/health[/provider]                │
-│                                            │
-│  Backend: import orion_model              │
-│  ├─ AnthropicProvider                     │
-│  ├─ OpenAIProvider                        │
-│  └─ OllamaProvider                        │
-└──────────────────────────────────────────┘
-                ▲ HTTPS(NDJSON streaming)
+┌──────────────────────────────────────────────┐
+│  orion-model-proxy(FastAPI, :9090)            │
+│                                                │
+│  /openai/{path:path}     ──→ api.openai.com   │
+│  /anthropic/{path:path}  ──→ api.anthropic.com │
+│  /v1/health[/{provider}]                       │
+│                                                │
+│  Only:                                         │
+│  - 換 Authorization / x-api-key 為 proxy 真 key │
+│  - filter hop-by-hop headers                   │
+│  - 自動 gzip decompress                        │
+│  - SSE / NDJSON streaming 透傳                  │
+│                                                │
+│  **不解析 body** — 純 byte-for-byte 透傳        │
+└──────────────────────────────────────────────┘
+                ▲
+                │ OpenAI / Anthropic 原生 wire(client 怎麼打 proxy 就怎麼透傳)
                 │
-  ┌─────────────┼─────────────┐
-[CLI]      [Chat-api]    [Cowork sidecar]
-  └─ import orion_model
-     └─ get_provider() 偵測 ORION_MODEL_PROXY_URL
-        ├─ 有 → HttpProxyProvider(走 proxy)
-        └─ 無 → 直連對應 provider(舊行為)
+   ┌────────────┼─────────────────────────────┐
+   │            │                             │
+[自家 host]                              [外部 SDK / 工具]
+ import orion_model                       LangChain / Cursor / aider /
+   provider.get_provider("anthropic"...)  自寫 script(用 OpenAI 或
+   audio.transcribe(...)                  Anthropic Python SDK)
+   audio.synthesize(...)
+   ↑
+   SDK 內部 base_url 由 env ORION_MODEL_PROXY_URL 控:
+     有設 → AsyncAnthropic(base_url=f"{proxy}/anthropic")
+            AsyncOpenAI(base_url=f"{proxy}/openai/v1")
+     沒設 → SDK 預設打 api.anthropic.com / api.openai.com
+   Ollama 不經 proxy(本機 daemon,proxy 對它無增值)
 ```
 
-## 兩種 wire format 並存
-
-| 路徑 | 給誰用 | Wire format | 何時用 |
-|---|---|---|---|
-| `/v1/messages` | **自家 host**(CLI / chat-api / Cowork sidecar)透過 `orion_model.get_provider()` | Orion-native `NormalizedMessage` + NDJSON streaming | 我們的 3 個 app — wire 跟 SDK 內部一致,零失真 |
-| `/v1/audio/{transcribe,speech}` | 自家 host(`orion_model.audio.*`)| JSON body / response | 我們的 STT / TTS |
-| `/openai/{path}` | **外部 SDK / 工具**(OpenAI Python SDK / Cursor / LangChain / aider / 任何用 OpenAI wire 的東西)| OpenAI 原生格式 — proxy 不解析,純 reverse | 第三方工具想用我們的 key + 統一帳單 |
-| `/anthropic/{path}` | 外部 SDK(Anthropic Python / Claude Code etc.)| Anthropic 原生格式 | 同上 |
-
-**為什麼兩條都要?**
-- Orion-native 給自家 host:**無失真** ↔ host 內部本來就用 NormalizedMessage
-- OpenAI / Anthropic compat 給外部:**最大相容** — 任何用過 SDK 的人 0 學習成本接過來
-
-## Wire format(Orion native)
-
-**Request:**
-
-```http
-POST /v1/messages HTTP/1.1
-Authorization: Bearer <ORION_MODEL_PROXY_KEY>   ← 可選
-Content-Type: application/json
-
-{
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-6",
-  "system": "...",
-  "messages": [NormalizedMessage, ...],
-  "tools": [ToolDefinition, ...] | null,
-  "max_tokens": 4096,
-  "temperature": 0.7 | null,
-  "cache_breakpoints": [int, ...] | null,
-  "reasoning_effort": "low" | "medium" | "high" | "minimal" | null
-}
-```
-
-**Response:** `application/x-ndjson`,每行一個 `NormalizedEvent`:
-
-```json
-{"type":"message_start","message_id":"msg_...","model":"claude-haiku-4-5-..."}
-{"type":"text_delta","text":"hello"}
-{"type":"text_delta","text":" world"}
-{"type":"tool_use_start","block_index":0,"tool_use_id":"toolu_...","tool_name":"Bash"}
-{"type":"tool_use_input_delta","block_index":0,"partial_json":"{..."}
-{"type":"tool_use_stop","block_index":0,"tool_use_id":"toolu_...","tool_name":"Bash","full_input":{...}}
-{"type":"message_stop","stop_reason":"end_turn","usage":{...}}
-```
-
-**Why Orion native vs OpenAI-compat:**
-
-- Anthropic thinking / cache_control / tool_use 各家有差,OpenAI-compat 翻譯有失真
-- Wire = SDK 內部 `NormalizedEvent` JSON 化(全 Pydantic),host / proxy 兩邊
-  反序列化即可,**沒中間翻譯層**
-- 將來想對外公開 OpenAI-compat 介面是另開一條 endpoint,不衝突
+**沒有 Orion-native 中間層** — 之前的 `/v1/messages` + `/v1/audio/*` 抽象冗餘,SDK
+本來就會講 OpenAI / Anthropic 原生 wire,直接透傳更乾淨,wire format 跟外部 SDK 共用。
 
 ## Quick start
 
 ### 1. 啟動 proxy
 
 ```bash
-# Provider API keys 自己已有 .env / shell env
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 # 可選:proxy 自己的 auth token
 export ORION_MODEL_PROXY_KEY=$(uuidgen)
 
-# 起 proxy(default :9090)
-uv run --package orion-model-proxy orion-model-proxy
-# [orion-model-proxy] listening on http://127.0.0.1:9090(auth required)
+make dev-model-proxy
+# [orion-model-proxy] listening on http://127.0.0.1:9090
 ```
 
 可選 env vars:
 
 | Env | 預設 | 說明 |
 |---|---|---|
-| `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host;對外服務改 `0.0.0.0` |
+| `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host(對外服改 `0.0.0.0`)|
 | `ORION_MODEL_PROXY_PORT` | `9090` | listen port |
-| `ORION_MODEL_PROXY_KEY` | — | Bearer token;沒設 = 不認證(本機 dev) |
+| `ORION_MODEL_PROXY_KEY` | — | Bearer token;沒設 = 不認證(本機 dev)|
 
-### 2. Host 切過去
+### 2. 自家 host 切過去
 
 ```bash
-# 三個 host 都一樣
 export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
-export ORION_MODEL_PROXY_KEY=<same as proxy>   # 若 proxy 有設
-
-# 跑 CLI / Chat / Cowork — 程式碼不動,所有 LLM call 走 proxy
-pnpm dev    # Cowork
-uv run --package orion-chat-api uvicorn ...    # Chat
-uv run --package orion-cli orion ...           # CLI
+# Cowork / CLI / Chat 程式碼**完全不變**,SDK base_url 由 env 控
+make dev-cowork   # 或 dev-cli / dev-api
 ```
 
-**驗證:**
+### 3. 外部 SDK 用法
 
-```bash
-# Proxy log 應該看到 POST /v1/messages 進來
-# Host 那邊 conversation.stats / 對話一切正常
-```
-
-### 3. Fallback to direct
-
-把 `ORION_MODEL_PROXY_URL` env unset,host 自動退回直連對應 provider — code 不動,
-proxy 掛了也不會擋 host 工作。
-
-## API
-
-### `POST /v1/messages`
-
-見上面 wire format。**Streaming only**(NDJSON),沒 blocking 模式。
-
-### `POST /v1/audio/transcribe`(STT,Phase 31-X.2)
-
-```http
-POST /v1/audio/transcribe
-Authorization: Bearer <key>
-Content-Type: application/json
-
-{
-  "provider": "openai" | "google",
-  "model": "whisper-1" | "gpt-4o-mini-transcribe" | "gpt-4o-transcribe" | "default"(google),
-  "audio_base64": "...",
-  "mime_type": "audio/webm",
-  "locale": "zh-TW",
-  "duration_seconds": 3.2
-}
-```
-
-Response(JSON):
-
-```json
-{"text": "...", "provider": "openai", "model": "whisper-1", "duration_seconds": 3.2, "cost_usd": 0.00032}
-```
-
-### `POST /v1/audio/speech`(TTS,Phase 31-X.2)
-
-```http
-POST /v1/audio/speech
-Authorization: Bearer <key>
-Content-Type: application/json
-
-{
-  "provider": "openai",
-  "model": "tts-1" | "tts-1-hd",
-  "voice": "alloy"|"echo"|"fable"|"nova"|"onyx"|"shimmer",
-  "speed": 1.0,
-  "text": "...",
-  "format": "mp3" | "opus" | "aac" | "flac"
-}
-```
-
-Response(JSON,audio 走 base64):
-
-```json
-{"audio_base64": "...", "mime_type": "audio/mpeg", "char_count": 42, "cost_usd": 0.00063, "voice": "nova", ...}
-```
-
-> **Cache**:Cowork sidecar 端有自己的 `~/.orion/tts-cache/<sha256>.mp3` 檔
-> cache(命中省 cost),屬 host 範疇。Proxy 端目前**沒** cache(下階段 Phase D)。
-
-### `/openai/{path}`(transparent reverse proxy)
-
-任何 `/openai/v1/*` 的 request 都被 byte-for-byte 透傳到
-`https://api.openai.com/v1/*`,**proxy 不解析 body**。只動三件事:
-
-1. 換 `Authorization: Bearer ...` header(用 proxy 那台機的 `OPENAI_API_KEY`)
-2. 移除 hop-by-hop headers(host / connection / etc.)
-3. 上游 gzip response 自動 decompress 後 stream 回(避免 client 端 magic 對不上)
-
-**用法 — Python OpenAI SDK:**
+**Python OpenAI SDK:**
 
 ```python
-from openai import AsyncOpenAI
-client = AsyncOpenAI(
+from openai import OpenAI
+client = OpenAI(
     base_url="http://proxy.local:9090/openai/v1",
-    api_key="anything",  # client 隨便填,proxy 端才有真 key
+    api_key="anything",  # client 隨便填,proxy 才有真 key
 )
 
 # Chat completions
-resp = await client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "hi"}],
-)
+resp = client.chat.completions.create(model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "hi"}])
 
-# Responses API(reasoning model)
-resp = await client.responses.create(model="gpt-4o-mini", input="hi")
+# Responses API
+resp = client.responses.create(model="gpt-4o-mini", input="hi")
 
-# TTS
-audio = await client.audio.speech.create(model="tts-1", voice="nova", input="hi")
-
-# STT
-text = await client.audio.transcriptions.create(model="whisper-1", file=open("audio.webm","rb"))
-
-# Embeddings(只要 OpenAI 加新 endpoint,catch-all 自動支援)
-emb = await client.embeddings.create(model="text-embedding-3-small", input="hi")
+# TTS / STT / Embeddings / Files / Fine-tuning — 任何 OpenAI endpoint 自動支援
+audio = client.audio.speech.create(model="tts-1", voice="nova", input="hi")
+text  = client.audio.transcriptions.create(model="whisper-1", file=open("a.webm","rb"))
+emb   = client.embeddings.create(model="text-embedding-3-small", input="hi")
 ```
 
-**用法 — curl:**
+**Python Anthropic SDK:**
+
+```python
+from anthropic import Anthropic
+client = Anthropic(
+    base_url="http://proxy.local:9090/anthropic",  # SDK 自動 append /v1
+    api_key="anything",
+)
+resp = client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "hi"}],
+)
+```
+
+**curl:**
 
 ```bash
 curl http://proxy.local:9090/openai/v1/chat/completions \
@@ -252,120 +132,78 @@ curl http://proxy.local:9090/openai/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-### `/anthropic/{path}`(transparent reverse proxy)
+## Endpoints
 
-同樣 pattern,upstream 改 `https://api.anthropic.com`,auth 改 `x-api-key`
-(Anthropic 不用 Bearer)。`anthropic-version` header 由 client 端帶,proxy 透傳。
+| Path | 用途 |
+|---|---|
+| `GET /v1/health` | proxy 自家 health + 顯各 provider key 是否設好 |
+| `GET /v1/health/{provider}` | per-provider key 狀態 |
+| `ANY /openai/{path:path}` | catch-all transparent proxy → api.openai.com |
+| `ANY /anthropic/{path:path}` | catch-all transparent proxy → api.anthropic.com |
+
+**Catch-all 設計**:OpenAI / Anthropic 未來新加任何 endpoint(image / video / files / fine-tuning / vector store / batch ...) **proxy 不必改 code 自動支援**。
+
+## Auth
+
+兩條互不影響:
+
+1. **Proxy 自家 auth**(可選):`ORION_MODEL_PROXY_KEY` env 設了 → request 帶
+   `Authorization: Bearer <same>` 才放行。**這層 client 端必須匹配**。
+2. **Upstream provider auth**(必要):`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env
+   設在 proxy 那台機。Proxy 收到 request 後**覆寫**對應 header(OpenAI `Authorization`,
+   Anthropic `x-api-key`)為真 key。**client 端傳什麼都被覆蓋**。
+
+```
+client:  Authorization: Bearer client-token
+         x-api-key: anything
+              ↓
+proxy:  ① 比對 client token 是否 = ORION_MODEL_PROXY_KEY(若有設)
+        ② 把 Authorization / x-api-key 覆寫成 server env 內真 key
+        ③ forward 到 upstream
+```
+
+## 自家 host 怎麼接
+
+`orion_model` 的 provider 在 SDK init 時偵測 env:
 
 ```python
-from anthropic import AsyncAnthropic
-client = AsyncAnthropic(
-    base_url="http://proxy.local:9090/anthropic",  # 注意:不加 /v1,SDK 自己 append
-    api_key="anything",
-)
-resp = await client.messages.create(
-    model="claude-sonnet-4-6",
-    max_tokens=1024,
-    messages=[{"role": "user", "content": "hi"}],
-)
+# packages/orion-model/src/orion_model/anthropic_provider.py
+if proxy := os.environ.get("ORION_MODEL_PROXY_URL"):
+    client = AsyncAnthropic(
+        base_url=f"{proxy}/anthropic",
+        api_key=os.environ.get("ANTHROPIC_API_KEY") or "via-proxy",
+    )
+else:
+    client = AsyncAnthropic()  # 直連
 ```
 
-### `GET /v1/stt/models` / `GET /v1/tts/models`
+Caller 完全不必動 — `get_provider("anthropic", "claude-...")` 回的還是 `AnthropicProvider` 實例,只是裡面 SDK 連的是 proxy 不是 api.anthropic.com。
 
-回 STT / TTS catalog(對應 `orion_model.stt_catalog` / `tts_catalog`)。
-
-### `GET /v1/models`
-
-回 merged catalog(`orion_model.catalog.list_catalog()`):
-
-```json
-{
-  "providers": [
-    {"id": "anthropic", "label": "Anthropic", "models": [...]},
-    {"id": "openai",    "label": "OpenAI",    "models": [...]},
-    {"id": "ollama",    "label": "Ollama",    "models": [...]}
-  ]
-}
-```
-
-### `GET /v1/health` / `GET /v1/health/{provider}`
-
-```json
-GET /v1/health → {
-  "ok": true,
-  "providers": {"anthropic": true, "openai": true, "ollama": true}
-}
-
-GET /v1/health/anthropic → {"provider": "anthropic", "ok": true}
-```
-
-`ok=true` = 環境有 API key(沒實際 ping,避免每次 healthcheck 燒一次 token)。
-Ollama 例外:會打 `/api/version` 真實 ping。
-
-## Capabilities + cost — 本地算
-
-`HttpProxyProvider.capabilities` / `estimate_cost()` 仍走 host 本地的
-`orion_model.catalog` + `pricing` — 跟 proxy 用同一份 `models.json`,結果一致,
-而且不必每次都打 proxy 問。
-
-Proxy 那邊**也會**自己算一份(下階段做 budget enforcement / 使用統計用),
-這份是 source of truth(host 端只是給 UI 顯示)。
+`orion_model.audio.stt` / `audio.tts` 內部 `httpx.post` 的 URL 也走同樣 env-gate(`_openai_base()`)。
 
 ## Phasing
 
-**Phase A — MVP**
-- ✅ FastAPI service + 3 endpoint(messages / models / health)
-- ✅ NDJSON streaming wire(NormalizedEvent JSON 化)
+**Phase A — MVP**(本 commit)
+- ✅ `/openai/*` + `/anthropic/*` transparent reverse proxy
 - ✅ Bearer-token auth(optional)
-- ✅ Host `HttpProxyProvider` + env gate
+- ✅ SDK base_url env-gate(provider + audio.stt + audio.tts)
 - ✅ Cowork / CLI / Chat zero code change
 
-**Phase A.2 — Audio (STT + TTS)**
-- ✅ `orion_model.audio` 抽出來統一 facade(env-gate proxy / direct)
-- ✅ `/v1/audio/transcribe` + `/v1/audio/speech` endpoints
-- ✅ Sidecar `stt_handlers` / `tts_handlers` 改 thin wrapper,走 audio facade
-- ✅ TTS cache 留 sidecar 端(content-hash file cache,跟 Cowork blobs 同層)
-
-**Phase A.3 — External SDK compat**
-- ✅ `/openai/{path}` catch-all transparent reverse proxy(支援 chat.completions
-  + responses + audio.speech + audio.transcriptions + embeddings + 任何
-  OpenAI 未來新加 endpoint)
-- ✅ `/anthropic/{path}` 同上,auth 改 `x-api-key`
-- ✅ Gzip 自動 decompress + filter hop-by-hop headers + streaming SSE 透傳
-- ✅ 驗證 OpenAI Python SDK / Anthropic Python SDK 直接指 base_url 全 work
-
-**Phase B(下階段)— Cost tracking**
-- Postgres `proxy_usage`(per-user / per-model spend)
-- Pre-call estimate + post-call 補真實 token
-- Admin endpoint:`GET /v1/usage?user=...`
-
-**Phase C — Routing**
-- YAML config:`auto-fast`/`auto-deep` alias、per-user override
-- Cowork model picker 多 `auto-*` 群組
-
-**Phase D — Cache + audit log**
-- sha256 cache layer(同 prompt+model → cached SSE,零 cost)
-- audit log table(可選 full body / hash only / off)
-
-**Phase E — Production polish**
-- Failover(429 → 其他 provider)
-- JWT auth(per-user identity)
-- Rate limit、metrics、Grafana
+**Phase B** — Cost tracking + audit log(Postgres `proxy_usage` + admin endpoint)
+**Phase C** — Routing alias(`auto-fast` → cheap model;per-user override)
+**Phase D** — Cache layer(prompt hash → cached response,proxy 端共用)
+**Phase E** — Failover(429 → 切其他 provider)+ rate limit
 
 ## 已知限制
 
-- **Proxy 是 SPOF** — 掛了所有 host 沒 LLM。緩解:env unset 立刻 fallback direct
-- **多一跳延遲** — localhost <1 ms 可忽略;cross-net看網路。**Streaming first-chunk**
-  晚 ~50 ms,token-throughput 不變
-- **NDJSON 非標準** — OpenAI / Anthropic 用 SSE。但 NDJSON 更簡單(每行 JSON),
-  client 端不必處理 `data:` prefix 或 keepalive。host 端 `httpx.AsyncClient`
-  `aiter_lines()` 直接解
-- **Ollama thinking field**:Ollama 把 reasoning 放新 `message.thinking` field
-  而不在 `content`,`orion_model.ollama_provider` 還沒接(獨立 bug,跟 proxy 無關)
+- **Proxy 是 SPOF** — 緩解:env unset 立刻 fallback 直連
+- **多一跳延遲** — localhost <1 ms,跨網路看 RTT
+- **Ollama 不在 proxy 範圍** — 本機 daemon,host 直連最快(無 key 概念,proxy 無增值)
+- **無 cost dashboard / DB** — Phase B 才做
 
 ## 相關
 
-- `packages/orion-model-proxy/`                                  Proxy service
-- `packages/orion-model/src/orion_model/http_proxy_provider.py`  Chat host client
-- `packages/orion-model/src/orion_model/provider.py:get_provider()`  Chat env gate
-- `packages/orion-model/src/orion_model/audio/`                  STT / TTS pure logic + facade + proxy client(Phase 31-X.2)
+- `packages/orion-model-proxy/`                                Proxy service
+- `packages/orion-model-proxy/.../upstream_proxy.py`            Reverse proxy core
+- `packages/orion-model/src/orion_model/{anthropic,openai}_provider.py:__init__` base_url env-gate
+- `packages/orion-model/src/orion_model/audio/{stt,tts}.py:_openai_base()`     audio base URL env-gate

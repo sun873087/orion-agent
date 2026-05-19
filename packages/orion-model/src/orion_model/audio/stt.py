@@ -18,6 +18,19 @@ from orion_model.stt_catalog import validate_stt
 from orion_model.stt_pricing import compute_stt_cost
 
 
+def _openai_base() -> str:
+    """OpenAI base URL — env ORION_MODEL_PROXY_URL 有設改 {proxy}/openai。"""
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if proxy:
+        return f"{proxy.rstrip('/')}/openai"
+    return "https://api.openai.com"
+
+
+def _google_base() -> str:
+    """Google STT 沒走 proxy(目前沒做 google passthrough);維持直連。"""
+    return "https://speech.googleapis.com"
+
+
 def _lang_to_whisper(locale: str | None) -> str | None:
     """Whisper 用 ISO-639-1。zh-TW / zh-CN 都 → 'zh'。"""
     if not locale:
@@ -73,9 +86,13 @@ async def transcribe(
         raise ValueError("audio too short — at least 1 second")
 
     if provider == "openai":
+        use_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY not set")
+            if use_proxy:
+                api_key = "via-proxy"
+            else:
+                raise RuntimeError("OPENAI_API_KEY not set")
         lang = _lang_to_whisper(locale)
         ext = mime_type.split("/")[-1].split(";")[0] or "webm"
         files = {"file": (f"audio.{ext}", audio_bytes, mime_type)}
@@ -85,7 +102,7 @@ async def transcribe(
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
-                    "https://api.openai.com/v1/audio/transcriptions",
+                    f"{_openai_base()}/v1/audio/transcriptions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     files=files,
                     data=data,
@@ -121,7 +138,7 @@ async def transcribe(
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
-                f"https://speech.googleapis.com/v1/speech:recognize?key={api_key}",
+                f"{_google_base()}/v1/speech:recognize?key={api_key}",
                 json=body,
             )
             resp.raise_for_status()

@@ -112,16 +112,15 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
 
     優先順序:
         1. `set_test_provider_factory()` 設定(Phase 31-E e2e)→ 回 fake
-        2. `ORION_MODEL_PROXY_URL` env 設(Phase 31-X)→ 回 HttpProxyProvider
-           統一走 model proxy(集中 key / cost / routing)
-        3. 否則照舊直連對應 provider HTTP API
+        2. 否則回對應 provider(Anthropic / OpenAI / Ollama)
+
+    `ORION_MODEL_PROXY_URL` env(Phase 31-X)有設時,各 provider 的 base_url
+    自動換成 `{proxy}/openai` 或 `{proxy}/anthropic` — proxy 是 transparent
+    reverse proxy,SDK 自己跟 proxy 講原生 wire format,**這個 factory 不必
+    管 proxy 細節**。Ollama 本機 daemon,不經 proxy。
     """
     if _TEST_PROVIDER_FACTORY is not None:
         return _TEST_PROVIDER_FACTORY(provider_name, model)
-    import os
-    if os.environ.get("ORION_MODEL_PROXY_URL"):
-        from orion_model.http_proxy_provider import HttpProxyProvider
-        return HttpProxyProvider(provider_name=provider_name, model=model)
     if provider_name == "anthropic":
         from orion_model.anthropic_provider import AnthropicProvider
 

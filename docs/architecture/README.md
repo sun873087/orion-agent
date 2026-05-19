@@ -24,26 +24,29 @@ orion-agent/
 ```
                   orion-model    (純 LLM,無 agent loop)
                        ▲
+                       │ depends on
+                       │
         ┌──────────────┼──────────────┐
         │              │              │
-        │ depends on   │ wraps via HTTP
-        │              │              │
-   orion-sdk    orion-model-proxy(opt-in;FastAPI service)
-   (agent runtime)     ▲
-        ▲              │ HTTP(env ORION_MODEL_PROXY_URL)
+   orion-sdk           │       orion-model-proxy(opt-in service)
+   (agent runtime)     │       FastAPI transparent reverse →
+        ▲              │       api.openai.com / api.anthropic.com
         │              │
-        │      ┌───────┴───────┐
-        │      │               │
-   ┌────┴─orion-cli──orion-chat-api──orion-cowork-sidecar
-   │       │              ▲              ▲
-   │                      │ HTTP/WS      │ stdio
-   │                      │              │
-   │              orion-chat/web  orion-cowork/electron
-   │              (React)         (Electron main + React renderer)
-   │
-   注:host 經 orion_model.get_provider() 切兩條路:
-       ORION_MODEL_PROXY_URL 有設 → 走 HttpProxyProvider(集中 key / cost)
-       沒設                 → 直連對應 provider HTTP(舊行為,fallback)
+        ├──────────────┤
+        │              │
+   orion-cli      orion-chat-api──orion-cowork-sidecar
+        │              ▲              ▲
+                       │ HTTP/WS      │ stdio
+                       │              │
+              orion-chat/web   orion-cowork/electron
+              (React)          (Electron main + React renderer)
+
+   注:host 用 orion_model 的 AnthropicProvider / OpenAIProvider,SDK init
+       時偵測 env:
+         ORION_MODEL_PROXY_URL 有設 → SDK base_url 換成 proxy(透傳)
+         沒設                 → SDK 預設打 api.{anthropic,openai}.com
+       Wire format 永遠 = OpenAI / Anthropic 原生(跟外部 SDK 共用)。
+       Ollama 本機 daemon,不經 proxy。
 ```
 
 **規則**(由 import-linter 強制):

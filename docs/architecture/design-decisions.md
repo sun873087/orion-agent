@@ -142,28 +142,32 @@
 
 ---
 
-## 11. Model proxy 用 Orion-native wire,opt-in 不破壞直連模式
+## 11. Model proxy 用 transparent reverse,wire format 跟 SDK 共用
 
-**情境**:3 個 host(CLI / chat-api / cowork sidecar)各自直連 Anthropic / OpenAI / Ollama,各 `.env` 一份 API key、各算 cost、未來想做 routing / cache / per-user budget 沒地方放。
+**情境**:3 個 host(CLI / chat-api / cowork sidecar)各自直連 Anthropic / OpenAI,各 `.env` 一份 API key、各算 cost。外部工具(LangChain / Cursor / aider / 用 SDK 寫的 script)也想共用 key,但被擋在自家邊界外。
 
-**選擇**:加一個獨立 package `packages/orion-model-proxy`(FastAPI service),host 端 `orion_model.get_provider()` 偵測 `ORION_MODEL_PROXY_URL` env 自動切過去走 `HttpProxyProvider`;沒設 env 維持直連。Wire 格式走 **Orion-native NormalizedMessage JSON over NDJSON**,不是 OpenAI-compat。
+**選擇**:獨立 package `packages/orion-model-proxy`(FastAPI service),只做 **transparent reverse proxy**:
+- `POST /openai/{path}` → 透傳 `https://api.openai.com/{path}`,只覆寫 `Authorization` 換 proxy 真 key
+- `POST /anthropic/{path}` → 同 `https://api.anthropic.com/{path}`,改寫 `x-api-key`
+- **不解析 body / 不翻譯 wire** — gzip 自動 decompress、SSE / NDJSON streaming 直接透傳
 
-**為什麼 opt-in via env(不強制全 proxy)**:
-- 既有 host code **零行不動**,只動 env;rollback 拿掉 env 就回直連
-- Proxy 掛了 host 不會卡死(unset env 立刻退回)
-- 單機開發、CI 跑 e2e 不用先起 proxy daemon
-- 將來想拆 client lib 瘦身(host 端不 bundle anthropic / openai SDK)是另一個 phase,**這次先不破壞**
+Host 端 `orion_model.{AnthropicProvider,OpenAIProvider}` `__init__` 偵測 `ORION_MODEL_PROXY_URL` env,**把 SDK 的 `base_url` 指向 proxy**;Ollama 本機 daemon 不走 proxy。
 
-**為什麼 Orion-native wire 不走 OpenAI-compat**:
-- 三家 provider 行為差異(Anthropic thinking blocks / cache_control、OpenAI reasoning_tokens、Ollama vision)在 `orion_model.events.NormalizedEvent` 已抽象一次;OpenAI-compat 翻譯會失真(Anthropic cache breakpoint 在 OpenAI 沒對應、tool_use 語意不同)
-- Wire = SDK 內部 Pydantic model 直接 JSON 化,proxy / host 兩邊都 `model_validate`,**沒中間翻譯層**
-- 將來想對外公開 OpenAI-compat 給第三方接是另開 endpoint,不衝突
+**為什麼放棄之前的 Orion-native `/v1/messages` 中間層**(Phase 31-X 早期短暫存在):
+- SDK 本來就會講 OpenAI / Anthropic 原生 wire,proxy 不必加翻譯層
+- 自家 host 跟外部 SDK / 工具走**同一條 wire**,跟外部生態自然互通
+- 砍掉自家 wire 後,proxy 程式碼**縮一半**(從解 NormalizedMessage 變成 byte-for-byte 透傳)
+- Phase 31-X.4 把 `HttpProxyProvider` + `/v1/messages` + `/v1/audio/*` + `audio.proxy_client` 全砍
+
+**為什麼用 env-gate 而不強制全 proxy**:
+- 既有 host code **零行不動**,只動 env;rollback 拿掉 env 立刻退回直連
+- 單機 dev / CI 跑 e2e 不用先起 proxy daemon
+- Proxy 掛了 host 不會卡死(unset env 立刻退回直連)
 
 **代價**:
 - Proxy 是 SPOF(緩解:env unset 立刻 fallback direct)
 - 多一跳網路延遲(localhost <1 ms,跨網路看實際 RTT)
-- NDJSON 非標準 streaming 格式(但實作簡單 — 每行 JSON,client 端 `aiter_lines()` 直接解,沒 SSE `data:` prefix / keepalive 雜訊)
-- Phase A MVP 只做 wire + auth;cost tracking / routing / cache / failover 分階段加(留 phasing 在 [`../features/model-proxy.md`](../features/model-proxy.md))
+- Phase A MVP 只做 reverse + auth;cost tracking / routing / cache / failover 分階段加(留 phasing 在 [`../features/model-proxy.md`](../features/model-proxy.md))
 
 ---
 

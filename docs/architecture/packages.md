@@ -41,13 +41,13 @@ async for event in provider.stream(system=..., messages=..., tools=...):
 
 ## `packages/orion-model-proxy`
 
-**HTTP proxy in front of `orion-model`**(Phase 31-X)。讓 CLI / Chat / Cowork
-透過 env `ORION_MODEL_PROXY_URL` 統一走這個 service,集中管 API key / cost /
-routing(下階段)。Wire format = Orion-native NormalizedMessage NDJSON
-streaming,不是 OpenAI-compat。
+**Transparent reverse proxy** to OpenAI / Anthropic(Phase 31-X)。讓 CLI / Chat
+/ Cowork 透過 env `ORION_MODEL_PROXY_URL` 把 SDK base_url 切過去,集中管 API
+key / cost / routing(下階段);**外部 SDK / 工具**(LangChain / Cursor / aider /
+任何用 OpenAI 或 Anthropic Python SDK 寫的東西)同 endpoint 直接用。
 
-- 上游依賴:`orion-model` + `fastapi` + `uvicorn`
-- 跑法:`uv run --package orion-model-proxy orion-model-proxy`(default :9090)
+- 上游依賴:`orion-model` + `fastapi` + `uvicorn` + `httpx`(runtime 純 reverse 不解析 wire,orion-model 依賴留給未來 cost / routing layer 用 catalog)
+- 跑法:`make dev-model-proxy`(default :9090)
 - 詳見 [`../features/model-proxy.md`](../features/model-proxy.md)
 
 ---

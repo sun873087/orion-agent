@@ -19,6 +19,13 @@ _MIME_MAP = {
 }
 
 
+def _openai_base() -> str:
+    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
+    if proxy:
+        return f"{proxy.rstrip('/')}/openai"
+    return "https://api.openai.com"
+
+
 async def synthesize(
     *,
     provider: str,
@@ -44,15 +51,21 @@ async def synthesize(
         raise ValueError(f"text length {len(text)} > 4096 chars; caller must chunk")
     speed = max(0.25, min(4.0, float(speed)))
 
+    # 走 proxy 時 host 不必有真 key — proxy 那層會覆寫 Authorization。
+    # 直連時必須有 key。
+    use_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
+        if use_proxy:
+            api_key = "via-proxy"
+        else:
+            raise RuntimeError("OPENAI_API_KEY not set")
 
     mime = _MIME_MAP.get(audio_format, "audio/mpeg")
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                "https://api.openai.com/v1/audio/speech",
+                f"{_openai_base()}/v1/audio/speech",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",

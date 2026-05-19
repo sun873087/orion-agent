@@ -52,7 +52,22 @@ class OpenAIProvider:
         client: AsyncOpenAI | None = None,
     ) -> None:
         self.model = model
-        self.client = client or AsyncOpenAI()
+        # Phase 31-X — proxy 透傳:env ORION_MODEL_PROXY_URL 設了把 base_url
+        # 指 /openai/v1,SDK 自己做 reverse 沒翻譯;沒設走 OpenAI 預設。
+        if client is None:
+            import os as _os
+            proxy = _os.environ.get("ORION_MODEL_PROXY_URL")
+            if proxy:
+                # SDK strict 要求 api_key non-empty;proxy 那邊有真 key,host
+                # 端塞 placeholder 騙過 SDK。proxy reverse 那層用真實
+                # OPENAI_API_KEY 覆寫 Authorization header。
+                client = AsyncOpenAI(
+                    base_url=f"{proxy.rstrip('/')}/openai/v1",
+                    api_key=_os.environ.get("OPENAI_API_KEY") or "via-proxy",
+                )
+            else:
+                client = AsyncOpenAI()
+        self.client = client
         self.capabilities = ProviderCapabilities(
             prompt_caching=False,
             auto_caching=True,
