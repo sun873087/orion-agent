@@ -97,6 +97,17 @@ async def _lookup_db(
     )
 
 
+async def _is_revoked(s: AsyncSession, token_hash: str) -> bool:
+    """Token hash 存在但 revoked_at 非空 → True。
+    用來區分「沒身分(401)」vs「曾有但被撤(403)」。"""
+    stmt = (
+        select(ApiKey.revoked_at)
+        .where(ApiKey.token_hash == token_hash)
+        .where(ApiKey.revoked_at.is_not(None))
+    )
+    return (await s.execute(stmt)).scalar() is not None
+
+
 async def _lookup_cached_or_db(
     s: AsyncSession, token_hash: str
 ) -> AuthedPrincipal | None:
@@ -126,16 +137,25 @@ async def require_auth(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     s: AsyncSession = Depends(db_session),
 ) -> AuthedPrincipal:
-    """Multi-tenant DB lookup。Phase 32 後唯一 auth path,不再有 legacy 單 token mode。"""
+    """Multi-tenant DB lookup。Phase 32 後唯一 auth path。
+
+    對齊 OpenAI / Anthropic 的 status code 慣例:
+        401 Unauthorized = 無身分(沒帶 / 格式錯 / 不在 DB)→ SDK AuthenticationError
+        403 Forbidden    = 有身分但無權(已 revoked)→ SDK PermissionDeniedError
+    """
     if creds is None:
         raise HTTPException(status_code=401, detail="missing Bearer token")
     token = creds.credentials
     if not token.startswith("sk-orion-"):
-        raise HTTPException(status_code=403, detail="invalid token format")
+        raise HTTPException(status_code=401, detail="invalid API key format")
     token_hash = hash_token(token)
+    # 先看「曾經存在但被 revoke」(403)再 fallback「完全不認識」(401)
+    revoked = await _is_revoked(s, token_hash)
+    if revoked:
+        raise HTTPException(status_code=403, detail="API key has been revoked")
     principal = await _lookup_cached_or_db(s, token_hash)
     if principal is None:
-        raise HTTPException(status_code=403, detail="invalid or revoked token")
+        raise HTTPException(status_code=401, detail="invalid API key")
 
     # last_used_at 非同步背景 update — 不阻塞 request
     asyncio.create_task(_touch_last_used(principal.api_key_id))

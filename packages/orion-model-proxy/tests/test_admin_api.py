@@ -96,6 +96,26 @@ async def test_key_generation_and_revoke(proxy_db, admin_token) -> None:
 
 
 @pytest.mark.asyncio
+async def test_revoked_token_returns_403(proxy_db, admin_token) -> None:
+    """Revoked token(曾經有效)→ 403 PermissionDenied,而非 401。
+    Client SDK 對 401 / 403 反應不同 — 401 提示「換 key」,403 提示「權限被撤」。"""
+    app = create_app()
+    async with _admin_client(admin_token) as c:
+        r = await c.post("/admin/users", json={"email": "revoke@x.com"})
+        uid = r.json()["id"]
+        r = await c.post(f"/admin/users/{uid}/keys", json={"env": "test"})
+        kid = r.json()["id"]
+        token = r.json()["token"]
+        # revoke
+        await c.delete(f"/admin/keys/{kid}")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/openai/v1/models", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 403
+        assert "revoked" in r.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_set_budget(proxy_db, admin_token) -> None:
     async with _admin_client(admin_token) as c:
         r = await c.post("/admin/users", json={"email": "b@x.com"})
@@ -144,16 +164,23 @@ async def test_proxy_route_auth_with_db_token(proxy_db, admin_token) -> None:
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        # 沒帶 token → 401
+        # 沒帶 token → 401(對齊 OpenAI/Anthropic AuthenticationError)
         r = await c.get("/openai/v1/models")
         assert r.status_code == 401
 
-        # 帶錯 token → 403
+        # 帶不認識的 token(format OK 但 DB 找不到)→ 401(同上,SDK 視為「無 key」)
         r = await c.get(
             "/openai/v1/models",
             headers={"Authorization": "Bearer sk-orion-prod-deadbeefdeadbeefdeadbeefdeadbeef"},
         )
-        assert r.status_code == 403
+        assert r.status_code == 401
+
+        # 格式根本不對 → 401
+        r = await c.get(
+            "/openai/v1/models",
+            headers={"Authorization": "Bearer not-an-orion-token"},
+        )
+        assert r.status_code == 401
 
         # 帶對 token → auth 過,撞 upstream 沒 key(503)
         r = await c.get("/openai/v1/models", headers={"Authorization": f"Bearer {token}"})

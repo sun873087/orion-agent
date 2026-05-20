@@ -165,8 +165,24 @@ const agentApi = {
         onFrame(frame)
         if (frame.final) {
           ipcRenderer.removeListener(channel, listener)
-          if (frame.error) rejectCall(new Error(JSON.stringify(frame.error)))
-          else resolveCall()
+          if (frame.error) {
+            // 抽 user-friendly message 出來,不要 dump 整個 JSON 給 UI
+            // (sidecar 已用 `_format_send_error` map 成可讀文字)
+            const err = frame.error as { code?: string; message?: string } | string
+            let msg = ''
+            let code: string | undefined
+            if (typeof err === 'string') {
+              msg = err
+            } else if (err && typeof err === 'object') {
+              msg = String(err.message ?? '')
+              code = err.code ? String(err.code) : undefined
+            }
+            const e = new Error(msg || 'unknown error')
+            ;(e as Error & { code?: string }).code = code
+            rejectCall(e)
+          } else {
+            resolveCall()
+          }
         }
       }
       ipcRenderer.on(channel, listener)

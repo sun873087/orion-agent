@@ -444,6 +444,13 @@ export default {
   'message.forkConfirm': '分叉',
   'message.copy': '複製',
   'message.copied': '已複製',
+
+  // Error banner(InputBox footer)
+  'error.expand': '展開',
+  'error.collapse': '收合',
+  'error.copy': '複製錯誤訊息',
+  'error.copied': '已複製',
+  'error.dismiss': '關閉',
   'message.expand': '展開',
   'message.collapse': '收合',
   'message.failedHistory': '對話歷史載入失敗:{msg}',

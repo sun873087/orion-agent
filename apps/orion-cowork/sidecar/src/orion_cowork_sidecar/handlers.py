@@ -54,6 +54,66 @@ from orion_cowork_sidecar.streaming import to_rpc_frame
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 
+def _unwrap_exception(e: BaseException) -> BaseException:
+    """asyncio.TaskGroup / anyio 把實際錯包成 ExceptionGroup;遞迴解到 leaf
+    (只 unwrap 「單一 sub-exception」的情境,避免吞掉多重錯)。"""
+    seen: set[int] = set()
+    while True:
+        if id(e) in seen:
+            return e
+        seen.add(id(e))
+        # Python 3.11+ ExceptionGroup / BaseExceptionGroup
+        subs = getattr(e, "exceptions", None)
+        if isinstance(subs, (list, tuple)) and len(subs) == 1:
+            e = subs[0]
+            continue
+        # 也順手解 __cause__ / __context__(API SDK 常用)
+        cause = getattr(e, "__cause__", None)
+        if cause is not None and not subs:
+            e = cause
+            continue
+        return e
+
+
+def _format_send_error(e: BaseException) -> tuple[str, str]:
+    """把 SDK 例外轉成 user-friendly (code, message)。
+
+    優先看 OpenAI / Anthropic SDK 的 specific class name + status_code,
+    fallback 用 type name + str。輸出簡短能讓 user 看得懂的訊息,完整
+    stack trace 走 stderr log,不要塞給 UI。
+    """
+    inner = _unwrap_exception(e)
+    name = type(inner).__name__
+    status = getattr(inner, "status_code", None)
+
+    # Mapping by class name(不 import SDK 避免硬依賴 specific版本)
+    if name == "AuthenticationError" or status == 401:
+        return ("AUTH_FAILED",
+                "API key 認證失敗 — 檢查 ORION_MODEL_PROXY_KEY 是否有效,"
+                "或請 admin 在 proxy /admin/ui 重發一個 token")
+    if name == "PermissionDeniedError" or status == 403:
+        return ("PERMISSION_DENIED",
+                "此 API key 已被 revoke 或無權使用 — 聯絡 admin 重發 token")
+    if name == "RateLimitError" or status == 429:
+        return ("RATE_LIMIT", "Provider 速率限制,請稍候再試")
+    if status == 402:
+        return ("BUDGET_EXCEEDED",
+                "Budget 上限已達 — 請 admin 在 proxy /admin/ui 提升 cap")
+    if name in ("APIConnectionError", "ConnectError", "ConnectTimeout"):
+        return ("CONNECTION_FAILED",
+                f"無法連到 proxy / upstream:{inner}。檢查 ORION_MODEL_PROXY_URL "
+                "指對地方且 proxy 在跑")
+    if status and status >= 500:
+        return (f"UPSTREAM_{status}",
+                f"上游 provider {status} 錯誤,通常稍候會自己好:{str(inner)[:200]}")
+    if name == "APIStatusError" and status:
+        return (f"HTTP_{status}", str(inner)[:300])
+
+    # Fallback — 至少給 type + str,不要 dump ExceptionGroup 給 user 看
+    msg = str(inner) or repr(inner)
+    return (name, msg[:300])
+
+
 def _walk_workspace(root: Path, skip_dirs: set[str]):
     """Sync generator yielding files under root, skipping common heavy dirs.
 
@@ -960,9 +1020,20 @@ class Handlers:
                     if f is not None:
                         await out_queue.put(f)
             except Exception as e:  # noqa: BLE001
+                # 解開 anyio/TaskGroup 的 ExceptionGroup 找真實 cause,再 map
+                # 成 user-friendly code + message。Sidecar log 完整 trace,
+                # renderer 只看簡潔訊息(避免 ⚠ {"code":"ExceptionGroup",...} 醜)。
+                import sys as _sys
+                import traceback as _tb
+                code, message = _format_send_error(e)
+                print(
+                    f"[sidecar] conversation.send failed for {sid[:8]}: "
+                    f"{code} — {message}\n{_tb.format_exc()}",
+                    file=_sys.stderr, flush=True,
+                )
                 await out_queue.put({
-                    "event": "error",
-                    "data": {"code": "SEND_FAILED", "message": str(e)},
+                    "error": {"code": code, "message": message},
+                    "final": True,
                 })
             finally:
                 await out_queue.put(None)  # sentinel:producer done

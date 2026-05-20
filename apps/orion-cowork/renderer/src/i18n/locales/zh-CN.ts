@@ -427,6 +427,13 @@ export default {
   'message.forkConfirm': '分叉',
   'message.copy': '复制',
   'message.copied': '已复制',
+
+  // Error banner(InputBox footer)
+  'error.expand': '展开',
+  'error.collapse': '收起',
+  'error.copy': '复制错误信息',
+  'error.copied': '已复制',
+  'error.dismiss': '关闭',
   'message.expand': '展开',
   'message.collapse': '收起',
   'message.failedHistory': '对话历史加载失败:{msg}',

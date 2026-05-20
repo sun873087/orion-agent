@@ -3,7 +3,9 @@ import {
   BookCheck,
   Check,
   ChevronDown,
+  ChevronUp,
   Clock,
+  Copy,
   Download,
   FastForward,
   FileText,
@@ -1538,14 +1540,15 @@ function ModelPill() {
 
 function FooterHint() {
   const { t } = useTranslation()
+  const sessionId = useAgentStore((s) => s.sessionId)
   const error = useAgentStore((s) =>
     s.sessionId ? s.errorBySession[s.sessionId] ?? null : null,
   )
   const status = useAgentStore((s) =>
     s.sessionId ? s.lastLoopStatusBySession[s.sessionId] ?? null : null,
   )
-  if (error) {
-    return <p className="mt-1 px-2 text-xs text-error">⚠ {error}</p>
+  if (error && sessionId) {
+    return <ErrorBanner sessionId={sessionId} message={error} />
   }
   if (status) {
     const key = status.turns === 1 ? 'input.lastTurn.singular' : 'input.lastTurn'
@@ -1556,6 +1559,64 @@ function FooterHint() {
     )
   }
   return null
+}
+
+
+function ErrorBanner({ sessionId, message }: { sessionId: string; message: string }) {
+  const { t } = useTranslation()
+  const setError = useAgentStore((s) => s.setError)
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* swallow — clipboard 在 Electron 一般能用,失敗不重要 */
+    }
+  }
+
+  const handleDismiss = () => setError(sessionId, null)
+
+  return (
+    <div className="mt-1 rounded border border-error/30 bg-error/5 px-2 py-1 text-xs text-error">
+      <div className="flex items-start gap-1.5">
+        <span className="shrink-0">⚠</span>
+        <span
+          className={expanded ? 'flex-1 whitespace-pre-wrap break-words' : 'flex-1 truncate'}
+          title={expanded ? undefined : message}
+        >
+          {message}
+        </span>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="shrink-0 rounded p-0.5 hover:bg-error/10"
+          title={expanded ? t('error.collapse') : t('error.expand')}
+        >
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="shrink-0 rounded p-0.5 hover:bg-error/10"
+          title={copied ? t('error.copied') : t('error.copy')}
+        >
+          <Copy size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="shrink-0 rounded p-0.5 hover:bg-error/10"
+          title={t('error.dismiss')}
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function fileToBase64(file: File): Promise<string> {

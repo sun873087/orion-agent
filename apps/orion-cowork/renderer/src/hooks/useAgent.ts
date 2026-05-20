@@ -452,6 +452,17 @@ export function useAbort() {
 function applyEvent(sid: string, assistantId: string, ev: SidecarEvent) {
   const s = useAgentStore.getState()
   switch (ev.event) {
+    case 'error': {
+      // sidecar 早期 return path(BUDGET_EXCEEDED / UNKNOWN_SESSION / bad params
+      // 等)走 `event: "error"`(不是頂層 error key)。SDK 拋的 provider
+      // exception 已改走 top-level error 由 preload reject,這裡是 defense:
+      // 任何 event=error frame 都把 message 搬到 setError → InputBox FooterHint
+      // 顯紅⚠,免得 UI 默默卡死。
+      const data = (ev.data ?? {}) as { code?: string; message?: string }
+      const msg = data.message || data.code || 'unknown error'
+      s.setError(sid, msg)
+      break
+    }
     case 'text_delta': {
       const data = ev.data as { text: string }
       s.appendAssistantText(sid, assistantId, data.text)

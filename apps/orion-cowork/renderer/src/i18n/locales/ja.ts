@@ -426,6 +426,13 @@ export default {
   'message.forkConfirm': '分岐',
   'message.copy': 'コピー',
   'message.copied': 'コピーしました',
+
+  // Error banner(InputBox footer)
+  'error.expand': '展開',
+  'error.collapse': '折りたたむ',
+  'error.copy': 'エラーをコピー',
+  'error.copied': 'コピーしました',
+  'error.dismiss': '閉じる',
   'message.expand': '展開',
   'message.collapse': '折りたたむ',
   'message.failedHistory': '履歴の読み込みに失敗:{msg}',
