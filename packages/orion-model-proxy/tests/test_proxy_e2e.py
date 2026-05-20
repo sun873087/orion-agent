@@ -1,4 +1,4 @@
-"""Phase X.2 integration — mock upstream OpenAI/Anthropic,verify tee
+"""integration — mock upstream OpenAI/Anthropic,verify tee
 parses usage + 寫進 DB。"""
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ async def test_e2e_openai_chat_writes_usage_log(
 ) -> None:
     """create user → gen key → mock upstream → proxy 呼叫 → usage_log 有 row。"""
     import os
-    os.environ["OPENAI_API_KEY"] = "fake-upstream-key"  # 讓 _require_key 過
+    os.environ["OPENAI_API_KEY"] = "fake-upstream-key" # 讓 _require_key 過
 
     # Mock upstream:return 標準 chat completion JSON
     mock_payload = json.dumps({

@@ -1,4 +1,4 @@
-"""NotebookEditTool — Phase 10。對應 TS NotebookEditTool。
+"""NotebookEditTool。對應 TS NotebookEditTool。
 
 Jupyter `.ipynb` 檔案 cell 操作:insert / replace / delete。
 
@@ -59,7 +59,7 @@ class NotebookEditTool:
     async def call(
         self,
         input: NotebookEditInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         path = Path(input.path)
         if not path.is_absolute():
@@ -79,7 +79,7 @@ class NotebookEditTool:
 
         try:
             nb = await anyio.to_thread.run_sync(_read_notebook, path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"failed to parse notebook: {e}")
             return
 
@@ -124,7 +124,7 @@ class NotebookEditTool:
 
         try:
             await anyio.to_thread.run_sync(_write_notebook, path, nb)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"failed to write notebook: {e}")
             return
 
@@ -135,10 +135,10 @@ class NotebookEditTool:
             ),
         )
 
-    def is_concurrency_safe(self, input: NotebookEditInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: NotebookEditInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: NotebookEditInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: NotebookEditInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:
@@ -149,16 +149,16 @@ class NotebookEditTool:
 
 
 def _read_notebook(path: Path) -> Any:
-    return nbformat.read(str(path), as_version=4)  # type: ignore[no-untyped-call]
+    return nbformat.read(str(path), as_version=4) # type: ignore[no-untyped-call]
 
 
 def _write_notebook(path: Path, nb: Any) -> None:
-    nbformat.write(nb, str(path))  # type: ignore[no-untyped-call]
+    nbformat.write(nb, str(path)) # type: ignore[no-untyped-call]
 
 
 def _make_cell(cell_type: str, source: str) -> Any:
     if cell_type == "markdown":
-        return nbformat.v4.new_markdown_cell(source=source)  # type: ignore[no-untyped-call]
+        return nbformat.v4.new_markdown_cell(source=source) # type: ignore[no-untyped-call]
     if cell_type == "raw":
-        return nbformat.v4.new_raw_cell(source=source)  # type: ignore[no-untyped-call]
-    return nbformat.v4.new_code_cell(source=source)  # type: ignore[no-untyped-call]
+        return nbformat.v4.new_raw_cell(source=source) # type: ignore[no-untyped-call]
+    return nbformat.v4.new_code_cell(source=source) # type: ignore[no-untyped-call]

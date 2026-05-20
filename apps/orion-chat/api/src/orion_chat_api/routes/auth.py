@@ -1,11 +1,11 @@
 """/auth — login + register。
 
-Phase 6 是 dev mode 任意 username 通過(/auth/login)。
-Phase 7 加 /auth/register 與 DB-backed login。
+是 dev mode 任意 username 通過(/auth/login)。
+加 /auth/register 與 DB-backed login。
 
 行為:
 - 若 app.state.db_engine 存在 → DB 模式(查 users 表)
-- 否則 → Phase 6 dev fallback(任意 username 通過,**production 必設 ORION_DB_URL**)
+- 否則 → dev fallback(任意 username 通過,**production 必設 ORION_DB_URL**)
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ async def register(
             "registration requires DB (set ORION_DB_URL)",
         )
     try:
-        async with db_session(engine) as session:  # type: ignore[arg-type]
+        async with db_session(engine) as session: # type: ignore[arg-type]
             try:
                 user = await create_user(
                     session, username=body.username, password=body.password,
@@ -81,7 +81,7 @@ async def register(
                 ) from e
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR, f"register failed: {e}",
         ) from e
@@ -97,7 +97,7 @@ async def login(
     """登入。
 
     DB 模式(engine 設):必驗密碼,失敗 401。
-    Dev 模式(engine None):任意 username 通過(向後兼容 Phase 6)。
+    Dev 模式(engine None):任意 username 通過(向後兼容)。
     """
     if engine is None:
         # Dev fallback — 任意 username,user_id 用 uuid5 deterministic 算
@@ -106,7 +106,7 @@ async def login(
             username=body.username,
         )
 
-    async with db_session(engine) as session:  # type: ignore[arg-type]
+    async with db_session(engine) as session: # type: ignore[arg-type]
         user = await authenticate(
             session, username=body.username, password=body.password,
         )
@@ -125,5 +125,5 @@ async def me(
     return MeResponse(user_id=identity.user_id, username=identity.username)
 
 
-# 向後相容:Phase 6 的 LoginRequest 仍可解(若 client 沒帶 password,fall through DB 模式 401)。
+# 向後相容:的 LoginRequest 仍可解(若 client 沒帶 password,fall through DB 模式 401)。
 _ = LoginRequest

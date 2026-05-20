@@ -1,4 +1,4 @@
-"""FileStateCache + Edit/Write 整合測試。Phase 12。"""
+"""FileStateCache + Edit/Write 整合測試。"""
 
 from __future__ import annotations
 
@@ -263,7 +263,7 @@ async def test_no_cache_means_no_check(tmp_path: Path) -> None:
     """ctx.file_state_cache=None → 跳過所有檢查(向後相容)。"""
     p = tmp_path / "a.txt"
     p.write_text("hello\n")
-    ctx = AgentContext()  # 沒 file_state_cache
+    ctx = AgentContext() # 沒 file_state_cache
     events = [
         e async for e in FileEditTool().call(
             FileEditInput(path=str(p), old_string="hello", new_string="hi"),
@@ -277,4 +277,4 @@ async def test_no_cache_means_no_check(tmp_path: Path) -> None:
 def test_snapshot_frozen(tmp_path: Path) -> None:
     snap = FileSnapshot(path=tmp_path, mtime_ns=0, size=0)
     with pytest.raises((AttributeError, Exception)):
-        snap.size = 999  # type: ignore[misc]
+        snap.size = 999 # type: ignore[misc]

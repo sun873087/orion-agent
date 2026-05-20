@@ -1,4 +1,4 @@
-"""Phase X.2 — usage_logger DB insert + running cost cache。"""
+"""usage_logger DB insert + running cost cache。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Phase X.4 — Admin Web UI smoke tests。
+"""Admin Web UI smoke tests。
 
 不測 HTML 排版,只測:auth、redirect、login flow、key 生成 + 在 detail 頁顯示。
 """
@@ -73,7 +73,7 @@ async def test_full_flow_create_user_gen_key(proxy_db, admin_token) -> None:
         # users list 看到
         r = await c.get("/admin/ui/users")
         assert "uitest@x.com" in r.text
-        assert "$5.0000" in r.text  # budget shown
+        assert "$5.0000" in r.text # budget shown
 
         # 從 users list 找到 user id(粗暴 regex,但能 work)
         import re
@@ -89,8 +89,8 @@ async def test_full_flow_create_user_gen_key(proxy_db, admin_token) -> None:
             follow_redirects=True,
         )
         assert r.status_code == 200
-        assert "sk-orion-dev-" in r.text  # 明文 token 在 flash 區
-        assert "test-key" in r.text  # label 顯示在 keys table
+        assert "sk-orion-dev-" in r.text # 明文 token 在 flash 區
+        assert "test-key" in r.text # label 顯示在 keys table
 
         # set budget(remove cap)
         r = await c.post(

@@ -1,14 +1,14 @@
-"""DbSessionManager — Phase 7 取代 Phase 6 in-memory。
+"""DbSessionManager 取代 in-memory。
 
 對應 spec § 5(主文件)。
 
 設計:
 - **DB**:Session row 存 metadata(id / user_id / provider / model / n_turns / 時間戳)
-- **In-memory cache**:Conversation 物件本身(state_messages 等大物件)— 跨 worker 共享靠 Phase 7c Redis,Phase 7 範圍內 single-instance OK
+- **In-memory cache**:Conversation 物件本身(state_messages 等大物件)— 跨 worker 共享靠 Redis 範圍內 single-instance OK
 - list_for_user 查 DB(永久)
 - get / create / delete 同步 DB + cache
 
-跟 Phase 6 in-memory 同 protocol — caller(routes / chat ws)無需改。
+跟 in-memory 同 protocol — caller(routes / chat ws)無需改。
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class DbSessionManager:
             )
             db.add(row)
             await db.commit()
-        # Phase 27:注入 engine,Conversation → SessionStorage 會 dual-write messages 表
+        # 注入 engine,Conversation → SessionStorage 會 dual-write messages 表
         conversation.session_id = sid
         conversation.db_engine = self.engine
         self._cache[(user_id, sid)] = conversation
@@ -96,7 +96,7 @@ class DbSessionManager:
         # load_session 是同步 file I/O + message 解析,長 transcript 會卡很久 —
         # offload 到 thread 避免 cache-miss 那一刻把 event loop 整個鎖住
         # (其他 endpoint 如 /healthz 也會跟著等)。
-        # Phase 27:先 async 從 DB 撈 messages(若有);再走 sync JSONL 路徑補
+        # 先 async 從 DB 撈 messages(若有);再走 sync JSONL 路徑補
         # transitions / replacements / meta。prebaked 為 None 時 load_session 走 JSONL。
         db_messages = await fetch_db_messages(session_id, self.engine)
         snapshot = await asyncio.to_thread(
@@ -126,7 +126,7 @@ class DbSessionManager:
         return conv
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
-        # Phase 29 後 SQLite FK PRAGMA 已開,理論上 cascade 會自動清。仍保留手動
+        # 後 SQLite FK PRAGMA 已開,理論上 cascade 會自動清。仍保留手動
         # DELETE 作為**顯式 > 隱式**的安全網:不依賴 driver / dialect 行為,Postgres
         # / SQLite / 未來換 DB 都同調。FK on 時第二次 DELETE 沒 row 可刪是 no-op。
         async with db_session(self.engine) as db:
@@ -147,7 +147,7 @@ class DbSessionManager:
             db_deleted = bool(getattr(result, "rowcount", 0))
 
         cached = self._cache.pop((user_id, session_id), None)
-        # Phase 28:fs cleanup — sessions/<sid>/ 整目錄(transcript / file-history /
+        # fs cleanup — sessions/<sid>/ 整目錄(transcript / file-history /
         # tool-results / workspace)。
         import anyio
 
@@ -223,9 +223,9 @@ class DbSessionManager:
             await db.commit()
 
     async def sweep_orphan_fs_sessions(self) -> int:
-        """Phase 28:清掉 fs 上沒對應 DB row 的 session 目錄。
+        """清掉 fs 上沒對應 DB row 的 session 目錄。
 
-        過往(Phase 28 之前)`delete` 沒清 fs,造成
+        過往(之前)`delete` 沒清 fs,造成
         `~/.orion/sessions/<sid>/` 殘留。本函式對 DB 已成新 source of truth
         後做一次性掃。**安全閘**:DB users 表完全空(疑似 init 失敗 / 空庫)
         則直接 return 0 不刪 — 避免誤把所有歷史檔砸了。

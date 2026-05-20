@@ -1,4 +1,4 @@
-"""Phase 31-E:chat-api e2e fixtures。
+"""E:chat-api e2e fixtures。
 
 啟一隻真正的 uvicorn 跑 chat-api,壓力小 + 啟動快用 SQLite in-memory(不依賴
 Docker)。

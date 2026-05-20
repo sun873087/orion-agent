@@ -1,4 +1,4 @@
-"""MCP binary output storage — Phase 5 接 Phase 2 stub。
+"""MCP binary output storage 接 stub。
 
 對應 TS Claude Code `src/utils/mcpOutputStorage.ts`。
 

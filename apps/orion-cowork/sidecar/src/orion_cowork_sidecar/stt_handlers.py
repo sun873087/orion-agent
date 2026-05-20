@@ -1,4 +1,4 @@
-"""Speech-to-text RPCs — thin wrapper(Phase 31-X 後)。
+"""Speech-to-text RPCs — thin wrapper(後)。
 
 業務邏輯搬到 `orion_model.audio.transcribe()`(env-gate proxy / direct)。
 這檔只負責:
@@ -22,16 +22,16 @@ def _err(code: str, msg: str) -> dict[str, Any]:
 
 async def stt_transcribe(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """params:
-       provider     : 'openai' | 'google'(舊 'whisper' alias 為 'openai')
-       model        : openai 才用('whisper-1' | 'gpt-4o-transcribe' |
+       provider : 'openai' | 'google'(舊 'whisper' alias 為 'openai')
+       model : openai 才用('whisper-1' | 'gpt-4o-transcribe' |
                        'gpt-4o-mini-transcribe',預設 whisper-1)
        audio_base64 : str (raw base64,no data: prefix)
-       mime_type    : str (e.g. 'audio/webm', 'audio/wav')
-       locale       : str (optional;cowork i18n locale)
+       mime_type : str (e.g. 'audio/webm', 'audio/wav')
+       locale : str (optional;cowork i18n locale)
        duration_seconds : float (前端估算)— OpenAI response 不含 duration
     回:
        { event: 'transcribed', data: {...}, final: true }
-       Phase 31-X:ORION_MODEL_PROXY_URL 有設 → 走 proxy `/v1/audio/transcribe`,
+      :ORION_MODEL_PROXY_URL 有設 → 走 proxy `/v1/audio/transcribe`,
                   沒設 → 直連 OpenAI / Google
     """
     raw_provider = params.get("provider")

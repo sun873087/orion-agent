@@ -1,5 +1,5 @@
 /**
- * Electron main process — Phase E PoC。
+ * Electron main process PoC。
  *
  * - 開一個 BrowserWindow,dev 載 vite (:5174),prod 載 dist/renderer/index.html
  * - 啟動 Python sidecar,等 ready
@@ -155,7 +155,7 @@ app.whenReady().then(async () => {
   // OS shell helpers — renderer 透過這些 IPC 開 / reveal 檔案。
   ipcMain.handle('shell:openPath', async (_e, path: string) => {
     const result = await shell.openPath(path)
-    return result === '' ? null : result  // '' = success
+    return result === '' ? null : result // '' = success
   })
   ipcMain.handle('shell:revealInFinder', async (_e, path: string) => {
     shell.showItemInFolder(path)
@@ -197,7 +197,7 @@ app.whenReady().then(async () => {
     app.quit()
   })
 
-  // Phase 33-F electron-updater — user 點「立即更新」就 quit+install
+  // F electron-updater — user 點「立即更新」就 quit+install
   ipcMain.handle('updater:quitAndInstall', () => {
     quitAndInstall()
   })
@@ -279,7 +279,7 @@ app.whenReady().then(async () => {
   // 3. 開窗
   await createWindow()
 
-  // 4. Phase 33-F auto-update — 5s 後 check GitHub Releases
+  // 4. auto-update — 5s 後 check GitHub Releases
   initAutoUpdater(() => BrowserWindow.getAllWindows())
 })
 

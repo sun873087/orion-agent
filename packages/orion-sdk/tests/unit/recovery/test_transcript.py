@@ -1,4 +1,4 @@
-"""ConversationRecovery — corrupt JSONL + orphan tool_use。Phase 13。"""
+"""ConversationRecovery — corrupt JSONL + orphan tool_use。"""
 
 from __future__ import annotations
 
@@ -56,8 +56,8 @@ def test_load_transcript_safe_skips_non_dict(tmp_path: Path) -> None:
 
 def test_severely_corrupted_property() -> None:
     """corrupt_lines / valid > 10% → is_severely_corrupted=True。"""
-    f = Path("/dev/null")  # 不會被讀
-    _ = load_transcript_safe(f)  # warm path
+    f = Path("/dev/null") # 不會被讀
+    _ = load_transcript_safe(f) # warm path
     from orion_sdk.recovery.transcript import RecoveryReport
     r = RecoveryReport(valid_records=10, skipped_corrupt_lines=2)
     assert r.is_severely_corrupted
@@ -125,7 +125,7 @@ def test_load_session_with_recovery_orphan_tool_use(
     ])
     snapshot, report = load_session_with_recovery(sid)
     assert len(report.orphan_tool_use_warnings) >= 1
-    # validate_and_repair_messages 已注 synthetic result(Phase 2 既有)
+    # validate_and_repair_messages 已注 synthetic result(既有)
     last = snapshot.messages[-1]
     assert last.role == "user"
     assert isinstance(last.content, list)

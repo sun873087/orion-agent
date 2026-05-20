@@ -1,4 +1,4 @@
-"""Permission rule 持久化。Phase 13。
+"""Permission rule 持久化。
 
 對應 TS Claude Code `src/services/policyLimits/`(rule 加入 + 比對)。
 
@@ -10,8 +10,8 @@ Settings 三層:
 - `project`(`<cwd>/.orion/settings.json`)— commit 進 repo,團隊共享
 - `local`(`<cwd>/.orion/settings.local.json`)— gitignored,個人 dev override
 
-Phase 13 範圍:**user** layer(不引入 project/local 概念,sources 已知時可擴)。
-比對只看 `tool_name`(spec § 8 踩雷 #3 提醒:複雜 matcher 留給後續 phase)。
+範圍:**user** layer(不引入 project/local 概念,sources 已知時可擴)。
+比對只看 `tool_name`(spec § 8 踩雷 #3 提醒:複雜 matcher 留給未來)。
 """
 
 from __future__ import annotations
@@ -35,14 +35,14 @@ PermissionScope = Literal["user", "project", "local"]
 class PermissionRule:
     """單一 permission 規則。
 
-    Phase 13 範圍只看 `tool_name`(沒 matcher);後續 phase 可加 input pattern matcher
+    範圍只看 `tool_name`(沒 matcher);未來 可加 input pattern matcher
     (例:`{command_starts_with: "ls"}`)。
     """
 
     tool_name: str
     decision: PermissionRuleDecision
     matcher: dict[str, Any] | None = None
-    """進階比對條件(Phase 13 不用,僅佔位)。"""
+    """進階比對條件(不用,僅佔位)。"""
 
     note: str = ""
     """user 寫的備註(從哪個對話來的等)。"""
@@ -62,7 +62,7 @@ def _settings_path_for_scope(scope: PermissionScope) -> Path:
     base = cwd / ".orion"
     if scope == "project":
         return base / "settings.json"
-    return base / "settings.local.json"  # local
+    return base / "settings.local.json" # local
 
 
 def _ensure_rules_block(settings: dict[str, Any]) -> list[dict[str, Any]]:
@@ -122,7 +122,7 @@ def add_permission_rule(
 
     rule_dict = _rule_to_dict(rule)
     if any(_rules_match(existing, rule_dict) for existing in rules):
-        return False  # 已存在 — no-op
+        return False # 已存在 — no-op
 
     rules.append(rule_dict)
     save_settings(settings, sp)
@@ -198,7 +198,7 @@ def list_permission_rules(
 
 def find_matching_rule(
     tool_name: str,
-    tool_input: dict[str, Any],  # noqa: ARG001 — Phase 13 不用 input,留接口
+    tool_input: dict[str, Any], # noqa: ARG001 不用 input,留接口
     *,
     scopes: tuple[PermissionScope, ...] = ("local", "project", "user"),
 ) -> PermissionRule | None:
@@ -208,7 +208,7 @@ def find_matching_rule(
       1. local → project → user(近 scope 蓋遠 scope)
       2. 同 scope 內:deny 先於 allow(deny 一旦 match 就不會被 allow 推翻)
 
-    Phase 13 範圍只比對 `tool_name`,沒 input matcher。
+    範圍只比對 `tool_name`,沒 input matcher。
     """
     for scope in scopes:
         rules = list_permission_rules(scope=scope)
@@ -263,7 +263,7 @@ def persist_decision_if_always(
 def _scope_from_env() -> PermissionScope:
     raw = os.environ.get("ORION_PERMISSION_RULE_SCOPE", "user").lower()
     if raw in ("local", "project", "user"):
-        return raw  # type: ignore[return-value]
+        return raw # type: ignore[return-value]
     return "user"
 
 

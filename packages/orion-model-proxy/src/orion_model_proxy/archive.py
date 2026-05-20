@@ -1,4 +1,4 @@
-"""Phase 33-B — usage_log 月歸檔。
+"""usage_log 月歸檔。
 
 >cutoff_days 前的 row 壓進 usage_monthly(by year_month × user × provider ×
 model 聚合)然後刪 raw row。SQLite 跑久了 row 數會炸,這 keeps it bounded。

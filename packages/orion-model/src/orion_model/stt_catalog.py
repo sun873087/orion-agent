@@ -7,7 +7,7 @@ runtime 透過 `ORION_STT_MODELS_FILE` 環境變數指向外部 JSON。
 對外 API:
     list_stt_catalog() -> {"providers": [{ id, label, models: [...] }, ...]}
     validate_stt(provider, model) -> bool
-    get_stt_pricing(provider, model) -> float | None    # USD per minute
+    get_stt_pricing(provider, model) -> float | None # USD per minute
 
 Consumer(sidecar / chat-api / CLI 等)只應該透過這幾個 entry-point;不要
 直接讀 JSON 或重複定義 model list。
@@ -84,7 +84,7 @@ def _parse(
 
 
 def _fetch_from_proxy() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]] | None:
-    """Phase 31-X — ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 stt 段。
+    """ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 stt 段。
     失敗回 None,caller fallback。"""
     proxy = os.environ.get("ORION_MODEL_PROXY_URL")
     if not proxy:
@@ -94,7 +94,7 @@ def _fetch_from_proxy() -> tuple[dict[str, list[SttModelEntry]], dict[str, str]]
         resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:  # noqa: BLE001 - 任何錯都 fallback
+    except Exception: # noqa: BLE001 - 任何錯都 fallback
         return None
     stt_section = data.get("stt") if isinstance(data, dict) else None
     if not isinstance(stt_section, dict):

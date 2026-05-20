@@ -69,7 +69,7 @@ def test_invalid_token_raises() -> None:
 
 
 def test_legacy_token_without_username_claim_rejected() -> None:
-    """Phase 6/7 token(sub=username,沒 username claim)→ 401 強制重 login。"""
+    """/7 token(sub=username,沒 username claim)→ 401 強制重 login。"""
     import jwt as pyjwt
 
     from orion_chat_api import auth as auth_mod
@@ -95,7 +95,7 @@ def test_protected_endpoint_with_token(client: TestClient) -> None:
         headers={"Authorization": f"Bearer {login['token']}"},
     )
     assert r.status_code == 200
-    assert r.json() == []  # 沒 session
+    assert r.json() == [] # 沒 session
 
 
 def test_me_endpoint_returns_identity(client: TestClient) -> None:

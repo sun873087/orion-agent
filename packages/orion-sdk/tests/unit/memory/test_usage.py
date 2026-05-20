@@ -1,4 +1,4 @@
-"""Tests for orion_sdk.memory.usage (Phase 31-G Layer 3)。"""
+"""Tests for orion_sdk.memory.usage (Layer 3)。"""
 
 from __future__ import annotations
 
@@ -98,8 +98,8 @@ def test_get_usage_stats(tmp_path: Path) -> None:
             }) + "\n")
 
     stats = get_usage_stats("z.md", tmp_path)
-    assert stats["hits_30d"] == 2  # 1d, 5d
-    assert stats["hits_90d"] == 3  # 1d, 5d, 60d
+    assert stats["hits_30d"] == 2 # 1d, 5d
+    assert stats["hits_90d"] == 3 # 1d, 5d, 60d
     assert stats["last_hit"] is not None
 
 
@@ -131,8 +131,8 @@ def test_gc_idempotent(tmp_path: Path) -> None:
         json.dumps({"ts": (now - timedelta(days=10)).isoformat(),
                     "type": "ranker_hit", "memory": "x.md"}) + "\n"
     )
-    assert gc_old_events(tmp_path, now=now) == 0  # 沒老的
-    assert gc_old_events(tmp_path, now=now) == 0  # 再跑一次也 0
+    assert gc_old_events(tmp_path, now=now) == 0 # 沒老的
+    assert gc_old_events(tmp_path, now=now) == 0 # 再跑一次也 0
 
 
 def test_record_ranker_hit_debounces(tmp_path: Path) -> None:

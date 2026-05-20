@@ -1,4 +1,4 @@
-"""Profiler — Phase 10。pyinstrument 包裝。
+"""Profiler。pyinstrument 包裝。
 
 兩個 ctx manager:
 - `profile_sync()`:同步程式碼

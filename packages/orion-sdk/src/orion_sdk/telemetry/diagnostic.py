@@ -1,4 +1,4 @@
-"""PII-safe diagnostic — Phase 9。對應 TS diagnosticTracking.ts。
+"""PII-safe diagnostic。對應 TS diagnosticTracking.ts。
 
 提供 `redact_pii(text)` 函式 + `redact_processor` structlog processor。
 非完美 redact(無 NER),但能擋住常見 email / phone / SSN / credit card,

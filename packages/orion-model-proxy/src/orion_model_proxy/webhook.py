@@ -1,13 +1,13 @@
-"""Phase 33-D — webhook 系統。
+"""webhook 系統。
 
 Admin 可建 webhook(POST URL + event filter),proxy 在特定 event 發生時
 fire-and-forget POST 一個 JSON payload 給 user 設的 URL。
 
 Events:
-    budget.warning_80   user 累積 cost >= budget × 80% 第一次觸發
-    budget.exceeded     >= 100%
-    key.revoked         admin revoke key 後 emit
-    user.created        admin create user 後 emit
+    budget.warning_80 user 累積 cost >= budget × 80% 第一次觸發
+    budget.exceeded >= 100%
+    key.revoked admin revoke key 後 emit
+    user.created admin create user 後 emit
 
 Payload 結構:
     {
@@ -54,7 +54,7 @@ async def _post_one(url: str, payload: dict[str, Any]) -> None:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(url, json=payload)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         _log.warning("webhook POST %s failed: %s", url, e)
 
 

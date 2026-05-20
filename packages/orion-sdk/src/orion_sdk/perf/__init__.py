@@ -1,4 +1,4 @@
-"""Performance utilities — Phase 10。
+"""Performance utilities。
 
 - `subprocess_pool.py`:async-friendly subprocess pool(避免每次 fork)
 - `profiler.py`:pyinstrument 包裝(profile_async ctx manager)

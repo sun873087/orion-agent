@@ -99,7 +99,7 @@ export function AboutSection() {
             <h2 className="text-2xl font-semibold tracking-tight text-fg-base">
               Orion Cowork
             </h2>
-            <span className="font-mono text-xs text-fg-subtle">v0.1.0 · Phase 31</span>
+            <span className="font-mono text-xs text-fg-subtle">v0.1.0 ·</span>
           </div>
           <p className="text-sm text-fg-muted">
             桌面端 AI 助手 — 對話、工具、技能、MCP 整合都在本機跑,你的資料不離開電腦。

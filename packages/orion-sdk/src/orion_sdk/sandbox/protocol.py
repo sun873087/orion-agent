@@ -1,6 +1,6 @@
 """SandboxBackend Protocol 與通用型別。
 
-對應 Phase 7 spec § 5(主文件 + 7b 共用抽象層)。
+對應 spec § 5(主文件 + 7b 共用抽象層)。
 
 設計:
 - 4 個操作:`exec`、`read_file`、`write_file`、`cleanup`

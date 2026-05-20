@@ -26,7 +26,7 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 from orion_sdk.storage.file_history import make_snapshot
 
-_MAX_BYTES = 1024 * 1024  # 1 MB
+_MAX_BYTES = 1024 * 1024 # 1 MB
 
 
 class FileEditInput(ToolInput):
@@ -77,7 +77,7 @@ class FileEditTool:
             )
             return
 
-        # Phase 12:必須先 Read 過該檔且讀後沒被外部改過
+        # 必須先 Read 過該檔且讀後沒被外部改過
         from orion_sdk.services.file_state import FileStateCache, require_fresh_read
 
         cache = (
@@ -128,10 +128,10 @@ class FileEditTool:
             else text.replace(input.old_string, input.new_string, 1)
         )
 
-        # Phase 2:寫前快照
+        # 寫前快照
         snap = make_snapshot(ctx.session_id, path)
         snap_note = (
-            f"  [snapshot: {snap.snapshot_path}]"
+            f" [snapshot: {snap.snapshot_path}]"
             if snap.snapshot_path is not None
             else ""
         )
@@ -142,7 +142,7 @@ class FileEditTool:
             yield ErrorEvent(message=f"Failed to write {path}: {e}")
             return
 
-        # Phase 12:Edit 完成後更新 snapshot — 否則下次 Edit 會被當作 stale
+        # Edit 完成後更新 snapshot — 否則下次 Edit 會被當作 stale
         if cache is not None:
             cache.record_read(path)
 
@@ -154,10 +154,10 @@ class FileEditTool:
             )
         )
 
-    def is_concurrency_safe(self, input: FileEditInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileEditInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: FileEditInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileEditInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:

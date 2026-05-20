@@ -1,7 +1,7 @@
-"""Phase X.2 — usage_log insert(fire-and-forget,不阻塞 request)+ running cost
+"""usage_log insert(fire-and-forget,不阻塞 request)+ running cost
 cache。
 
-Cache 給 Phase X.3 budget enforcement 用:per-user 累積 USD,TTL 60s,寫入時
+Cache 給 budget enforcement 用:per-user 累積 USD,TTL 60s,寫入時
 incr,讀時 fallback DB rollup。
 """
 
@@ -103,7 +103,7 @@ async def log_usage(
             s.add(row)
             await s.commit()
 
-            # Phase 33-D — budget threshold webhook 通知。讀回 user.budget_usd
+            # budget threshold webhook 通知。讀回 user.budget_usd
             # 跟最新 running cost,> 80% / 100% 時 emit(per-event per-user 只
             # fire 一次,reset 在 set_budget 時走 cache invalidate)。
             from orion_model_proxy.models import User
@@ -117,7 +117,7 @@ async def log_usage(
                     running_cost=running, budget_cap=user.budget_usd,
                 )
         await incr_running_cost(user_id, event.cost_usd)
-    except Exception as e:  # noqa: BLE001 — fire-and-forget
+    except Exception as e: # noqa: BLE001 — fire-and-forget
         _log.warning("usage_log insert failed for %s: %s", user_id, e)
 
 

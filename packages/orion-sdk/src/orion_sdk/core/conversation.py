@@ -1,7 +1,7 @@
 """Conversation — 跨 turn 的高階 wrapper。對應 TS Claude Code QueryEngine 的部分職責。
 
-Phase 1 範圍:provider / tools / permission / hooks / state_messages / stats。
-Phase 2 加入:JSONL transcript persistence + ContentReplacementState 共用 +
+範圍:provider / tools / permission / hooks / state_messages / stats。
+加入:JSONL transcript persistence + ContentReplacementState 共用 +
             Conversation.resume(session_id) 重建。
 
 使用範例:
@@ -149,7 +149,7 @@ class Conversation:
 
     provider: LLMProvider
     system_prompt: str = ""
-    """**Phase 4**:可省略;不傳 → Conversation 自己用 prompt/static_sections + 動態段組裝。
+    """****:可省略;不傳 → Conversation 自己用 prompt/static_sections + 動態段組裝。
     傳了 → 視為 caller 客製,完整覆蓋(不再加靜態 7 段)。"""
     tools: list[Tool[Any]] = field(default_factory=list)
     can_use_tool: CanUseToolFn = always_allow
@@ -163,7 +163,6 @@ class Conversation:
 
     stats: ConversationStats = field(default_factory=ConversationStats)
 
-    # ─── Phase 2 ──────────────────────────────────────────────────────────
     session_id: UUID = field(default_factory=uuid4)
     """conversation 的唯一 ID。Resume 時用此 ID 找 transcript。"""
 
@@ -172,7 +171,7 @@ class Conversation:
     測試 / 子 agent 通常設 False(避免 disk I/O)。"""
 
     replacement_state: ContentReplacementState = field(default_factory=ContentReplacementState)
-    """Phase 2 第 3 層 budget 的決策歷史。跨 turn 累積,resume 時從 transcript 重建。"""
+    """第 3 層 budget 的決策歷史。跨 turn 累積,resume 時從 transcript 重建。"""
 
     _session_storage: SessionStorage | None = None
     """SessionStorage instance,lazy init 在第一次 send() 時。"""
@@ -182,9 +181,8 @@ class Conversation:
     )
     """In-flight memory-extract tasks。Strong ref 防 GC,done callback 自動 discard。"""
 
-    # ─── Phase 3 ──────────────────────────────────────────────────────────
     user_id: str = field(default_factory=default_user_id)
-    """Per-user memory key。CLI 預設 "default";Phase 6 web app 透過 session 注入。"""
+    """Per-user memory key。CLI 預設 "default" web app 透過 session 注入。"""
 
     memory_enabled: bool = True
     """True → send() 前載入相關 memory 進 system prompt;LoopTerminated 時 fork 萃取。"""
@@ -206,28 +204,23 @@ class Conversation:
     """True → 帶 platform / date(跟 cwd 無關)。chat / desktop app 通常保 True
     讓模型給對的 OS 命令(open vs xdg-open)。"""
 
-    # ─── Phase 5 ──────────────────────────────────────────────────────────
     mcp_manager: object | None = None
     """McpManager instance(用 object 型別避免循環 import)。
     main / caller 在 async with McpManager(...) 內建 conversation,本欄位指該 manager。
     None → 不啟用 MCP(只用內建工具)。"""
 
-    # ─── Phase 7 ──────────────────────────────────────────────────────────
     sandbox_backend: object | None = None
     """SandboxBackend instance。若有,send() 會傳給 ctx,工具可透過它跑命令。
     self.tools 是否已是 sandboxed proxy 由 caller 決定(main.py 看 --sandbox flag)。
-    None = 工具直接動 host(Phase 1-6 行為)。"""
+    None = 工具直接動 host(-6 行為)。"""
 
-    # ─── Phase 8 ──────────────────────────────────────────────────────────
     _session_started: bool = field(default=False, init=False)
     """SessionStart hook 已觸發過(避免重 fire)。"""
 
-    # ─── Phase 12 ─────────────────────────────────────────────────────────
     file_state_cache: object | None = None
     """FileStateCache instance(避免循環 import)。Conversation 級共用,跨 turn 持久。
     None → lazy 初始化(第一次 send 時建)。"""
 
-    # ─── Phase 13 ─────────────────────────────────────────────────────────
     custom_instructions_user: str | None = None
     """User-level custom instructions(Web chat 模式 — caller 從 DB 讀好塞進來)。
     None → 不加進 system prompt。"""
@@ -252,7 +245,6 @@ class Conversation:
     Caller(例如 Cowork sidecar)可注入一個便宜模型的 provider(Haiku /
     gpt-5-mini 等),把每次壓縮的 LLM cost 降到 1/5~1/10。"""
 
-    # ─── Phase 27 ─────────────────────────────────────────────────────────
     db_engine: object | None = None
     """AsyncEngine instance(避免循環 import,object 型別)。
     DbSessionManager 建立 / resume Conversation 時注入;SessionStorage 拿到後
@@ -284,11 +276,11 @@ class Conversation:
         if self.persistence_enabled:
             ctx.replacement_state = self.replacement_state
 
-        # Phase 7:傳 sandbox backend 進 ctx(若有)
+        # 傳 sandbox backend 進 ctx(若有)
         if self.sandbox_backend is not None:
             ctx.sandbox_backend = self.sandbox_backend
 
-        # Phase 12:傳 file_state_cache 進 ctx(lazy 建立,跨 turn 共用)
+        # 傳 file_state_cache 進 ctx(lazy 建立,跨 turn 共用)
         if self.file_state_cache is None:
             from orion_sdk.services.file_state import FileStateCache
             self.file_state_cache = FileStateCache()
@@ -298,7 +290,7 @@ class Conversation:
         store = await self._ensure_storage()
         injected_context: str | None = None
 
-        # ─── Phase 8:SessionStart + UserPromptSubmit hook ─────────────────
+        # ─── :SessionStart + UserPromptSubmit hook ─────────────────
         if self.hooks.count("SessionStart") > 0 and not self._session_started:
             from orion_sdk.hooks.events import SessionStartEvent
             await self.hooks.fire(
@@ -350,7 +342,7 @@ class Conversation:
         if store is not None:
             await store.record_message(user_msg)
 
-        # ─── Phase 4 + cache 優化:組裝 system prompt + per-turn 注入 ────────
+        # ─── + cache 優化:組裝 system prompt + per-turn 注入 ────────
         # system prompt = [static, session_stable](皆 cacheable)
         # per_turn_text(memory + git_status)注入最後一個 user message,
         # 避免 volatile 內容破壞 system → messages 的 cache prefix 連續性。
@@ -407,7 +399,7 @@ class Conversation:
                     messages_for_loop[-1], parts.per_turn_text
                 )
                 messages_for_loop[-1] = augmented_user_msg
-        except Exception:  # noqa: BLE001 — fallback 到純靜態 block
+        except Exception: # noqa: BLE001 — fallback 到純靜態 block
             from orion_sdk.prompt.static_sections import render_static_block
             effective_system_prompt = render_static_block()
             if self.system_prompt:
@@ -415,14 +407,14 @@ class Conversation:
                     self.system_prompt + "\n\n" + effective_system_prompt
                 )
 
-        # Phase 8:UserPromptSubmit hook 注入的額外 context(append 到 system prompt)
+        # UserPromptSubmit hook 注入的額外 context(append 到 system prompt)
         if injected_context:
             if isinstance(effective_system_prompt, str):
                 effective_system_prompt = effective_system_prompt + "\n\n" + injected_context
             else:
                 effective_system_prompt = list(effective_system_prompt) + [injected_context]
 
-        # ─── Phase 5:把 McpManager 的工具併進這次 turn 的 tools ────────────
+        # ─── :把 McpManager 的工具併進這次 turn 的 tools ────────────
         effective_tools: list[Tool[Any]] = list(self.tools)
         if self.mcp_manager is not None:
             mcp_tools = getattr(self.mcp_manager, "tools", [])
@@ -441,7 +433,7 @@ class Conversation:
             reasoning_effort=self.reasoning_effort,
         )
 
-        # Phase 9:把整 turn 包進 OTel trace_turn
+        # 把整 turn 包進 OTel trace_turn
         from orion_sdk.telemetry.instrumentation import trace_turn
 
         with trace_turn(str(self.session_id), self.user_id, turn_index=self.stats.turns):
@@ -489,7 +481,7 @@ class Conversation:
                             total_turns=ev.total_turns,
                         )
 
-                    # ─── Phase 3:fire-and-forget 萃取新 memory(失敗不影響)───
+                    # ─── :fire-and-forget 萃取新 memory(失敗不影響)───
                     # 用 background task 而不是 await — extract_memories 是 LLM
                     # call(數秒),若 await 會卡住 generator return,連帶 caller
                     # (e.g. WebSocket runner)持有的 turn_lock 多撐數秒,user
@@ -612,7 +604,7 @@ class Conversation:
             await extract_memories(
                 messages, existing, provider=self.provider, paths=paths,
             )
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
 
     async def _ensure_storage(self) -> SessionStorage | None:
@@ -620,7 +612,7 @@ class Conversation:
         if not self.persistence_enabled:
             return None
         if self._session_storage is None:
-            # Phase 27:若有 db_engine,SessionStorage 會把 record_message dual-write
+            # 若有 db_engine,SessionStorage 會把 record_message dual-write
             # 進 messages 表(JSONL 仍是 events audit log)。
             from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -653,7 +645,7 @@ class Conversation:
             session_id: 之前 conversation 的 session_id
             provider / tools / system_prompt / ...: 同 __init__,system_prompt 若 None
                 會試著從 transcript 的 session-meta record 取出。
-            db_engine: Phase 31-H cross-machine resume — 若提供 AsyncEngine,
+            db_engine: cross-machine resume — 若提供 AsyncEngine,
                 從 DB 載入 state_messages(優先於檔案 transcript)。其他機器上
                 resume 同一 session 時用。大 tool result 仍以 placeholder 形式存在
                 (跨機器看不到 ~/.orion/sessions/.../tool-results/ 內容)。

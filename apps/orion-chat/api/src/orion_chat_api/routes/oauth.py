@@ -1,10 +1,10 @@
-"""/oauth/* — Phase 25。MCP OAuth web flow。
+"""/oauth/*。MCP OAuth web flow。
 
-  POST   /oauth/start              {server} → {authorize_url, state}
-  GET    /oauth/callback           ?state&code → HTML close-window
-  GET    /oauth/status/{server}    → {connected, available, label}
-  GET    /oauth/providers          list providers
-  DELETE /oauth/{server}           解除連線(刪 SecureStorage)
+  POST /oauth/start {server} → {authorize_url, state}
+  GET /oauth/callback ?state&code → HTML close-window
+  GET /oauth/status/{server} → {connected, available, label}
+  GET /oauth/providers list providers
+  DELETE /oauth/{server} 解除連線(刪 SecureStorage)
 
 callback 是 query-string GET,跟其他 endpoint 不同 — 因為是第三方 redirect 過來,
 **不能**要求 Authorization header(瀏覽器 redirect 不會帶)。state token 充當

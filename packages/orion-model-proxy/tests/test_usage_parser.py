@@ -1,4 +1,4 @@
-"""Phase X.2 — usage_parser per-endpoint。"""
+"""usage_parser per-endpoint。"""
 
 from __future__ import annotations
 
@@ -136,11 +136,11 @@ def test_openai_embeddings() -> None:
 
 def test_openai_audio_speech() -> None:
     """input 字元數 × tts pricing。"""
-    text = "Hello world, this is a test of TTS."  # 35 chars
+    text = "Hello world, this is a test of TTS." # 35 chars
     req = json.dumps({"model": "gpt-4o-mini-tts", "input": text, "voice": "alloy"}).encode()
     ev = parse_usage(
         provider="openai", path="v1/audio/speech", method="POST",
-        request_body=req, response_body=b"\xff\xfb\x90\x44",  # 假 mp3 bytes
+        request_body=req, response_body=b"\xff\xfb\x90\x44", # 假 mp3 bytes
         content_type="audio/mpeg",
         endpoint_full="/openai/v1/audio/speech",
     )
@@ -203,7 +203,7 @@ def test_anthropic_messages_stream() -> None:
     )
     assert ev is not None
     assert ev.input_tokens == 50
-    assert ev.output_tokens == 15  # 最後 delta 的值
+    assert ev.output_tokens == 15 # 最後 delta 的值
 
 
 # ─── Fallback / edge cases ───────────────────────────────────────────────

@@ -1,6 +1,6 @@
-"""v03:確保 settings 有 `permissions.rules` 容器。Phase 13。
+"""v03:確保 settings 有 `permissions.rules` 容器。
 
-Phase 13 的 permissions/persistence.py 會把「Always Allow / Always Deny」寫到
+的 permissions/persistence.py 會把「Always Allow / Always Deny」寫到
 `settings.permissions.rules`。這個 migration 預先建空 list,免得後續 code
 還要每次檢查 None。
 """

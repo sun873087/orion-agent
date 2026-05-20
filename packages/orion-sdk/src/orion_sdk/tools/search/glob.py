@@ -1,6 +1,6 @@
 """GlobTool — pathlib glob,類 fast file finder。
 
-對應 TS Claude Code `src/tools/GlobTool/`。Phase 1 簡化版,只支援基本 glob pattern。
+對應 TS Claude Code `src/tools/GlobTool/`。簡化版,只支援基本 glob pattern。
 
 語意:`**/*.py` 遞迴所有 .py 檔。`*.txt` 只看 cwd 一層。
 
@@ -70,7 +70,7 @@ class GlobTool:
                 try:
                     mtime = p.stat().st_mtime
                 except OSError:
-                    continue  # broken symlink / permission denied
+                    continue # broken symlink / permission denied
                 if len(heap) < _MAX_RESULTS:
                     heapq.heappush(heap, (mtime, str(p), p))
                 else:
@@ -98,10 +98,10 @@ class GlobTool:
             )
         yield TextEvent(text=out)
 
-    def is_concurrency_safe(self, input: GlobInput) -> bool:  # noqa: ARG002
-        return True  # 純讀
+    def is_concurrency_safe(self, input: GlobInput) -> bool: # noqa: ARG002
+        return True # 純讀
 
-    def is_read_only(self, input: GlobInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: GlobInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

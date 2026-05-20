@@ -3,7 +3,7 @@
 對應 spec § 5 SYSTEM_PROMPT_DYNAMIC_BOUNDARY。
 
 Anthropic provider 收到 `system: list[str]` 時,**最後一個 element 之前**的會被
-標 cache_control: ephemeral(Phase 0 既有實作)。所以 boundary 就是「list 切兩段」
+標 cache_control: ephemeral(既有實作)。所以 boundary 就是「list 切兩段」
 的位置。
 
 assembler.build_system_prompt_list 直接回 `[<靜態合併>, <動態合併>]`,自然就是

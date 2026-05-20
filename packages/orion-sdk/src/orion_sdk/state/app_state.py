@@ -1,4 +1,4 @@
-"""AppState — Conversation 的 UI / runtime 狀態。Phase 12。
+"""AppState — Conversation 的 UI / runtime 狀態。
 
 對應 TS `src/state/AppState.tsx` + `AppStateStore.ts`。簡化版:
 - 不做 Redux(action / reducer / middleware),Python backend 用不上
@@ -9,7 +9,7 @@
 - `tool_permission_context`:已決策過的權限歷史(allow / deny / 額外 cwd)
 - `ide_context`:IDE 連線狀態(VS Code 等)
 - `mcp_server_statuses`:每個 MCP server 的連線狀態
-- `pending_attachments`:從 Phase 11 input pipeline 累積的 attachments
+- `pending_attachments`:從 input pipeline 累積的 attachments
 - `plan_mode_state` 不放這 — 那個 mutate 頻率高,放 ctx 直存比較順手
 """
 
@@ -26,7 +26,7 @@ class ToolPermissionContext:
     """已決策過的工具權限歷史。
 
     `granted` / `denied` 用 dict-of-lists:tool_name → list 已決策的 input pattern。
-    Phase 12 範圍只是容器,policy 細節留給 caller 解讀(白名單 / glob / pattern 等)。
+    範圍只是容器,policy 細節留給 caller 解讀(白名單 / glob / pattern 等)。
     """
 
     granted: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -92,7 +92,7 @@ class AppState:
     """server_name → "connected" / "failed" / "pending" / "disconnected"。"""
 
     pending_attachments: list[dict[str, Any]] = field(default_factory=list)
-    """從 Phase 11 input pipeline 累積的 attachments(@file 內容 / 圖片 ref 等)。"""
+    """從 input pipeline 累積的 attachments(@file 內容 / 圖片 ref 等)。"""
 
     def grant_tool(self, tool_name: str, pattern: str) -> None:
         """便利方法:把一筆 grant 加進 tool_permission_context。"""

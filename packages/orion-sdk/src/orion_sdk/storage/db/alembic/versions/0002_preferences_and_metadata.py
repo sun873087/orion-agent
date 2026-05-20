@@ -1,4 +1,4 @@
-"""user_preferences + conversation_metadata — Phase 13
+"""user_preferences + conversation_metadata
 
 Revision ID: 0002_preferences_and_metadata
 Revises: 0001_init

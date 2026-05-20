@@ -1,4 +1,4 @@
-"""user_settings — Phase 14
+"""user_settings
 
 Revision ID: 0003_user_settings
 Revises: 0002_preferences_and_metadata

@@ -1,4 +1,4 @@
-"""Phase 8 hook events — to_serializable + 全 8 種 type label。"""
+"""hook events — to_serializable + 全 8 種 type label。"""
 
 from __future__ import annotations
 

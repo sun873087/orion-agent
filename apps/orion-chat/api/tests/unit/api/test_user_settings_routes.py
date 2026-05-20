@@ -1,4 +1,4 @@
-"""/me/settings REST CRUD。Phase 14。"""
+"""/me/settings REST CRUD。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Memory Layer 4 — merge suggest job(Phase 31-G)。
+"""Memory Layer 4 — merge suggest job。
 
 對 over-quota 的 type 跑:
   1. 用 OpenAI text-embedding-3-small 取每 memory 的 embedding
@@ -160,16 +160,16 @@ _MERGE_SYSTEM = (
     "若要合併,寫出合併後的 name / description / body / rationale。\n\n"
     "輸出 JSON,**只**這個格式:\n"
     "{\n"
-    '  "merge": true,\n'
-    '  "name": "合併後 name",\n'
-    '  "description": "一句話 description",\n'
-    '  "body": "合併後完整 markdown body",\n'
-    '  "rationale": "為何該合併(2 句內)"\n'
+    ' "merge": true,\n'
+    ' "name": "合併後 name",\n'
+    ' "description": "一句話 description",\n'
+    ' "body": "合併後完整 markdown body",\n'
+    ' "rationale": "為何該合併(2 句內)"\n'
     "}\n\n"
     "若不該合併(內容只是表面相關,實際各自獨立):\n"
     "{\n"
-    '  "merge": false,\n'
-    '  "rationale": "為何不該合併"\n'
+    ' "merge": false,\n'
+    ' "rationale": "為何不該合併"\n'
     "}\n\n"
     "重要:輸出純 JSON,不要 markdown code fence 不要前言。"
 )
@@ -204,7 +204,7 @@ async def _ask_llm_merge(
             from orion_model.events import TextDeltaEvent
             if isinstance(ev, TextDeltaEvent):
                 chunks.append(ev.text)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         log.warning("merge_suggester.llm_error", error=str(e))
         return None
 

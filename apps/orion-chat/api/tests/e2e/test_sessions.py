@@ -1,4 +1,4 @@
-"""Phase 31-E:Session CRUD + WS streaming e2e。
+"""E:Session CRUD + WS streaming e2e。
 
 驗證:
 - POST /sessions 帶 token → 建 session
@@ -43,7 +43,7 @@ async def _register_and_login(base: str, username: str = "alice-sess") -> tuple[
 @pytest.mark.asyncio
 async def test_create_and_list_sessions(chat_api_server, mock_provider_factory) -> None:
     base = chat_api_server["base_url"]
-    mock_provider_factory(turns=[])  # 啟 mock provider override
+    mock_provider_factory(turns=[]) # 啟 mock provider override
     user_id, token = await _register_and_login(base)
 
     async with http_client(base, token=token) as c:

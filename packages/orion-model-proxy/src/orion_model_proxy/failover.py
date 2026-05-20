@@ -1,11 +1,11 @@
-"""Phase 33-E — provider failover skeleton。
+"""provider failover skeleton。
 
 Upstream 429 / 5xx 自動 retry 另一 provider 的對應 model(若 routing alias
 有定義 fallback chain)。例:
     user 設 "auto" → 主 gpt-5 / fallback claude-sonnet-4-6
     proxy 收 429 from openai → 自動改打 anthropic claude-sonnet-4-6
 
-當前 skeleton — Phase 31-X 的 transparent reverse 沒做 model 翻譯,
+當前 skeleton 的 transparent reverse 沒做 model 翻譯,
 所以 failover 在跨 provider 場景需要 wire format 互轉,複雜。
 此 module 先放 fallback chain 解析邏輯,reverse_proxy 端日後接入。
 """
@@ -22,7 +22,7 @@ class FallbackTarget:
 
 
 # 全域 fallback chain(可由 admin 編進 routing_aliases 表延伸)。
-# Phase 31-X / 32 還沒接入 reverse_proxy。
+# X / 32 還沒接入 reverse_proxy。
 _DEFAULT_CHAINS: dict[tuple[str, str], list[FallbackTarget]] = {
     ("openai", "gpt-5"): [FallbackTarget("anthropic", "claude-sonnet-4-6")],
     ("openai", "gpt-5-mini"): [FallbackTarget("anthropic", "claude-haiku-4-5")],

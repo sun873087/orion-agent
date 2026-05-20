@@ -1,6 +1,6 @@
 """Compaction 策略。
 
-Phase 3 範圍兩種:
+範圍兩種:
 - **SonnetSummaryStrategy**:呼 LLM 摘要前段 messages,寫成自然語言
 - **TruncateStrategy**:fallback — 純截斷 + 加註記(LLM 失敗或刻意關閉時用)
 
@@ -149,8 +149,8 @@ class TruncateStrategy:
         self,
         messages: list[NormalizedMessage],
         *,
-        provider: LLMProvider,  # noqa: ARG002
-        locale: str | None = None,  # noqa: ARG002
+        provider: LLMProvider, # noqa: ARG002
+        locale: str | None = None, # noqa: ARG002
     ) -> str:
         return self.summarize_sync(messages)
 

@@ -1,4 +1,4 @@
-"""Output styles。Phase 13。
+"""Output styles。
 
 對應 TS Claude Code `src/outputStyles/loadOutputStylesDir.ts`(輕量)。
 

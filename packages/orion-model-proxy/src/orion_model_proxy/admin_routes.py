@@ -1,13 +1,13 @@
 """Admin REST + Web UI routes。
 
 REST:
-    POST   /admin/users
-    GET    /admin/users
+    POST /admin/users
+    GET /admin/users
     DELETE /admin/users/{user_id}
-    POST   /admin/users/{user_id}/keys           gen new(回明文一次)
-    DELETE /admin/keys/{key_id}                  revoke
-    POST   /admin/users/{user_id}/budget         set cap
-    GET    /admin/users/{user_id}/usage          rollup
+    POST /admin/users/{user_id}/keys gen new(回明文一次)
+    DELETE /admin/keys/{key_id} revoke
+    POST /admin/users/{user_id}/budget set cap
+    GET /admin/users/{user_id}/usage rollup
 
 Web UI(Jinja2):/admin/ui/* — 在 server.py mount。
 
@@ -85,11 +85,11 @@ class KeyOut(BaseModel):
 
 
 class SetBudgetRequest(BaseModel):
-    budget_usd: float | None  # None = 取消 cap
+    budget_usd: float | None # None = 取消 cap
 
 
 class SetRateLimitRequest(BaseModel):
-    rate_limit_rpm: int | None  # None or 0 = unlimited
+    rate_limit_rpm: int | None # None or 0 = unlimited
 
 
 class UsageRollup(BaseModel):
@@ -188,7 +188,7 @@ async def delete_user(user_id: str, s: AsyncSession = Depends(db_session)) -> No
     email = user.email
     await s.delete(user)
     await s.commit()
-    await invalidate_cache(None)  # flush cache,可能 user 的 key 還在
+    await invalidate_cache(None) # flush cache,可能 user 的 key 還在
     await audit_record(
         s, action="user.delete", target_type="user", target_id=user_id,
         detail={"email": email},
@@ -223,7 +223,7 @@ async def create_key(
         id=key.id,
         user_id=key.user_id,
         label=key.label,
-        token=plaintext,  # 唯一一次回明文
+        token=plaintext, # 唯一一次回明文
         token_prefix=key.token_prefix,
         created_at=key.created_at,
     )
@@ -263,7 +263,7 @@ async def revoke_key(key_id: str, s: AsyncSession = Depends(db_session)) -> None
     if key is None:
         raise HTTPException(status_code=404, detail=f"key {key_id} not found")
     if key.revoked_at is not None:
-        return  # 已 revoked,idempotent
+        return # 已 revoked,idempotent
     await s.execute(
         update(ApiKey).where(ApiKey.id == key_id).values(revoked_at=_now())
     )
@@ -341,7 +341,7 @@ async def set_rate_limit(
     user.rate_limit_rpm = req.rate_limit_rpm
     await s.commit()
     await s.refresh(user)
-    await invalidate_cache(None)  # principal cache 帶 rpm,要 refresh
+    await invalidate_cache(None) # principal cache 帶 rpm,要 refresh
     await audit_record(
         s, action="rate_limit.set", target_type="user", target_id=user_id,
         detail={"old": old, "new": req.rate_limit_rpm},
@@ -362,7 +362,7 @@ async def set_budget(
     user.budget_usd = req.budget_usd
     await s.commit()
     await s.refresh(user)
-    await invalidate_cache(None)  # principal cache 帶 budget,得 refresh
+    await invalidate_cache(None) # principal cache 帶 budget,得 refresh
     await audit_record(
         s, action="budget.set", target_type="user", target_id=user_id,
         detail={"old": old, "new": req.budget_usd},
@@ -437,7 +437,7 @@ async def list_audit(
 
 
 class DailyPoint(BaseModel):
-    date: str  # "YYYY-MM-DD"
+    date: str # "YYYY-MM-DD"
     cost_usd: float
     request_count: int
 
@@ -529,7 +529,7 @@ async def list_orgs(s: AsyncSession = Depends(db_session)) -> list[OrgOut]:
 
 
 class RoutingAliasCreateRequest(BaseModel):
-    user_id: str | None = None  # None = global
+    user_id: str | None = None # None = global
     alias: str
     target_provider: str
     target_model: str
@@ -579,8 +579,8 @@ async def list_routing_aliases(s: AsyncSession = Depends(db_session)) -> list[Ro
 
 
 class WebhookCreateRequest(BaseModel):
-    user_id: str | None = None  # None = global
-    event: str  # e.g. "budget.exceeded"
+    user_id: str | None = None # None = global
+    event: str # e.g. "budget.exceeded"
     url: str
 
 
@@ -714,7 +714,7 @@ class ArchiveResult(BaseModel):
 async def archive_usage(
     cutoff_days: int = 90, s: AsyncSession = Depends(db_session)
 ) -> ArchiveResult:
-    """Phase 33-B — 把 cutoff_days 前的 usage_log row 壓進 usage_monthly。
+    """把 cutoff_days 前的 usage_log row 壓進 usage_monthly。
 
     Admin 手動觸發(也可 cron / scheduler 跑)。Idempotent — 多呼一次只是
     把更舊資料再聚合(若有的話)。

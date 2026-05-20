@@ -1,4 +1,4 @@
-"""Slash command 解析 — Phase 11。對應 TS processSlashCommand.tsx。"""
+"""Slash command 解析。對應 TS processSlashCommand.tsx。"""
 
 from __future__ import annotations
 

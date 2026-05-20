@@ -1,9 +1,9 @@
 /**
  * 右側 detail panel — 對齊 Anthropic Claude Cowork 的 UX:
- *   - Progress:當前對話的 todo list(從 TodoWrite tool call input parse)
- *   - Working folder:對話內 model 寫 / 改過的檔案(FileWrite / FileEdit /
- *     NotebookEdit / open_path)
- *   - Context · Skills:對話內用過的 skill 名(從 Skill tool input)
+ * - Progress:當前對話的 todo list(從 TodoWrite tool call input parse)
+ * - Working folder:對話內 model 寫 / 改過的檔案(FileWrite / FileEdit /
+ * NotebookEdit / open_path)
+ * - Context · Skills:對話內用過的 skill 名(從 Skill tool input)
  *
  * 所有資料源都從 useAgentStore.messages 內的 toolCalls 抽取。
  */
@@ -33,7 +33,7 @@ import { useSettingsStore } from '../store/settings'
 type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
 /** Stable empty array references — selector fallback 用,避免每 render 回新陣列
- *  → 觸發 zustand `useSyncExternalStore` 偵測到 snapshot 不同 → infinite loop。 */
+ * → 觸發 zustand `useSyncExternalStore` 偵測到 snapshot 不同 → infinite loop。 */
 const EMPTY_FILES: readonly string[] = Object.freeze([])
 const EMPTY_MESSAGES: readonly unknown[] = Object.freeze([])
 
@@ -44,7 +44,7 @@ const ACTION_RANK: Record<'opened' | 'wrote' | 'edited', number> = {
 }
 
 /** Basename dedupe — 同檔名(無論在哪個目錄)只留一筆,優先級 opened > wrote > edited。
- *  避免 model 在 message text 提到「相對路徑 + 絕對路徑」兩種寫法把同檔顯兩次。 */
+ * 避免 model 在 message text 提到「相對路徑 + 絕對路徑」兩種寫法把同檔顯兩次。 */
 function dedupeByBasename<F extends { path: string; action: 'opened' | 'wrote' | 'edited' }>(
   files: F[],
 ): F[] {
@@ -60,7 +60,7 @@ function dedupeByBasename<F extends { path: string; action: 'opened' | 'wrote' |
 }
 
 /** Async filter out 路徑不存在的檔。Returns 過濾後 array(剛 mount 時暫回原陣列,
- *  避免閃白;查完才更新)。 */
+ * 避免閃白;查完才更新)。 */
 function useExistingFiles<F extends { path: string }>(files: F[]): F[] {
   const [existing, setExisting] = useState<F[]>(files)
   const key = files.map((f) => f.path).join('|')
@@ -327,7 +327,7 @@ export function RightSidebar() {
             {workingFiles.map((f) => (
               <li key={f.path}>
                 {/* div 不是 button — 避免兩個 <button> 互相巢套(DOM 不合法)。
-                 *  role=button + tabIndex 維持鍵盤可達性。 */}
+                 * role=button + tabIndex 維持鍵盤可達性。 */}
                 <div
                   role="button"
                   tabIndex={0}
@@ -398,7 +398,7 @@ export function RightSidebar() {
 }
 
 /**
- * Per-session cost budget(Phase 31-Q)。
+ * Per-session cost budget。
  *
  * 顯示 cap 設定 + progress bar(cumulative / cap),inline edit。
  * 累積超過 cap 時 sidecar 會自動 abort 下次 send 並推 notification —
@@ -574,13 +574,13 @@ function BudgetSection() {
  * Cost / context / cache 使用量區塊。
  *
  * 拉 sidecar `conversation.stats` RPC,在以下時機 refresh:
- *   - sessionId 變更(切對話)
- *   - busy 轉 false(turn 剛結束,stats 才會更新)
+ * - sessionId 變更(切對話)
+ * - busy 轉 false(turn 剛結束,stats 才會更新)
  *
  * 顯三層:
- *   - 本次對話(last turn)— input / output / cache_read / cost
- *   - 整個 session 累積 — tokens + cost
- *   - Context window — used / max + cache hit rate
+ * - 本次對話(last turn)— input / output / cache_read / cost
+ * - 整個 session 累積 — tokens + cost
+ * - Context window — used / max + cache hit rate
  */
 function UsageSection() {
   const { t } = useTranslation()

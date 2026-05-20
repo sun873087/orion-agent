@@ -1,4 +1,4 @@
-"""WebSocket-based CanUseToolFn — 把 Phase 1 permission 接到 ws round-trip。
+"""WebSocket-based CanUseToolFn — 把 permission 接到 ws round-trip。
 
 對應 spec § 5 ws_permissions.py。
 
@@ -54,7 +54,7 @@ class PendingPermissions:
         """ws reader 收到 PermissionDecisionEvent 時呼,把 future set 起來。"""
         fut = self.pending.pop(request_id, None)
         if fut is None or fut.done():
-            return  # silently drop(timeout 後到達 / 重複 / unknown)
+            return # silently drop(timeout 後到達 / 重複 / unknown)
         fut.set_result(decision)
 
 
@@ -72,17 +72,17 @@ def make_can_use_tool_for_websocket(
     async def can_use_tool(
         tool: Tool[Any],
         tool_input: dict[str, Any],
-        ctx: AgentContext,  # noqa: ARG001
+        ctx: AgentContext, # noqa: ARG001
     ) -> PermissionResult:
         # Read-only 工具直接 allow
         try:
             parsed = tool.input_schema.model_validate(tool_input)
             if tool.is_read_only(parsed):
                 return PermissionResult(decision=PermissionDecision.ALLOW)
-        except Exception:  # noqa: BLE001 — parse 失敗保守問 user
+        except Exception: # noqa: BLE001 — parse 失敗保守問 user
             pass
 
-        # Phase 13:先看 settings.permissions.rules 有無 always_* 紀錄
+        # 先看 settings.permissions.rules 有無 always_* 紀錄
         existing = find_matching_rule(tool.name, tool_input)
         if existing is not None:
             if existing.decision == "allow":
@@ -119,7 +119,7 @@ def make_can_use_tool_for_websocket(
                 reason=f"user did not respond within {timeout_s}s",
             )
 
-        # Phase 13:always_* → 寫進 settings.permissions.rules,新對話直接套用
+        # always_* → 寫進 settings.permissions.rules,新對話直接套用
         if decision_str in ("always_allow", "always_deny"):
             persist_decision_if_always(
                 decision_str=decision_str,

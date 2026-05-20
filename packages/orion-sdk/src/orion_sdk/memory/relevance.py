@@ -39,7 +39,7 @@ def _ranker_provider() -> LLMProvider | None:
 
     Provider 從 catalog 自動偵測(`find_provider_by_model`):
       - `ORION_MEMORY_RANKER_MODEL=claude-haiku-4-5` → AnthropicProvider(預設)
-      - `ORION_MEMORY_RANKER_MODEL=gpt-5.5-pro`      → OpenAIProvider
+      - `ORION_MEMORY_RANKER_MODEL=gpt-5.5-pro` → OpenAIProvider
       - 未知 model id → log warning + fallback 回 Haiku 4.5
 
     Provider 永遠從 model 反查 — 沒獨立的「ranker provider」env,避免 model 與
@@ -77,7 +77,7 @@ def _ranker_provider() -> LLMProvider | None:
 
     try:
         _ranker_provider_cache = get_provider(provider_id, model)
-    except Exception:  # noqa: BLE001
+    except Exception: # noqa: BLE001
         return None
     return _ranker_provider_cache
 
@@ -164,7 +164,7 @@ def _heuristic_rank(
     *,
     memory_dir: Path | None = None,
 ) -> list[Memory]:
-    """Bag-of-words overlap + optional usage decay (Phase 31-G Layer 3)。
+    """Bag-of-words overlap + optional usage decay (Layer 3)。
 
     若 `memory_dir` 提供且 `ORION_MEMORY_USAGE_WEIGHT > 0`,最終 score 為:
         score = (1 - w) * keyword_overlap + w * usage_decay
@@ -181,7 +181,7 @@ def _heuristic_rank(
             weight = usage_weight()
             if weight > 0:
                 usage_lookup = lambda m: compute_usage_score(m.filename, memory_dir)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             weight = 0.0
 
     if not query_words:
@@ -232,7 +232,7 @@ async def _llm_rank(
 ) -> list[Memory] | None:
     """讓 provider 看 memory descriptions + query,回 top N indices。
 
-    Phase 12:改走 side_query — 不汙染主 transcript、可選 JSON Schema 強制輸出。
+   :改走 side_query — 不汙染主 transcript、可選 JSON Schema 強制輸出。
     Ranker 永遠用 Haiku 4.5(見 `_ranker_provider`),caller 傳入的 `provider` 只作為
     Haiku 建構失敗時的 fallback。失敗(parse error / API error)→ 回 None,caller 改
     fallback heuristic。
@@ -286,7 +286,7 @@ async def _llm_rank(
             ),
             provider=ranker,
         )
-    except Exception:  # noqa: BLE001
+    except Exception: # noqa: BLE001
         return None
 
     indices: list[int] = []
@@ -329,7 +329,7 @@ async def rank_memories(
         conversation_messages: 當前對話歷史 — 用最近 user 訊息做 query
         provider: 若有且 ORION_MEMORY_RANKER=llm,用 LLM 排;否則 heuristic
         max_results: 上限,預設 10
-        memory_dir: 若有,Phase 31-G Layer 3 usage tracking 啟用 — 選中
+        memory_dir: 若有 Layer 3 usage tracking 啟用 — 選中
             的 memory 寫 ranker_hit event;heuristic 分數混入 usage decay
             score(`ORION_MEMORY_USAGE_WEIGHT` env var 控制權重,預設 0)
     """
@@ -356,12 +356,12 @@ async def rank_memories(
 
 
 def _emit_hits(memory_dir: Path | None, selected: list[Memory]) -> None:
-    """Emit ranker_hit events for selected memories(Phase 31-G Layer 3)。"""
+    """Emit ranker_hit events for selected memories(Layer 3)。"""
     if memory_dir is None:
         return
     try:
         from orion_sdk.memory.usage import record_ranker_hit
         for m in selected:
             record_ranker_hit(memory_dir, m.filename)
-    except Exception:  # noqa: BLE001 — usage tracking 失敗不該炸 ranker
+    except Exception: # noqa: BLE001 — usage tracking 失敗不該炸 ranker
         pass

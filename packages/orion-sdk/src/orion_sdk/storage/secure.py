@@ -1,4 +1,4 @@
-"""SecureStorage — 加密儲存敏感資料(token / API key 等)。Phase 14。
+"""SecureStorage — 加密儲存敏感資料(token / API key 等)。
 
 對應 TS Claude Code `src/utils/secureStorage/`。
 
@@ -10,7 +10,7 @@ Backend 優先序(由 `create_backend()` 自動選):
      (mode 600)讀
 
 未來 phase(production SaaS)可加 SecretsManagerBackend(AWS / Vault / GCP)— 同
-SecureStorageBackend Protocol,呼叫端不變。Phase 14 範圍只到 Keychain + EncryptedFile,
+SecureStorageBackend Protocol,呼叫端不變。範圍只到 Keychain + EncryptedFile,
 production cloud 留新 phase plan(`docs/phases/23-cloud-secrets.md` 視需求開)。
 
 Sync vs async:既有用法都 async(統一 await pattern);實際 keyring / fernet 都是
@@ -87,7 +87,7 @@ class KeychainBackend:
             # keyring 在 macOS 同步呼叫 Security framework,單次幾十~幾百 ms。
             # 不 offload 會卡 event loop,讓並發 status 查詢被串成序列。
             result = await asyncio.to_thread(kr.get_password, self.service, key)
-        except Exception as e:  # noqa: BLE001 — backend init may fail
+        except Exception as e: # noqa: BLE001 — backend init may fail
             logger.warning("keychain get failed for %s: %s", key, e)
             return None
         return result if isinstance(result, str) else None
@@ -101,7 +101,7 @@ class KeychainBackend:
         kr = self._keyring()
         try:
             await asyncio.to_thread(kr.delete_password, self.service, key)
-        except Exception as e:  # noqa: BLE001 — keyring 各 backend 不同 exception
+        except Exception as e: # noqa: BLE001 — keyring 各 backend 不同 exception
             # 不存在 / delete 失敗都吞;list_keys 仍會更新 index
             logger.debug("keychain delete %s: %s", key, e)
         await self._remove_from_index(key)
@@ -262,7 +262,7 @@ def create_backend(
         # 以下還是會走 except
         _ = keyring.get_keyring()
         return KeychainBackend()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         logger.info(
             "keyring unavailable (%s) — falling back to encrypted file", e,
         )

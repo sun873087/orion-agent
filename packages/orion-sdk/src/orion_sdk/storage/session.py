@@ -5,14 +5,14 @@
 每筆 record 一行 JSON,kind 字段區分:
 - "session-meta":session 開始/結束時的元資料(start_time、provider、model)
 - "message":NormalizedMessage 整份(role + content blocks)
-- "tool-result-replacement":Phase 2 第 3 層做的替換決策(供 resume 重建 state)
+- "tool-result-replacement":第 3 層做的替換決策(供 resume 重建 state)
 - "transition":Terminal 訊號(loop 終止理由 + 統計)
 
 並發保護:用 anyio.Lock 包 file append,確保多 task yield 訊息時不交錯寫亂。
 
 對應 spec 踩雷 #1。
 
-Phase 27:`SessionStorage.open(..., db_engine=...)` 時 `record_message` 額外 INSERT 進
+:`SessionStorage.open(..., db_engine=...)` 時 `record_message` 額外 INSERT 進
 `messages` table。JSONL 仍是事件 audit log(transitions / replacements 沒有 DB 表);
 DB 是 message 的可查詢 mirror,resume 優先讀 DB。
 """
@@ -87,7 +87,7 @@ class SessionStorage:
     ) -> None:
         self.paths = paths
         self.db_engine = db_engine
-        """Phase 27:non-None → `record_message` 同步 INSERT 進 messages 表。"""
+        """non-None → `record_message` 同步 INSERT 進 messages 表。"""
         self._lock = anyio.Lock()
 
     @classmethod
@@ -137,10 +137,10 @@ class SessionStorage:
             await self._db_insert_message(message)
 
     async def _db_insert_message(self, message: NormalizedMessage) -> None:
-        """Phase 27:INSERT 進 messages 表。失敗 log warning,不擋 JSONL 路徑。"""
+        """INSERT 進 messages 表。失敗 log warning,不擋 JSONL 路徑。"""
         engine = self.db_engine
         if engine is None:
-            return  # type narrow,實際上 caller 已 check 過
+            return # type narrow,實際上 caller 已 check 過
         content = message.content
         if isinstance(content, str):
             content_json: Any = content
@@ -161,7 +161,7 @@ class SessionStorage:
             async with db_session(engine) as db:
                 db.add(row)
                 await db.commit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             # FK violation(session row 不存在)/ DB down → 不擋 JSONL canonical 寫入
             logger.warning(
                 "db_message_insert_failed session=%s role=%s err=%s",
@@ -172,7 +172,7 @@ class SessionStorage:
         self,
         decisions: list[ReplacementDecision],
     ) -> None:
-        """記錄 Phase 2 第 3 層的替換決策(每個 ID 一筆)。"""
+        """記錄 第 3 層的替換決策(每個 ID 一筆)。"""
         for d in decisions:
             await self.append_raw({
                 "kind": "tool-result-replacement",

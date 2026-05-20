@@ -1,4 +1,4 @@
-"""/oauth/* end-to-end via dev-mock provider。Phase 25。
+"""/oauth/* end-to-end via dev-mock provider。
 
 dev-mock 不打外部 — start_web_oauth_flow 直接回 callback URL,callback 自行短路寫
 fake token。整個 flow 可離線跑。
@@ -273,7 +273,7 @@ async def test_token_payload_stored_as_json(
     白盒 — 直接讀 backend 內容,不從 API。
     """
     client, token = client_with_token
-    # alice 的 user_id 從 /me 拿(Phase 29 後是 DB row id,SecureStorage 用此索引)
+    # alice 的 user_id 從 /me 拿(後是 DB row id,SecureStorage 用此索引)
     alice_uid = client.get("/me", headers=_h(token)).json()["user_id"]
     state = client.post(
         "/oauth/start", headers=_h(token), json={"server": "dev-mock"},
@@ -282,7 +282,7 @@ async def test_token_payload_stored_as_json(
         "/oauth/callback", params={"state": state, "code": "dev-mock-code"},
     )
     # backend 是 fixture inject 的;從 module global 拿
-    backend = oauth_mod._storage  # type: ignore[attr-defined]
+    backend = oauth_mod._storage # type: ignore[attr-defined]
     assert backend is not None
     raw = await backend.get(f"mcp:dev-mock:{alice_uid}")
     assert raw is not None

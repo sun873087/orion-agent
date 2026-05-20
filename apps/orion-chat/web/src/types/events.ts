@@ -1,4 +1,4 @@
-// 對應 backend `api/event_schema.py`(Phase 6)。
+// 對應 backend `api/event_schema.py`。
 // 任何 backend schema 改動,本檔同步更新。
 
 // ─── Client → Server ────────────────────────────────────────────────────────

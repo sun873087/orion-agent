@@ -1,4 +1,4 @@
-"""Phase 27:SessionStorage dual-write 進 messages 表;load_session 從 DB resume。
+"""SessionStorage dual-write 進 messages 表;load_session 從 DB resume。
 
 - record_message + engine → messages 表 INSERT 一筆
 - 多筆訊息保持插入順序(created_at + id 排序)
@@ -29,7 +29,7 @@ from orion_sdk.storage.session import SessionStorage
 
 
 async def _seed_session_row(engine: Any, sid: str, user_id: str) -> None:
-    """Phase 27:messages.session_id 是 FK to sessions.id,要先建 session row。"""
+    """messages.session_id 是 FK to sessions.id,要先建 session row。"""
     async with db_session(engine) as db:
         u = User(id=user_id, username=f"u{user_id[:6]}", password_hash="x")
         db.add(u)
@@ -92,7 +92,7 @@ async def test_jsonl_still_written_when_engine_provided(
     transcript = tmp_path / str(sid) / "transcript.jsonl"
     assert transcript.exists()
     lines = transcript.read_text(encoding="utf-8").strip().split("\n")
-    assert len(lines) == 3  # meta + message + transition
+    assert len(lines) == 3 # meta + message + transition
     await engine.dispose()
 
 
@@ -138,7 +138,7 @@ async def test_load_session_falls_back_to_jsonl_when_db_empty(
     await store.record_message(NormalizedMessage(role="user", content="legacy msg"))
 
     db_messages = await fetch_db_messages(sid, engine)
-    assert db_messages is None  # DB 空
+    assert db_messages is None # DB 空
     snapshot = load_session(sid, prebaked_messages=db_messages)
     assert len(snapshot.messages) == 1
     assert snapshot.messages[0].content == "legacy msg"
@@ -157,7 +157,7 @@ def test_load_session_no_engine_uses_jsonl(tmp_path: Path, monkeypatch: pytest.M
         await store.record_message(NormalizedMessage(role="user", content="cli msg"))
 
     anyio.run(write)
-    snapshot = load_session(sid)  # no engine = pure JSONL
+    snapshot = load_session(sid) # no engine = pure JSONL
     assert len(snapshot.messages) == 1
     assert snapshot.messages[0].content == "cli msg"
 
@@ -214,7 +214,7 @@ async def test_db_insert_failure_does_not_break_jsonl(
     await init_db(engine)
     sid = uuid4()
     await _seed_session_row(engine, str(sid), str(uuid4()))
-    await engine.dispose()  # 故意先 dispose,後續 INSERT 會炸
+    await engine.dispose() # 故意先 dispose,後續 INSERT 會炸
 
     store = SessionStorage.open(sid, db_engine=engine)
     await store.record_meta(provider="anthropic", model="claude-sonnet-4-6")
@@ -230,7 +230,7 @@ async def test_db_insert_failure_does_not_break_jsonl(
 async def test_replacements_still_jsonl_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Phase 27 沒搬 replacements 進 DB,resume 仍能拿到從 JSONL 重建的 state。"""
+    """沒搬 replacements 進 DB,resume 仍能拿到從 JSONL 重建的 state。"""
     monkeypatch.setenv("ORION_SESSIONS_DIR", str(tmp_path))
     engine = create_db_engine("sqlite+aiosqlite:///:memory:")
     await init_db(engine)

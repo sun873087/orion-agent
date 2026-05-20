@@ -1,4 +1,4 @@
-"""AppState / ToolPermissionContext / IDEContext 測試。Phase 12。"""
+"""AppState / ToolPermissionContext / IDEContext 測試。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def test_grant_dedup() -> None:
     s = AppState()
     s.grant_tool("Bash", "ls *")
     ref = s.tool_permission_context
-    s.grant_tool("Bash", "ls *")  # 重複
+    s.grant_tool("Bash", "ls *") # 重複
     # 重複 grant 應 short-circuit,context 不變
     assert s.tool_permission_context is ref
 

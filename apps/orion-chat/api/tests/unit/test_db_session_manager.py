@@ -18,7 +18,7 @@ class _DummyProvider:
     name = "anthropic"
     model = "claude-sonnet-4-6"
 
-    async def stream(self, *args, **kwargs):  # noqa: ARG002, ANN001, ANN201
+    async def stream(self, *args, **kwargs): # noqa: ARG002, ANN001, ANN201
         raise NotImplementedError
 
 
@@ -47,11 +47,11 @@ async def test_create_get_delete() -> None:
     uid = await _new_user(engine, "alice")
     mgr = DbSessionManager(engine=engine)
 
-    sid = await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
+    sid = await mgr.create(user_id=uid, conversation=_DummyConv()) # type: ignore[arg-type]
     assert sid is not None
 
     got = await mgr.get(uid, sid)
-    assert got is not None  # in cache
+    assert got is not None # in cache
 
     listed = await mgr.list_for_user(uid)
     assert len(listed) == 1
@@ -85,8 +85,8 @@ async def test_size() -> None:
     mgr = DbSessionManager(engine=engine)
 
     assert await mgr.size() == 0
-    await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
-    await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
+    await mgr.create(user_id=uid, conversation=_DummyConv()) # type: ignore[arg-type]
+    await mgr.create(user_id=uid, conversation=_DummyConv()) # type: ignore[arg-type]
     assert await mgr.size() == 2
     await engine.dispose()
 
@@ -96,7 +96,7 @@ async def test_get_cache_miss_replays_messages_from_transcript(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """API 重啟後 in-memory cache 清空 — get() 應從磁碟 transcript 重建 messages,
-    而不是回空白 Conversation(舊行為:Phase 7c 待辦)。"""
+    而不是回空白 Conversation(舊行為:待辦)。"""
     monkeypatch.setenv("ORION_SESSIONS_DIR", str(tmp_path))
 
     engine = create_db_engine("sqlite+aiosqlite:///:memory:")
@@ -105,7 +105,7 @@ async def test_get_cache_miss_replays_messages_from_transcript(
     mgr = DbSessionManager(engine=engine)
 
     # 走 create 取得真 sid + DB row
-    sid = await mgr.create(user_id=uid, conversation=_DummyConv())  # type: ignore[arg-type]
+    sid = await mgr.create(user_id=uid, conversation=_DummyConv()) # type: ignore[arg-type]
 
     # 模擬之前的 turn 寫過 transcript:meta + 兩則 message
     store = SessionStorage.open(sid)
@@ -132,9 +132,9 @@ async def test_list_isolated_per_user() -> None:
     uid_b = await _new_user(engine, "bob")
     mgr = DbSessionManager(engine=engine)
 
-    await mgr.create(user_id=uid_a, conversation=_DummyConv())  # type: ignore[arg-type]
-    await mgr.create(user_id=uid_a, conversation=_DummyConv())  # type: ignore[arg-type]
-    await mgr.create(user_id=uid_b, conversation=_DummyConv())  # type: ignore[arg-type]
+    await mgr.create(user_id=uid_a, conversation=_DummyConv()) # type: ignore[arg-type]
+    await mgr.create(user_id=uid_a, conversation=_DummyConv()) # type: ignore[arg-type]
+    await mgr.create(user_id=uid_b, conversation=_DummyConv()) # type: ignore[arg-type]
 
     assert len(await mgr.list_for_user(uid_a)) == 2
     assert len(await mgr.list_for_user(uid_b)) == 1

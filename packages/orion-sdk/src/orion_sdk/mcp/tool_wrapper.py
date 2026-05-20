@@ -1,4 +1,4 @@
-"""把 MCP tool dict 動態包成 Phase 1 的 Tool Protocol。
+"""把 MCP tool dict 動態包成 的 Tool Protocol。
 
 對應 spec § 5 tool_wrapper.py。
 
@@ -9,8 +9,8 @@
   "description": "Read a file from disk",
   "inputSchema": {"type": "object", "properties": {...}, "required": [...]},
   "annotations": {
-    "readOnlyHint": True,        # → is_concurrency_safe = True
-    "destructiveHint": False,    # → is_concurrency_safe = False(若 True)
+    "readOnlyHint": True, # → is_concurrency_safe = True
+    "destructiveHint": False, # → is_concurrency_safe = False(若 True)
     "openWorldHint": False,
   }
 }
@@ -41,7 +41,7 @@ def _qualified_tool_name(server_name: str, tool_name: str) -> str:
 
 
 class McpToolWrapper:
-    """把 MCP tool 包成 Phase 1 Tool Protocol。
+    """把 MCP tool 包成 Tool Protocol。
 
     動態 attribute 設定:name / description / input_schema / call。
     `is_concurrency_safe` 從 annotations 推。
@@ -73,18 +73,18 @@ class McpToolWrapper:
     async def call(
         self,
         input: ToolInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         """呼 MCP server 的 tool。"""
         try:
             args = input.model_dump(exclude_none=True)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"failed to serialize input: {e}")
             return
 
         try:
             result = await self._client.call_tool(self._raw_tool_name, args)
-        except Exception as e:  # noqa: BLE001 — server 錯不該炸 conversation
+        except Exception as e: # noqa: BLE001 — server 錯不該炸 conversation
             yield ErrorEvent(
                 message=(
                     f"MCP server {self._server_name!r} call_tool({self._raw_tool_name!r}) "
@@ -107,10 +107,10 @@ class McpToolWrapper:
                     t = item.get("text", "")
                     if isinstance(t, str):
                         text_chunks.append(t)
-                # image / resource — Phase 5 不展開,只記 stub
+                # image / resource 不展開,只記 stub
                 elif ctype in ("image", "resource"):
                     text_chunks.append(
-                        f"[{ctype} content elided — Phase 5 不展開,Phase 10 處理]"
+                        f"[{ctype} content elided 不展開 處理]"
                     )
 
         if not text_chunks:
@@ -123,13 +123,13 @@ class McpToolWrapper:
         else:
             yield TextEvent(text=joined)
 
-    def is_concurrency_safe(self, input: Any) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: Any) -> bool: # noqa: ARG002
         """從 annotations 推:readOnlyHint=True 且非 destructive → safe;否則 unsafe。"""
         if self._annotations.get("destructiveHint") is True:
             return False
         return self._annotations.get("readOnlyHint") is True
 
-    def is_read_only(self, input: Any) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: Any) -> bool: # noqa: ARG002
         return bool(self._annotations.get("readOnlyHint"))
 
     def max_result_size_chars(self) -> int | float:

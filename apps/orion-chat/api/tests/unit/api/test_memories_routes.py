@@ -1,4 +1,4 @@
-"""/me/memories REST CRUD。Phase 25。"""
+"""/me/memories REST CRUD。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def client_with_token(
 ) -> Iterator[tuple[TestClient, str, Path, str]]:
     """tmp ORION_USERS_DIR + DB 起 in-memory + 註冊登入拿 token。
 
-    回 (client, token, users_root, user_id)。Phase 29 後 user fs 目錄 key
+    回 (client, token, users_root, user_id)。後 user fs 目錄 key
     是 users.id(UUID)而非 username,單測比對路徑時用 login response 的
     user_id,不可硬碼 "alice"。
     """

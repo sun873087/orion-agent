@@ -176,7 +176,7 @@ export default {
   'input.hero.title': '來把待辦清掉一個吧',
   'input.hero.subtitle': '了解如何安全使用 Orion。',
 
-  // Quick prompts(Phase 31-P)— empty state 試試看範例
+  // Quick prompts— empty state 試試看範例
   'quickPrompt.explore.label': '🔍 探索本機環境',
   'quickPrompt.explore.hint': '看 Bash / Read / Glob 工具能做什麼',
   'quickPrompt.explore.text': '列出我家目錄(~)下最近改過的 5 個資料夾,各說一句作用',
@@ -338,7 +338,7 @@ export default {
   'schedule.error.payloadRequired': '請填寫要執行的技能或 prompt 內容',
   'schedule.error.cronInvalid': 'Cron 表達式格式錯誤 — 需要 5 個欄位(分 時 日 月 週)',
 
-  // Plan Mode(Phase 31-J)
+  // Plan Mode
   'plan.banner.active': 'Plan Mode 進行中 — 只允許 Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion',
   'plan.banner.awaiting': '計畫已提交,等候你批准',
   'plan.modal.title': '審核計畫',
@@ -422,7 +422,7 @@ export default {
   'mcp.field.envHint': '可選,sensitive 也可寫但別 commit',
   'mcp.field.url': 'URL',
   'mcp.field.headers': '標頭(KEY=VALUE,一行一個)',
-  'settings.about.text': 'Orion Cowork · Phase 31。模型與外觀偏好存於 localStorage。MCP 伺服器設定於 ~/.orion/mcp.json。',
+  'settings.about.text': 'Orion Cowork ·。模型與外觀偏好存於 localStorage。MCP 伺服器設定於 ~/.orion/mcp.json。',
 
   // Language names
   'lang.zh-TW': '繁體中文',

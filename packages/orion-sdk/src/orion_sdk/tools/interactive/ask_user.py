@@ -1,4 +1,4 @@
-"""AskUserQuestionTool — Phase 10。對應 TS AskUserQuestionTool。
+"""AskUserQuestionTool。對應 TS AskUserQuestionTool。
 
 讓 agent 在對話中反問 user(選擇題或開放式)。caller 注入 `AskUserCallback`,
 本 tool 把 question 丟出去等回答。
@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 
-_ASK_TIMEOUT_S = 300.0  # 5 min
+_ASK_TIMEOUT_S = 300.0 # 5 min
 
 
 # ─── Question 結構 ──────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def make_stdin_asker() -> AskUserCallback:
                 if options:
                     for i, opt in enumerate(options, 1):
                         label = opt.get("label", "?") if isinstance(opt, dict) else str(opt)
-                        print(f"  {i}. {label}", file=sys.stderr, flush=True)
+                        print(f" {i}. {label}", file=sys.stderr, flush=True)
                     print("(enter number or label)", file=sys.stderr, flush=True)
                 else:
                     print("(open-ended — type your answer)", file=sys.stderr, flush=True)
@@ -196,7 +196,7 @@ class AskUserQuestionTool:
     async def call(
         self,
         input: AskUserQuestionInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         if self.asker is None:
             yield ErrorEvent(
@@ -210,7 +210,7 @@ class AskUserQuestionTool:
         serialized = [q.model_dump() for q in input.questions]
         try:
             answers = await self.asker(serialized)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"asker failed: {type(e).__name__}: {e}")
             return
 
@@ -222,14 +222,14 @@ class AskUserQuestionTool:
 
         lines = ["User answers:"]
         for q, a in answers.items():
-            lines.append(f"  - {q!r}: {a!r}")
+            lines.append(f" - {q!r}: {a!r}")
         yield TextEvent(text="\n".join(lines))
 
-    def is_concurrency_safe(self, input: AskUserQuestionInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: AskUserQuestionInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: AskUserQuestionInput) -> bool:  # noqa: ARG002
-        return True  # 不改 fs / state
+    def is_read_only(self, input: AskUserQuestionInput) -> bool: # noqa: ARG002
+        return True # 不改 fs / state
 
     def max_result_size_chars(self) -> int | float:
         return 5_000

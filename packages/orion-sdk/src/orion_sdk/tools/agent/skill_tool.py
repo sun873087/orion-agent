@@ -1,6 +1,6 @@
 """SkillTool — 載入 skill(markdown 模板)。
 
-Phase 8 改造:從 frontmatter loader 取(含內建 + ~/.orion/skills + .orion/skills),
+改造:從 frontmatter loader 取(含內建 + ~/.orion/skills + .orion/skills),
 而非直接讀檔。對外 schema 不變(skill_name 空 = 列出;有名稱 = 回該 skill 內容)。
 
 skill 目錄可由 ORION_SKILLS_DIR 環境變數覆蓋(預設 ~/.orion/skills)。
@@ -67,7 +67,7 @@ class SkillTool:
             lines = ["Available skills:"]
             for s in skills:
                 desc = f" — {s.description}" if s.description else ""
-                lines.append(f"  - {s.name}{desc}")
+                lines.append(f" - {s.name}{desc}")
             yield TextEvent(text="\n".join(lines))
             return
 
@@ -96,10 +96,10 @@ class SkillTool:
             out_lines.append(args)
         yield TextEvent(text="\n".join(out_lines))
 
-    def is_concurrency_safe(self, input: SkillInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: SkillInput) -> bool: # noqa: ARG002
         return True
 
-    def is_read_only(self, input: SkillInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: SkillInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

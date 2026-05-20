@@ -1,7 +1,7 @@
-"""Image input — Phase 11。
+"""Image input。
 
 純標準庫 helpers(不依賴 PIL):base64 encode、size limit、副檔名 → media_type。
-壓縮(超過 5 MB / 2048px)留 Phase 11c 加 Pillow。
+壓縮(超過 5 MB / 2048px)留 加 Pillow。
 
 Anthropic vision API 接受 base64 source(無 size hard limit,但建議 < 5MB / 8000px),
 本檔提供 size 警告但不強制壓縮。
@@ -24,7 +24,7 @@ _EXT_TO_MEDIA: dict[str, str] = {
 }
 
 
-_MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB(警告 threshold)
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024 # 5 MB(警告 threshold)
 
 
 class ImageTooLargeError(ValueError):

@@ -156,7 +156,7 @@ async def session_cost(
     user_id: Annotated[str, Depends(current_user)],
     sm: Annotated[SessionManager, Depends(get_session_manager)],
 ) -> dict[str, object]:
-    """Phase 9:回該 session 的 token / cost 摘要。"""
+    """回該 session 的 token / cost 摘要。"""
     conv = await sm.get(user_id, session_id)
     if conv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")

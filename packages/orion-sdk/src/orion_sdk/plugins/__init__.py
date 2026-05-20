@@ -1,4 +1,4 @@
-"""Plugins package — Phase 8。
+"""Plugins package。
 
 Plugin 一鍵安裝多種延伸:skill + hook + MCP server。`plugin.json` 描述 manifest。
 

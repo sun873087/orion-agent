@@ -1,4 +1,4 @@
-"""File state cache — Phase 12。對應 TS Claude Code `src/utils/fileStateCache.ts`。
+"""File state cache。對應 TS Claude Code `src/utils/fileStateCache.ts`。
 
 用途:Edit / Write 工具強制要求「先 Read 過該檔」,而且讀後檔案沒被外部修改。
 否則模型可能基於過時內容做 edit → 資料毀損 / silent overwrite。
@@ -6,7 +6,7 @@
 設計:
 - per-Conversation(放在 AgentContext.file_state_cache)
 - 只記 mtime + size — 80/20:常見變動會抓到,輕微 touch 而已可能誤判,但成本極低
-- (Phase 12 不算 hash;若 production 證明 mtime/size 不夠精準,Phase 12b 改進)
+- (不算 hash;若 production 證明 mtime/size 不夠精準 改進)
 - 不限制 read 次數,只關心「最後一次 read 後是否被外部改動」
 """
 
@@ -109,7 +109,7 @@ def require_fresh_read(
         str — 該訊息字串就是要回給模型的錯誤(尚未 Read / Read 後被外部改過)
     """
     if cache is None:
-        return None  # 沒啟用 cache → 不強制(向後相容)
+        return None # 沒啟用 cache → 不強制(向後相容)
     if not cache.has_been_read(path):
         return (
             f"Must Read {path} before editing or writing — the model needs to "

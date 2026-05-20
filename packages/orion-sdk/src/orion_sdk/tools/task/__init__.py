@@ -1,4 +1,4 @@
-"""Task tools — Phase 10。背景任務(含 6 個 tool + 共用 runner)。"""
+"""Task tools。背景任務(含 6 個 tool + 共用 runner)。"""
 
 from __future__ import annotations
 

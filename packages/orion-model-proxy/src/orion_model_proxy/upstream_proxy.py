@@ -1,7 +1,7 @@
-"""Transparent reverse proxy 給外部 SDK 用 — Phase 31-X.3。
+"""Transparent reverse proxy 給外部 SDK 用。
 
 兩條對應路徑:
-    /openai/{path:path}    → https://api.openai.com/{path}
+    /openai/{path:path} → https://api.openai.com/{path}
     /anthropic/{path:path} → https://api.anthropic.com/{path}
 
 外部 client(OpenAI / Anthropic SDK / curl / LangChain / 任何用 OpenAI 或
@@ -35,14 +35,14 @@ _log = logging.getLogger(__name__)
 _HOP_BY_HOP_REQ = frozenset({
     "host", "connection", "keep-alive", "proxy-connection",
     "te", "trailer", "transfer-encoding", "upgrade",
-    "authorization", "x-api-key",  # 永遠改寫(換 proxy 的 key)
-    "content-length",  # httpx 會重算
+    "authorization", "x-api-key", # 永遠改寫(換 proxy 的 key)
+    "content-length", # httpx 會重算
 })
 
 _HOP_BY_HOP_RESP = frozenset({
     "connection", "keep-alive", "proxy-connection",
     "te", "trailer", "transfer-encoding", "upgrade",
-    "content-encoding", "content-length",  # httpx 已 decode
+    "content-encoding", "content-length", # httpx 已 decode
 })
 
 
@@ -74,7 +74,7 @@ async def reverse_proxy(
     provider: str,
 ) -> StreamingResponse:
     """Transparent reverse proxy:把 req 完整 forward 給 upstream,response
-    streaming 透回。Phase X.2 加 tee:邊轉發邊累積 response bytes,結束時 parse
+    streaming 透回。2 加 tee:邊轉發邊累積 response bytes,結束時 parse
     usage → fire-and-forget log。
 
     Args:

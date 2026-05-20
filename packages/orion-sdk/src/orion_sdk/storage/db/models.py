@@ -1,7 +1,7 @@
 """SQLAlchemy 2.0 ORM models。
 
-Phase 7 範圍:User / Session / Message。Phase 8+ 加 PluginInstall / Hook / etc.
-Phase 13 加 UserPreference(custom instructions / timezone)+ ConversationMetadata
+範圍:User / Session / Message。+ 加 PluginInstall / Hook / etc.
+加 UserPreference(custom instructions / timezone)+ ConversationMetadata
 (per-session title / custom instructions)。
 
 設計:
@@ -93,9 +93,9 @@ class Session(Base):
 
 
 class UserSetting(Base):
-    """Phase 14:per-user 通用 settings(JSON 值 + 樂觀鎖 version)。
+    """per-user 通用 settings(JSON 值 + 樂觀鎖 version)。
 
-    跟 `UserPreference`(Phase 13)分開:UserPreference 是 schema-typed 欄位
+    跟 `UserPreference`分開:UserPreference 是 schema-typed 欄位
     (custom_instructions / timezone / output_style 各自欄),UserSetting 是
     自由 key/value blob,給前端任意設定值用(model 偏好 / UI 偏好 / etc.)。
 
@@ -128,10 +128,10 @@ class UserSetting(Base):
 
 
 class UserPreference(Base):
-    """Phase 13:per-user 偏好(custom instructions / timezone / 等)。
+    """per-user 偏好(custom instructions / timezone / 等)。
 
     一個 user 一筆(`user_id` 是 PK + FK)。custom_instructions 對應 ChatGPT 的
-    「About me / How I want help」概念,Phase 4 system prompt 組裝時會加進去。
+    「About me / How I want help」概念 system prompt 組裝時會加進去。
     """
 
     __tablename__ = "user_preferences"
@@ -144,7 +144,7 @@ class UserPreference(Base):
     custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     output_style: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    """目前選用的 output style 名稱(對應 Phase 13 output_styles loader)。"""
+    """目前選用的 output style 名稱(對應 output_styles loader)。"""
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now,
@@ -152,10 +152,10 @@ class UserPreference(Base):
 
 
 class ConversationMetadata(Base):
-    """Phase 13:per-conversation metadata(title / custom instructions)。
+    """per-conversation metadata(title / custom instructions)。
 
     對應 ChatGPT 的「Custom Instructions for this chat」。session_id 為 PK + FK。
-    title 由 side_query 自動產生(Phase 12),也可以 user 手動改。
+    title 由 side_query 自動產生,也可以 user 手動改。
     """
 
     __tablename__ = "conversation_metadata"

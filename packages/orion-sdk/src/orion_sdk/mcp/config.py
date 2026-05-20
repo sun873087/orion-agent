@@ -2,9 +2,9 @@
 
 對應 spec § 5 config.py。
 
-支援兩種 transport(Phase 5 範圍):
+支援兩種 transport(範圍):
 - **stdio**:本機 subprocess,主流;`{type: "stdio", command: "...", args: [...]}`
-- **http**:遠端 HTTP server;`{type: "http", url: "..."}`(Phase 5 透過 mcp SDK 直接,
+- **http**:遠端 HTTP server;`{type: "http", url: "..."}`(透過 mcp SDK 直接,
   不額外手刻;config 結構備好)
 
 讀取優先順序(後者覆蓋前者同 server name):
@@ -119,8 +119,8 @@ def load_mcp_config(
                 parsed[name] = StdioMcpConfig.model_validate(raw)
             elif t == "http":
                 parsed[name] = HttpMcpConfig.model_validate(raw)
-            # 其他 type 忽略(Phase 5 範圍外)
-        except Exception:  # noqa: BLE001 — 個別 server 設定壞不該炸全部
+            # 其他 type 忽略(範圍外)
+        except Exception: # noqa: BLE001 — 個別 server 設定壞不該炸全部
             continue
 
     return parsed

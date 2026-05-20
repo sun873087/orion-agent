@@ -1,4 +1,4 @@
-"""OTel 切點包裝 — Phase 9。
+"""OTel 切點包裝。
 
 3 個 ctx manager:
 - `trace_turn(session_id, user_id)` — Conversation.send 入口

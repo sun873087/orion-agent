@@ -1,9 +1,9 @@
-"""JWT auth — Phase 29 之後:`sub` 一律為 user.id(UUID),`username` 走獨立 claim。
+"""JWT auth 之後:`sub` 一律為 user.id(UUID),`username` 走獨立 claim。
 
 歷史:
-- Phase 6 dev mode 直接把 username 放 sub。
-- Phase 7 加 DB-backed login 但仍維持 sub=username。
-- Phase 29 把 sub 改回 user.id,讓 schema 的 FK(指 users.id)真的對得起來。
+- dev mode 直接把 username 放 sub。
+- 加 DB-backed login 但仍維持 sub=username。
+- 把 sub 改回 user.id,讓 schema 的 FK(指 users.id)真的對得起來。
   Dev fallback(無 DB)用 uuid5(NAMESPACE_DNS, username) deterministic 算 user_id,
   保證跨重啟 / 跨機器一致(同 username 永遠拿到同 uuid)。
 
@@ -12,7 +12,7 @@ Secret:
 - 沒設 → 起 server 時自動產 random(restart 後失效,只給 dev)
 
 Token rotation:
-- 新 token 必含 `username` claim;舊 Phase 6/7 token 沒這欄 → `verify_token` 一律 401。
+- 新 token 必含 `username` claim;舊/7 token 沒這欄 → `verify_token` 一律 401。
   等同強制所有 user 重 login(plan §3.4 的 token rotation 路徑 (b))。
 """
 
@@ -39,9 +39,9 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     user_id: str
-    """user.id(UUID 字串)— Phase 29 後就是 DB 的 PK 而非 username。"""
+    """user.id(UUID 字串) 後就是 DB 的 PK 而非 username。"""
     username: str
-    expires_at: str  # ISO datetime
+    expires_at: str # ISO datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +102,7 @@ def issue_token(
 def verify_token_full(token: str) -> Identity:
     """驗 JWT 並回 Identity(user_id + username)。
 
-    缺 `username` claim → InvalidTokenError(舊版 Phase 6/7 token 被拒,token rotation
+    缺 `username` claim → InvalidTokenError(舊版/7 token 被拒,token rotation
     透過 schema 升級實作,不必換 secret)。
     """
     payload: dict[str, Any] = jwt.decode(
@@ -113,7 +113,7 @@ def verify_token_full(token: str) -> Identity:
         raise jwt.InvalidTokenError("missing sub in token")
     username = payload.get("username")
     if not isinstance(username, str) or not username:
-        # 舊版 token(Phase 6/7,sub=username 沒 username claim)— 強制重 login
+        # 舊版 token(/7,sub=username 沒 username claim)— 強制重 login
         raise jwt.InvalidTokenError(
             "token missing 'username' claim — please re-login (token format upgraded)"
         )

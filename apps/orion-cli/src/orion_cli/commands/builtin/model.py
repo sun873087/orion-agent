@@ -1,12 +1,12 @@
 """/model — 切換 Conversation 用的 LLM model(同 provider)。
 
-對應 TS commands/model/。Phase 11 範圍只支援同 provider 內換 model;換 provider
-要重建 Conversation(留 Phase 11c)。
+對應 TS commands/model/。範圍只支援同 provider 內換 model;換 provider
+要重建 Conversation(留)。
 
 用法:
-    /model                    # 顯示當前 model
-    /model claude-haiku-4-5   # 切換到 haiku
-    /model list               # 列已知 model
+    /model # 顯示當前 model
+    /model claude-haiku-4-5 # 切換到 haiku
+    /model list # 列已知 model
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class ModelCommand:
     async def execute(
         self,
         args: str,
-        ctx: Any,  # noqa: ARG002
+        ctx: Any, # noqa: ARG002
         conversation: Any,
     ) -> CommandResult:
         provider = getattr(conversation, "provider", None)
@@ -52,7 +52,7 @@ class ModelCommand:
         if token == "list":
             lines = ["Known models:"]
             for m in _KNOWN_MODELS:
-                marker = " *" if m == provider.model else "  "
+                marker = " *" if m == provider.model else " "
                 lines.append(f"{marker} {m}")
             return CommandResult(text="\n".join(lines))
 

@@ -1,4 +1,4 @@
-"""Permission rule persistence。Phase 13。"""
+"""Permission rule persistence。"""
 
 from __future__ import annotations
 

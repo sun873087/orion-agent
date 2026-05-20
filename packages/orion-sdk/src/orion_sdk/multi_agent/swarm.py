@@ -1,4 +1,4 @@
-"""SwarmRunner(peer-to-peer)pattern。Phase 15。
+"""SwarmRunner(peer-to-peer)pattern。
 
 對應 TS Claude Code `src/utils/swarm/`。
 
@@ -196,7 +196,7 @@ class SwarmRunner:
         finally:
             # 一個 agent 退出 → 遞減 active counter;最後一個離開時 close bus
             await self._finish_agent()
-            _ = log  # for typing
+            _ = log # for typing
 
     async def _finish_agent(self) -> None:
         """每個 _run_one 結束都呼一次。歸 0 時 close bus(讓其他 agent 的
@@ -238,7 +238,7 @@ class SwarmRunner:
                     chunks.append(ev.text)
                 elif isinstance(ev, MessageStopEvent):
                     break
-        except Exception as e:  # noqa: BLE001 — 單 agent 失敗不該拖垮整個 swarm
+        except Exception as e: # noqa: BLE001 — 單 agent 失敗不該拖垮整個 swarm
             logger.warning(
                 "swarm agent %s turn failed: %s", agent.name, e,
             )
@@ -279,7 +279,7 @@ class SwarmRunner:
             if target not in agent_names:
                 continue
             if target == sender:
-                continue  # 不對自己 @
+                continue # 不對自己 @
 
             msg = PeerMessage(
                 from_agent=sender,

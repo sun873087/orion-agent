@@ -13,7 +13,7 @@ class Continue:
     """要繼續(剛執行完工具,結果已回填,該再請求模型)。"""
 
     reason: str
-    """例:'tool_results' / 'initial' / 'auto_compact'(Phase 3)。"""
+    """例:'tool_results' / 'initial' / 'auto_compact'。"""
 
 
 @dataclass

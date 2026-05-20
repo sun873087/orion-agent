@@ -1,4 +1,4 @@
-"""Phase X.1 — token gen / hash / DB lookup / cache。"""
+"""token gen / hash / DB lookup / cache。"""
 
 from __future__ import annotations
 
@@ -109,14 +109,14 @@ async def test_revoked_key_blocked(proxy_db) -> None:
                 token_prefix=prefix_for_display(token),
                 label=None,
                 created_at=now,
-                revoked_at=now,  # 已 revoked
+                revoked_at=now, # 已 revoked
             )
         )
         await s.commit()
 
     async with factory() as s:
         p = await _lookup_cached_or_db(s, th)
-    assert p is None  # revoked → 不認
+    assert p is None # revoked → 不認
 
 
 @pytest.mark.asyncio

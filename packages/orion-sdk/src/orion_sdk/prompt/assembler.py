@@ -150,7 +150,7 @@ async def fetch_system_prompt_parts(
     session_guidance_text = session_guidance_section(session_guidance)
     mcp_text = mcp_instructions_section(mcp_manager)
 
-    # Phase 13:Web chat 的 custom instructions(已從 DB 拉好)
+    # Web chat 的 custom instructions(已從 DB 拉好)
     custom_inst_text = ""
     if custom_instructions_user or custom_instructions_conversation:
         from orion_sdk.prompt.instructions import (

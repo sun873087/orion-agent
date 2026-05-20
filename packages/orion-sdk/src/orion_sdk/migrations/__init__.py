@@ -1,4 +1,4 @@
-"""Settings migrations。Phase 13。
+"""Settings migrations。
 
 對應 TS Claude Code `src/migrations/`。等冪、版本化、可回滾。
 

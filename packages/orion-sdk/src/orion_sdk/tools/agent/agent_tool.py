@@ -2,7 +2,7 @@
 
 對應 TS Claude Code `src/tools/AgentTool/`。
 
-Phase 1 設計:
+設計:
 - 共用 parent 的 LLMProvider(省 client config 重建)
 - 獨立 AgentContext(獨立 abort_event、token_budget、sub_agent_depth+1)
 - child_tools 由 caller 傳入(通常是不含 AgentTool 自己)
@@ -61,9 +61,9 @@ class AgentTool:
         # 過濾掉自己,防止 child_tools 含 AgentTool 造成 deeper spawn
         self.child_tools = [t for t in child_tools if t.name != self.name]
         self.max_child_turns = max_child_turns
-        # Phase 8:parent 的 hook registry(用來 fire SubagentStart),子 agent 自己不繼承
+        # parent 的 hook registry(用來 fire SubagentStart),子 agent 自己不繼承
         self.parent_hooks = parent_hooks
-        # Phase 9:給子 agent 新 sandbox 的 factory(同步 / async 都吃)。
+        # 給子 agent 新 sandbox 的 factory(同步 / async 都吃)。
         # None → 子共用父 sandbox(若父有);否則無 sandbox。
         self.sandbox_factory = sandbox_factory
 
@@ -78,7 +78,7 @@ class AgentTool:
             )
             return
 
-        # Phase 12:走 services.forked_agent 統一 fork 入口(cache-safe params 抽象)
+        # 走 services.forked_agent 統一 fork 入口(cache-safe params 抽象)
         from orion_sdk.services.forked_agent import (
             CacheSafeParams,
             run_forked_agent,
@@ -87,10 +87,10 @@ class AgentTool:
         cache_safe = CacheSafeParams.from_parts(
             system_prompt=_SUB_AGENT_SYSTEM_PROMPT,
             tools=self.child_tools,
-            messages=[],  # 子 agent 從空對話起跑(獨立 system + 自己的 task）
+            messages=[], # 子 agent 從空對話起跑(獨立 system + 自己的 task）
         )
 
-        # Phase 8:SubagentStart hook 仍在 parent registry 上 fire(forked_agent 內部不繼承)
+        # SubagentStart hook 仍在 parent registry 上 fire(forked_agent 內部不繼承)
         new_session_str: str | None = None
         if self.parent_hooks is not None:
             from uuid import uuid4
@@ -119,12 +119,12 @@ class AgentTool:
                 can_use_tool=always_allow,
                 max_turns=self.max_child_turns,
                 fork_label="agent_tool",
-                sandbox_factory=self.sandbox_factory,  # type: ignore[arg-type]
+                sandbox_factory=self.sandbox_factory, # type: ignore[arg-type]
                 inherit_sandbox=(
                     self.sandbox_factory is None and ctx.sandbox_backend is not None
                 ),
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
             return
 
@@ -134,11 +134,11 @@ class AgentTool:
         else:
             yield TextEvent(text=final_text)
 
-    def is_concurrency_safe(self, input: AgentToolInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: AgentToolInput) -> bool: # noqa: ARG002
         # 子 agent 內部會跑工具;為避免複雜資源競爭,本 tool 不並發
         return False
 
-    def is_read_only(self, input: AgentToolInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: AgentToolInput) -> bool: # noqa: ARG002
         # 子 agent 可能 write/edit/bash,保守 False
         return False
 

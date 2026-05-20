@@ -1,4 +1,4 @@
-"""EnterPlanMode / ExitPlanMode 工具測試。Phase 12。"""
+"""EnterPlanMode / ExitPlanMode 工具測試。"""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ async def test_exit_with_empty_plan_errors(
     ctx = AgentContext()
     [_ async for _ in EnterPlanModeTool().call(EnterPlanModeInput(), ctx)]
     events = [
-        e async for e in ExitPlanModeTool().call(ExitPlanModeInput(plan="   "), ctx)
+        e async for e in ExitPlanModeTool().call(ExitPlanModeInput(plan=" "), ctx)
     ]
     assert isinstance(events[0], ErrorEvent)
     assert "empty" in events[0].message.lower()

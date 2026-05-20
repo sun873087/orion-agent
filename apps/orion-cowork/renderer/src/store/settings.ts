@@ -2,7 +2,7 @@
  * Settings store — model 選擇 + 主題 + UI 偏好。
  *
  * Persistence:localStorage(rendererprocess 的 lightweight 持久化)。
- * 將來 Phase 31-D 接 sidecar keyring 後,API key 等敏感資料走 sidecar 不走這。
+ * 將來 接 sidecar keyring 後,API key 等敏感資料走 sidecar 不走這。
  */
 
 import { create } from 'zustand'
@@ -29,8 +29,8 @@ export type OpenAiSttModel =
   | 'gpt-4o-transcribe'
   | 'gpt-4o-mini-transcribe'
 
-/** TTS provider 偏好(Phase 31-T)。'off' = 完全停用按鈕,'web' = Web Speech API
- *  瀏覽器內建(免費),'openai' = cloud /audio/speech。 */
+/** TTS provider 偏好。'off' = 完全停用按鈕,'web' = Web Speech API
+ * 瀏覽器內建(免費),'openai' = cloud /audio/speech。 */
 export type TtsProvider = 'off' | 'web' | 'openai'
 export type OpenAiTtsModel = 'tts-1' | 'tts-1-hd'
 export type OpenAiTtsVoice = 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer'
@@ -49,7 +49,7 @@ export type Provider = {
   models: ModelEntry[]
   api_key_configured: boolean
   /** True = 走 proxy(沒實際 ping 過 / 沒驗證 token / upstream 可能 down)。
-   *  UI 顯⚠ 黃徽章而非綠 ✓,提示「optimistic configured」。 */
+   * UI 顯⚠ 黃徽章而非綠 ✓,提示「optimistic configured」。 */
   via_proxy?: boolean
   /** 動態 provider — models 是空 catalog,要 caller 跑 RPC(如 ollama.list_models)拿 */
   dynamic?: boolean
@@ -81,7 +81,7 @@ type SettingsState = {
   // Ephemeral(load from sidecar on init)
   providers: Provider[]
   catalogLoaded: boolean
-  /** Ollama 動態 model list + daemon 狀態(Phase 31-L) */
+  /** Ollama 動態 model list + daemon 狀態 */
   ollama: OllamaState
   refreshOllama: () => Promise<void>
   settingsOpen: boolean
@@ -110,16 +110,16 @@ type SettingsState = {
   setSttProvider: (p: SttProvider) => void
   openaiSttModel: OpenAiSttModel
 
-  /** TTS 設定(Phase 31-T)。 */
+  /** TTS 設定。 */
   ttsProvider: TtsProvider
   setTtsProvider: (p: TtsProvider) => void
   ttsModel: OpenAiTtsModel
   setTtsModel: (m: OpenAiTtsModel) => void
   ttsVoice: OpenAiTtsVoice
   setTtsVoice: (v: OpenAiTtsVoice) => void
-  ttsSpeed: number  // 0.25 ~ 4.0
+  ttsSpeed: number // 0.25 ~ 4.0
   setTtsSpeed: (v: number) => void
-  ttsAutoplay: boolean  // assistant 訊息 streaming 結束自動念
+  ttsAutoplay: boolean // assistant 訊息 streaming 結束自動念
   setTtsAutoplay: (v: boolean) => void
   setOpenaiSttModel: (m: OpenAiSttModel) => void
   setCatalog: (providers: Provider[]) => void
@@ -139,24 +139,24 @@ type SettingsState = {
   setAutoCompactEnabled: (v: boolean) => void
   setAutoCompactThreshold: (v: number) => void
 
-  /** 同時 in-flight 的 conversation 上限(Phase 31-M)— 避免一次 spawn N 個
-   *  session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
+  /** 同時 in-flight 的 conversation 上限— 避免一次 spawn N 個
+   * session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
   maxConcurrentSessions: number
   setMaxConcurrentSessions: (v: number) => void
 
   /** 新 session 預設 budget cap(USD)— 累積 cost 超過自動 abort + 顯 banner。
-   *  Phase 31-Q。0 = 不設限(預設,避免初次用就被擋)。Per-session 仍可在
-   *  RightSidebar 各別調整;這只是新建 session 帶入的 default。 */
+   *。0 = 不設限(預設,避免初次用就被擋)。Per-session 仍可在
+   * RightSidebar 各別調整;這只是新建 session 帶入的 default。 */
   defaultBudgetUsd: number
   setDefaultBudgetUsd: (v: number) => void
 
-  /** Fork tree 已摺起的 parent session_id list(Phase 31-S 改 collapse 功能)。
-   *  存 array 方便 persist。Sidebar render 時轉 Set 用。空 = 全展開(預設)。 */
+  /** Fork tree 已摺起的 parent session_id list(改 collapse 功能)。
+   * 存 array 方便 persist。Sidebar render 時轉 Set 用。空 = 全展開(預設)。 */
   collapsedForkParents: string[]
   toggleForkCollapse: (sessionId: string) => void
 
   /** Compact 摘要要用的 (provider, model) — 通常用便宜 model 省 cost。
-   *  null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-5-mini)。 */
+   * null = 跟 chat 同一個 model(預設便宜:Anthropic→Haiku、OpenAI→gpt-5-mini)。 */
   compactSummaryProvider: string | null
   compactSummaryModel: string | null
   setCompactSummary: (provider: string | null, model: string | null) => void

@@ -1,4 +1,4 @@
-"""Migration framework + 三個範例 migrations。Phase 13。"""
+"""Migration framework + 三個範例 migrations。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_idempotent_double_apply() -> None:
     settings: dict[str, object] = {}
     s1, _ = runner.migrate(settings)
     s2, applied = runner.migrate(s1)
-    assert applied == []  # 第二次跑空
+    assert applied == [] # 第二次跑空
     assert s2 == s1
 
 

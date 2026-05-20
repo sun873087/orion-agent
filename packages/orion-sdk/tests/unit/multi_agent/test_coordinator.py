@@ -1,4 +1,4 @@
-"""Coordinator — Phase 15。"""
+"""Coordinator。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ async def test_dispatch_three_workers_parallel() -> None:
     ])
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
         cache_safe_params=_cs(),
     )
     a1 = TaskAssignment(description="task A")
@@ -51,7 +51,7 @@ async def test_dispatch_three_workers_parallel() -> None:
 async def test_dispatch_empty_returns_empty() -> None:
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=MockProvider(),  # type: ignore[arg-type]
+        provider=MockProvider(), # type: ignore[arg-type]
         cache_safe_params=_cs(),
     )
     result = await coord.dispatch([])
@@ -62,7 +62,7 @@ async def test_dispatch_empty_returns_empty() -> None:
 async def test_dispatch_too_many_raises() -> None:
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=MockProvider(),  # type: ignore[arg-type]
+        provider=MockProvider(), # type: ignore[arg-type]
         cache_safe_params=_cs(),
         max_workers=2,
     )
@@ -85,7 +85,7 @@ async def test_worker_failure_isolated(monkeypatch: pytest.MonkeyPatch) -> None:
     real_run = None
     call_count = {"n": 0}
 
-    async def fake_run_forked_agent(**kwargs):  # type: ignore[no-untyped-def]
+    async def fake_run_forked_agent(**kwargs): # type: ignore[no-untyped-def]
         call_count["n"] += 1
         if call_count["n"] == 2:
             raise RuntimeError("worker exploded")
@@ -101,7 +101,7 @@ async def test_worker_failure_isolated(monkeypatch: pytest.MonkeyPatch) -> None:
 
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
         cache_safe_params=_cs(),
     )
     a1 = TaskAssignment(description="A")
@@ -128,7 +128,7 @@ async def test_dispatch_aggregates_usage() -> None:
     ])
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
         cache_safe_params=_cs(),
     )
     result = await coord.dispatch([
@@ -146,7 +146,7 @@ async def test_summary_provider_optional() -> None:
     provider = MockProvider(turns=[MockTurn(text="done")])
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
         cache_safe_params=_cs(),
         summary_provider=None,
     )
@@ -163,9 +163,9 @@ async def test_summary_provider_invoked() -> None:
     ])
     coord = Coordinator(
         ctx=AgentContext(),
-        provider=main_provider,  # type: ignore[arg-type]
+        provider=main_provider, # type: ignore[arg-type]
         cache_safe_params=_cs(),
-        summary_provider=summary_provider,  # type: ignore[arg-type]
+        summary_provider=summary_provider, # type: ignore[arg-type]
     )
     result = await coord.dispatch([TaskAssignment(description="x")])
     assert "Worker did" in result.reports[0].summary

@@ -1,4 +1,4 @@
-"""Phase 31-H cross-machine resume — Conversation.resume(db_engine=...)。
+"""H cross-machine resume — Conversation.resume(db_engine=...)。
 
 驗證 db_engine 路徑會繞過檔案 transcript,直接從 DB 重建 state_messages。
 模擬「機器 A 跑對話 → DB 同步 → 機器 B 沒有 ~/.orion/sessions/<id>/
@@ -48,7 +48,7 @@ async def db_with_session():
 
 
 async def test_fetch_db_messages_returns_persisted_messages(db_with_session) -> None:
-    """Phase 31-H 基礎:DB 內 message rows 能透過 fetch_db_messages 還原。"""
+    """H 基礎:DB 內 message rows 能透過 fetch_db_messages 還原。"""
     engine, sid = db_with_session
     messages = await fetch_db_messages(sid, engine)
     assert messages is not None

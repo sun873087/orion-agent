@@ -1,4 +1,4 @@
-"""Settings migrations 框架。Phase 13。對應 TS `src/migrations/`。
+"""Settings migrations 框架。對應 TS `src/migrations/`。
 
 設計原則:
   - **等冪**:同 version 跑多次行為一致(已套用就跳)
@@ -65,7 +65,7 @@ class Migration:
     up: MigrationFn
 
     down: MigrationFn | None = None
-    """可選 rollback。Phase 13 不提供 CLI 觸發,只是介面就位。"""
+    """可選 rollback。不提供 CLI 觸發,只是介面就位。"""
 
 
 @dataclass
@@ -128,7 +128,7 @@ class MigrationRunner:
                     version=m.version,
                     description=m.description,
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 log.error(
                     "migration_failed",
                     version=m.version,

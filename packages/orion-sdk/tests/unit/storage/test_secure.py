@@ -1,4 +1,4 @@
-"""SecureStorage backends + factory。Phase 14。"""
+"""SecureStorage backends + factory。"""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ async def test_encrypted_file_master_key_change_returns_none(
     await b1.set("k", "v")
 
     b2 = EncryptedFileBackend(f, master_key=Fernet.generate_key())
-    assert await b2.get("k") is None  # InvalidToken → None
+    assert await b2.get("k") is None # InvalidToken → None
 
 
 @pytest.mark.asyncio
@@ -157,7 +157,7 @@ async def test_keychain_delete(fake_keyring: _FakeKeyring) -> None:
 
 @pytest.mark.asyncio
 async def test_keychain_delete_nonexistent_silent(
-    fake_keyring: _FakeKeyring,  # noqa: ARG001
+    fake_keyring: _FakeKeyring, # noqa: ARG001
 ) -> None:
     b = KeychainBackend(service="test-svc")
     # 不存在,delete 不該 raise
@@ -177,7 +177,7 @@ async def test_keychain_list_keys_via_index(fake_keyring: _FakeKeyring) -> None:
 
 @pytest.mark.asyncio
 async def test_keychain_list_keys_excludes_index_entry(
-    fake_keyring: _FakeKeyring,  # noqa: ARG001
+    fake_keyring: _FakeKeyring, # noqa: ARG001
 ) -> None:
     b = KeychainBackend(service="test-svc")
     await b.set("a", "1")

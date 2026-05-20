@@ -1,6 +1,6 @@
 """Abort 共用 helper — 把 ctx.abort_event 連到 anyio cancel scope。
 
-Phase 16:provider.stream() / long-running tool 在中途即時收到 abort_event 並收手。
+:provider.stream() / long-running tool 在中途即時收到 abort_event 並收手。
 
 Pattern:
     async with abort_aware_scope(ctx) as scope:
@@ -12,7 +12,7 @@ Pattern:
     async with anyio.create_task_group() as tg:
         tg.start_soon(watch_abort, tg.cancel_scope, ctx.abort_event)
         await long_running_op()
-        tg.cancel_scope.cancel()  # 正常結束時取消 watcher
+        tg.cancel_scope.cancel() # 正常結束時取消 watcher
 """
 
 from __future__ import annotations

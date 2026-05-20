@@ -41,7 +41,7 @@ const shellApi = {
     return ipcRenderer.invoke('fs:pathExists', path)
   },
   /** 拿 drag-drop File 的絕對路徑(Electron 32+ 必須走 webUtils,
-   *  舊 file.path API 已 deprecated)。 */
+   * 舊 file.path API 已 deprecated)。 */
   getPathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)
@@ -176,7 +176,7 @@ type BudgetExceededPayload = {
 }
 
 const budgetApi = {
-  /** Session 累積成本超過 cap — renderer 顯 banner + toast(Phase 31-Q)。 */
+  /** Session 累積成本超過 cap — renderer 顯 banner + toast。 */
   onExceeded: (cb: (data: BudgetExceededPayload) => void): (() => void) => {
     const listener = (_: unknown, data: BudgetExceededPayload) => cb(data)
     ipcRenderer.on('budget:exceeded', listener)

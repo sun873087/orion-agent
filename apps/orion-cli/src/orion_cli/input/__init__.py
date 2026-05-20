@@ -1,14 +1,14 @@
-"""Input pipeline — Phase 11。
+"""Input pipeline。
 
 主協調器 `process_user_input`,把 raw input 轉為 Conversation 可消化的事件:
 - slash command → CommandResult / 注入 user message
 - 純文字 + image attachments → ContentBlock list
 
-Phase 11 範圍:
+範圍:
 - ✅ slash registry + 2 內建(/help / /model)
 - ✅ image attachments(base64 → ContentBlock)
-- ✅ 上傳檔附件(Phase 6 WebSocket UserMessageEvent.attachments)
-- ❌ `!shell` 直接執行(SaaS 危險,Phase 11c)
+- ✅ 上傳檔附件(WebSocket UserMessageEvent.attachments)
+- ❌ `!shell` 直接執行(SaaS 危險)
 - ❌ `@file` ref(由 upload 取代)
 """
 

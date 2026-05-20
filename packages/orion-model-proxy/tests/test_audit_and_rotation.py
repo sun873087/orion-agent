@@ -1,4 +1,4 @@
-"""Phase 33-A — audit log + token rotation + sparkline timeseries。"""
+"""audit log + token rotation + sparkline timeseries。"""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ async def test_usage_daily_returns_padded_zeros(proxy_db, admin_token) -> None:
         r = await c.get(f"/admin/users/{uid}/usage/daily?days=7")
         assert r.status_code == 200
         pts = r.json()
-        assert len(pts) == 8  # 7 天 + today
+        assert len(pts) == 8 # 7 天 + today
         assert all(p["cost_usd"] == 0.0 and p["request_count"] == 0 for p in pts)
 
 

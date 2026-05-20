@@ -1,9 +1,9 @@
 /**
- * 全域 TTS 播放器(Phase 31-T)— 同時只允許一則訊息在念,切下一則自動 stop 舊的。
+ * 全域 TTS 播放器— 同時只允許一則訊息在念,切下一則自動 stop 舊的。
  *
  * 兩條 path:
- *   - 'web':window.speechSynthesis(瀏覽器內建,免費,使用系統聲音)
- *   - 'openai':呼 sidecar tts.synthesize → mp3 base64 → new Audio() 播
+ * - 'web':window.speechSynthesis(瀏覽器內建,免費,使用系統聲音)
+ * - 'openai':呼 sidecar tts.synthesize → mp3 base64 → new Audio() 播
  *
  * UI 訂閱透過 subscribe(callback):任何 playing/stopped 變化 callback。
  * Component 用 useSyncExternalStore 包成 hook(避免重複實作)。

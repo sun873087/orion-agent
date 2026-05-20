@@ -22,15 +22,15 @@ interface OrionAgentApi {
 interface OrionDialogApi {
   selectFolder: () => Promise<string | null>
   /** 寫 N 個檔到 {targetDir ?? ~/Downloads}/{bundleName}/ 下,自動 mkdir。
-   *  encoding='utf8' 寫文字、'base64' 寫二進位(decode 後)。
-   *  同名 bundleName 自動加 -1/-2 後綴。回 bundle 完整路徑(失敗回 null)。 */
+   * encoding='utf8' 寫文字、'base64' 寫二進位(decode 後)。
+   * 同名 bundleName 自動加 -1/-2 後綴。回 bundle 完整路徑(失敗回 null)。 */
   saveBundle: (
     bundleName: string,
     files: Array<{ relPath: string; content: string; encoding: 'utf8' | 'base64' }>,
     targetDir?: string,
   ) => Promise<string | null>
   /** 單檔寫入到 {targetDir ?? ~/Downloads}/{filename}。同名加 -1/-2 後綴。
-   *  encoding='utf8' 寫文字、'base64' 寫二進位。回實際寫入完整路徑。 */
+   * encoding='utf8' 寫文字、'base64' 寫二進位。回實際寫入完整路徑。 */
   saveFile: (
     filename: string,
     content: string,
@@ -45,7 +45,7 @@ interface OrionShellApi {
   /** 檢查路徑(檔或資料夾)是否實際存在於檔案系統。 */
   pathExists: (path: string) => Promise<boolean>
   /** 拿 drag-drop File 的絕對路徑(Electron 32+ webUtils 替代 file.path)。
-   *  失敗或拿不到回空字串。 */
+   * 失敗或拿不到回空字串。 */
   getPathForFile: (file: File) => string
 }
 
@@ -93,7 +93,7 @@ interface OrionBudgetExceededPayload {
 }
 
 interface OrionBudgetApi {
-  /** Session 累積成本超過 cap — Phase 31-Q。 */
+  /** Session 累積成本超過 cap。 */
   onExceeded: (cb: (data: OrionBudgetExceededPayload) => void) => () => void
 }
 
@@ -140,11 +140,11 @@ declare global {
     dialog: OrionDialogApi
     shellApi: OrionShellApi
     /** 排程通知通道 — 不用 `scheduler` 因為跟 Chrome 91+ 內建
-     *  `window.scheduler` (Scheduler API) 衝突,contextBridge 會擋。 */
+     * `window.scheduler` (Scheduler API) 衝突,contextBridge 會擋。 */
     schedulerApi: OrionSchedulerApi
-    /** Plan Mode 通知通道(Phase 31-J)。 */
+    /** Plan Mode 通知通道。 */
     planApi: OrionPlanApi
-    /** Budget 通知通道(Phase 31-Q)。 */
+    /** Budget 通知通道。 */
     budgetApi: OrionBudgetApi
     /** Backup / Restore 通道。 */
     backupApi: OrionBackupApi

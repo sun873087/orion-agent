@@ -1,13 +1,13 @@
-"""Memory Layer 4 — per-type soft quota(Phase 31-G)。
+"""Memory Layer 4 — per-type soft quota。
 
 Soft quota:**超量不擋寫入**,僅當作 trigger merge-suggest job 的條件。
 
 預設 quota:
-- user      50  (個人事實/偏好,通常不會多)
-- feedback  100 (規則,累積最快)
-- project   30  (per-project;30 條 decision 通常足夠)
-- reference 50  (外部資源指向,典型不多)
-- (None)    50  (沒分類的)
+- user 50 (個人事實/偏好,通常不會多)
+- feedback 100 (規則,累積最快)
+- project 30 (per-project;30 條 decision 通常足夠)
+- reference 50 (外部資源指向,典型不多)
+- (None) 50 (沒分類的)
 
 可用環境變數覆蓋:
     ORION_MEMORY_QUOTA_USER / FEEDBACK / PROJECT / REFERENCE / DEFAULT

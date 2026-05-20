@@ -1,4 +1,4 @@
-"""Custom instructions(Web chat 模式)。Phase 13。
+"""Custom instructions(Web chat 模式)。
 
 對應 spec § 5.4(取代 TS `utils/claudemd.ts` 的 hierarchy)。Web chat 沒 cwd 概念,
 改用兩層 instructions:

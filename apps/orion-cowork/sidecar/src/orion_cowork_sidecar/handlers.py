@@ -1,6 +1,6 @@
 """RPC method handlers — 連 orion-sdk Conversation。
 
-Phase 31-D 後:對話跨 app restart 保留(本機 SQLite)。
+後:對話跨 app restart 保留(本機 SQLite)。
 ~/.orion/sessions/cowork.db 由 storage.py 管理。
 """
 
@@ -126,7 +126,7 @@ def _walk_workspace(root: Path, skip_dirs: set[str]):
         dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
         for name in filenames:
             if name.startswith("."):
-                continue  # 跳 dotfile(.DS_Store 等)
+                continue # 跳 dotfile(.DS_Store 等)
             yield Path(dirpath) / name
 
 
@@ -156,16 +156,16 @@ _COWORK_PROMPT_BASE = (
     "# Match effort to the request\n"
     "Calibrate how much you do to what was actually asked:\n"
     "- Pure conversational messages (greetings like 'hi', 'thanks', simple "
-    "  chit-chat, single factual questions you can answer from your own "
-    "  knowledge) — JUST REPLY. Do NOT call TodoWrite, AskUserQuestion, web "
-    "  search, or any other tool. Tools are for actual work.\n"
+    " chit-chat, single factual questions you can answer from your own "
+    " knowledge) — JUST REPLY. Do NOT call TodoWrite, AskUserQuestion, web "
+    " search, or any other tool. Tools are for actual work.\n"
     "- Genuine multi-step tasks (2+ distinct actions like 'plan → write → "
-    "  run → verify', 'install dep → generate file → open it') — call "
-    "  `TodoWrite` FIRST with the full plan, then update items as you progress "
-    "  (pending → in_progress → completed). Skip TodoWrite for one-shot work.\n"
+    " run → verify', 'install dep → generate file → open it') — call "
+    " `TodoWrite` FIRST with the full plan, then update items as you progress "
+    " (pending → in_progress → completed). Skip TodoWrite for one-shot work.\n"
     "- Ambiguous requests with clear branching options — use "
-    "  `AskUserQuestion` ONLY when you can't reasonably pick a default. "
-    "  Don't ask just to be polite."
+    " `AskUserQuestion` ONLY when you can't reasonably pick a default. "
+    " Don't ask just to be polite."
 )
 
 
@@ -226,13 +226,13 @@ def _paths_section(workspace_dir: str | None, in_project: bool) -> str:
         ws = workspace_dir.rstrip("/")
         return (
             "\n\n# This chat is inside a project — workspace:\n"
-            f"  `{ws}`\n"
+            f" `{ws}`\n"
             "When the user mentions 'skill / memory / mcp library' or 'this "
             "project's …', use the **project-scoped** paths first:\n"
-            f"- Project skills:        `{ws}/.orion/skills/`\n"
-            f"- Project memory:        `{ws}/.orion/memory/`\n"
-            f"- Project MCP config:    `{ws}/.orion/mcp.json`\n"
-            f"- Project instructions:  `{ws}/.orion/instructions.md`\n"
+            f"- Project skills: `{ws}/.orion/skills/`\n"
+            f"- Project memory: `{ws}/.orion/memory/`\n"
+            f"- Project MCP config: `{ws}/.orion/mcp.json`\n"
+            f"- Project instructions: `{ws}/.orion/instructions.md`\n"
             "Personal libraries still exist at "
             "`~/.orion/users/cowork-local/{skills,memory}/` and "
             "`~/.orion/mcp.json`, but **only use them if the user "
@@ -241,9 +241,9 @@ def _paths_section(workspace_dir: str | None, in_project: bool) -> str:
     return (
         "\n\n# This is a personal chat (not in a project)\n"
         "Use the personal libraries — that's the only scope here:\n"
-        "- Personal skills:  `~/.orion/users/cowork-local/skills/`\n"
-        "- Personal memory:  `~/.orion/users/cowork-local/memory/`\n"
-        "- Personal MCP:     `~/.orion/mcp.json`\n"
+        "- Personal skills: `~/.orion/users/cowork-local/skills/`\n"
+        "- Personal memory: `~/.orion/users/cowork-local/memory/`\n"
+        "- Personal MCP: `~/.orion/mcp.json`\n"
         "- Default workspace `~/.orion/users/cowork-local/workspace/` "
         "(this is the cwd for personal chats; files you create can live here)."
     ) + _SYSTEM_LEVEL_NOTE
@@ -263,7 +263,7 @@ class Handlers:
         self._engine_lock = asyncio.Lock()
         # in-mem cache for fast title-on-first-prompt(避免每 turn 都打 DB select)
         self._title_done: set[str] = set()
-        # Phase 31-D 下:MCP manager(lazy start)
+        # D 下:MCP manager(lazy start)
         self._mcp = CoworkMcpManager()
         self._mcp_started = False
         self._mcp_lock = asyncio.Lock()
@@ -278,7 +278,7 @@ class Handlers:
         # Per-session 當前 permission_mode — turn 開始時寫入,can_use_tool 每次
         # invocation 都讀 live 值,讓 user 中途切 mode 立刻生效。
         self._session_modes: dict[str, str] = {}
-        # Plan Mode(Phase 31-J)— `set_plan_mode(enabled=true)` 設這個 flag,
+        # Plan Mode— `set_plan_mode(enabled=true)` 設這個 flag,
         # 下次 `_build_conversation` 看到就 inject ACTIVE PlanModeState 並清掉。
         # 不直接改 DB 是因為 ACTIVE 需要 plan_id / plan_file_path,只在實際 send
         # 開始時才建。
@@ -313,7 +313,7 @@ class Handlers:
                             f"blobs_written={stats['blobs_written']}",
                             file=sys.stderr, flush=True,
                         )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(
                         f"[storage] migration failed: {e}",
                         file=sys.stderr, flush=True,
@@ -328,25 +328,25 @@ class Handlers:
                             f"({cleanup['bytes_freed'] / 1024:.0f} KB)",
                             file=sys.stderr, flush=True,
                         )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(
                         f"[storage] cleanup failed: {e}",
                         file=sys.stderr, flush=True,
                     )
-                # Plan Mode crash recovery(Phase 31-J)
+                # Plan Mode crash recovery
                 # 啟動時若有 session 卡在 AWAITING_APPROVAL → fire-and-forget
                 # 排程一次 re-emit notification(等 notifier 已注入 + renderer 連上)
                 asyncio.create_task(self._plan_mode_startup_recovery())
                 # Plan file GC — 孤兒 + 30 天舊
                 asyncio.create_task(self._cleanup_orphan_plan_files())
-                # TTS cache GC(Phase 31-T)— 30 天舊 cache 自動清
+                # TTS cache GC— 30 天舊 cache 自動清
                 asyncio.create_task(self._cleanup_tts_cache())
-                # AgentTool default-disabled seeding(Phase 31-K)
+                # AgentTool default-disabled seeding
                 # 首次跑這版時把 "Agent" 加進 disabled_tools — LLM spawn 子 agent
                 # 會放大 token cost,user 自己在 Settings → 工具 開才放手。
                 try:
                     await self._seed_default_disabled_tools()
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(
                         f"[storage] disabled_tools seeding failed: {e}",
                         file=sys.stderr, flush=True,
@@ -355,7 +355,7 @@ class Handlers:
 
     # 版本化的 default-disabled seed — 每條 version 是一次性 additive operation。
     # 將來想再加 default-off 工具,擴一條 vN 就好(已 apply 過的 version 不會 re-run)。
-    _DEFAULT_DISABLED_SEEDS: dict[str, frozenset[str]] = {  # noqa: RUF012
+    _DEFAULT_DISABLED_SEEDS: dict[str, frozenset[str]] = { # noqa: RUF012
         "v1": frozenset({"Agent"}),
         "v2": frozenset({
             # System group(目前只剩 Sleep — autonomous loop 偶爾用,Cowork chat
@@ -402,7 +402,7 @@ class Handlers:
             return
         try:
             rows = await storage.list_awaiting_approval_sessions(self._engine)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             return
         for row in rows:
             await self.notify({
@@ -427,7 +427,7 @@ class Handlers:
             return
         try:
             referenced = await storage.list_referenced_plan_files(self._engine)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             return
         cutoff = time.time() - 30 * 24 * 3600
         deleted = 0
@@ -453,7 +453,7 @@ class Handlers:
         import sys
         try:
             stats = tts_handlers.cleanup_old_tts_cache(days=30)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             print(f"[tts] cache GC failed: {e}", file=sys.stderr, flush=True)
             return
         if stats["deleted"]:
@@ -469,7 +469,7 @@ class Handlers:
             if not self._mcp_started:
                 try:
                     await self._mcp.start()
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     # Start 失敗不該擋 sidecar — 沒 MCP 也能跑 builtin tools
                     pass
                 self._mcp_started = True
@@ -479,7 +479,7 @@ class Handlers:
         """sidecar 退出時清理 scheduler + MCP + browser sessions。"""
         try:
             await self._scheduler.stop()
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
         await self._mcp.shutdown()
         # Close 所有開著的 Chrome instance(若有)
@@ -512,7 +512,7 @@ class Handlers:
             try:
                 await self._scheduler.start()
                 self._scheduler_started = True
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 import sys
                 print(
                     f"[handlers] scheduler start failed: {e}",
@@ -704,8 +704,8 @@ class Handlers:
     ) -> AsyncIterator[dict[str, Any]]:
         provider_name = params.get("provider", "anthropic")
         model = params.get("model", "claude-sonnet-4-6")
-        project_id = params.get("project_id")  # 可選
-        workspace_dir = params.get("workspace_dir")  # 可選
+        project_id = params.get("project_id") # 可選
+        workspace_dir = params.get("workspace_dir") # 可選
         engine = await self.ensure_engine()
         conv, _ext_workspace = await self._build_conversation(
             provider_name=provider_name,
@@ -772,7 +772,7 @@ class Handlers:
                 return
             self._conversations[sid] = conv
 
-        # Budget pre-check(Phase 31-Q)— exceeded flag 已標 + cap 仍存在 → 拒絕
+        # Budget pre-check— exceeded flag 已標 + cap 仍存在 → 拒絕
         # 給 user 看到 banner 提示「加額度或新開 session」。Raise cap 在
         # set_budget RPC 內會 reset flag。
         budget_info = await storage.get_session_budget(engine, sid)
@@ -815,13 +815,13 @@ class Handlers:
             from orion_model.types import ImageBlock
             for i, a in enumerate(raw_attachments):
                 if not isinstance(a, dict):
-                    print(f"[sidecar]   attachment[{i}] dropped: not a dict (got {type(a).__name__})", file=sys.stderr, flush=True)
+                    print(f"[sidecar] attachment[{i}] dropped: not a dict (got {type(a).__name__})", file=sys.stderr, flush=True)
                     continue
                 media_type = a.get("media_type") or "image/png"
                 data = a.get("data")
                 if not isinstance(data, str) or not data:
                     print(
-                        f"[sidecar]   attachment[{i}] dropped: bad data "
+                        f"[sidecar] attachment[{i}] dropped: bad data "
                         f"(type={type(data).__name__}, len={len(data) if isinstance(data,str) else 'N/A'})",
                         file=sys.stderr, flush=True,
                     )
@@ -829,12 +829,12 @@ class Handlers:
                 try:
                     images.append(ImageBlock(media_type=media_type, data=data))
                     print(
-                        f"[sidecar]   attachment[{i}] OK: {media_type} "
+                        f"[sidecar] attachment[{i}] OK: {media_type} "
                         f"{len(data)}b base64",
                         file=sys.stderr, flush=True,
                     )
-                except Exception as e:  # noqa: BLE001
-                    print(f"[sidecar]   attachment[{i}] ImageBlock build failed: {e}", file=sys.stderr, flush=True)
+                except Exception as e: # noqa: BLE001
+                    print(f"[sidecar] attachment[{i}] ImageBlock build failed: {e}", file=sys.stderr, flush=True)
                     continue
         print(f"[sidecar] -> conv.send with {len(images)} images", file=sys.stderr, flush=True)
 
@@ -856,14 +856,14 @@ class Handlers:
         ctx = AgentContext(**ctx_kwargs)
         self._aborts[sid] = ctx
 
-        # ─── Plan Mode wiring(Phase 31-J)──────────────────────────────
+        # ─── Plan Mode wiring──────────────────────────────
         # 三條路:
-        #  (a) `_pending_plan_enter[sid]` 為 True(user 剛點 /plan 開啟)
-        #      → inject 新 ACTIVE state,append 一條 system-style user msg
-        #         告知 LLM 進入 plan mode
-        #  (b) DB 有 active / awaiting_approval state(跨 turn 持續)
-        #      → reconstruct PlanModeState 注入
-        #  (c) AWAITING_APPROVAL:拒絕新 send(等 approve/reject 才放行)
+        # (a) `_pending_plan_enter[sid]` 為 True(user 剛點 /plan 開啟)
+        # → inject 新 ACTIVE state,append 一條 system-style user msg
+        # 告知 LLM 進入 plan mode
+        # (b) DB 有 active / awaiting_approval state(跨 turn 持續)
+        # → reconstruct PlanModeState 注入
+        # (c) AWAITING_APPROVAL:拒絕新 send(等 approve/reject 才放行)
         injected_plan_state: PlanModeState | None = None
         if sid in self._pending_plan_enter:
             from pathlib import Path as _Path
@@ -948,11 +948,11 @@ class Handlers:
         # Mode 指引走 SDK 的 custom_instructions_conversation → system Element 1 → BP 2
         # 1. system Element 0 永遠 byte-identical(_COWORK_PROMPT_BASE 等)
         # 2. system Element 1 含 mode 指引 — 同 mode 連續 turn 都 hit BP 2;
-        #    切 mode 那 turn BP 2 重寫,之後又穩定
+        # 切 mode 那 turn BP 2 重寫,之後又穩定
         # 3. conv.tools byte-identical(AskUserQuestion 永遠在)
         # 4. Mode 行為差異走 asker callback 動態 dispatch:
-        #    - Ask 模式 → 推 ask_user_question frame 等 user reply
-        #    - Act 模式 → auto-decide asker 回個 hint 給 LLM 自己 decide
+        # - Ask 模式 → 推 ask_user_question frame 等 user reply
+        # - Act 模式 → auto-decide asker 回個 hint 給 LLM 自己 decide
         for tool in conv.tools:
             if getattr(tool, "name", None) == "AskUserQuestion":
                 tool.asker = self._build_mode_aware_asker(sid, out_queue)
@@ -982,13 +982,13 @@ class Handlers:
             pre_compact_state_count = len(conv.state_messages)
             try:
                 pre_result = await conv.compact(force=False)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 pre_result = None
                 print(f"[sidecar] auto-compact failed: {e}", file=sys.stderr, flush=True)
             if pre_result is not None and pre_result.was_compacted:
                 # DB soft-delete:把前 N 筆 row 標 compacted_out + append tombstone。
                 # 舊訊息 row 留著,UI scroll 回頭仍看得到(灰化顯示),LLM resume 跳過。
-                # N = 原 state_messages 長度 - (新長度 - 1)  // -1 扣掉 tombstone 本身
+                # N = 原 state_messages 長度 - (新長度 - 1) // -1 扣掉 tombstone 本身
                 kept = pre_result.kept_message_count
                 compacted_count = pre_compact_state_count - (kept - 1)
                 tombstone_msg = conv.state_messages[0]
@@ -998,7 +998,7 @@ class Handlers:
                         compacted_count=compacted_count,
                         tombstone_msg=tombstone_msg,
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(f"[sidecar] auto-compact DB sync failed: {e}", file=sys.stderr, flush=True)
                 # before_count 跟著歸零 — 後續 turn append 對齊新 DB 狀態
                 before_count = len(conv.state_messages)
@@ -1019,7 +1019,7 @@ class Handlers:
                     f = to_rpc_frame(ev)
                     if f is not None:
                         await out_queue.put(f)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 # 解開 anyio/TaskGroup 的 ExceptionGroup 找真實 cause,再 map
                 # 成 user-friendly code + message。Sidecar log 完整 trace,
                 # renderer 只看簡潔訊息(避免 ⚠ {"code":"ExceptionGroup",...} 醜)。
@@ -1036,7 +1036,7 @@ class Handlers:
                     "final": True,
                 })
             finally:
-                await out_queue.put(None)  # sentinel:producer done
+                await out_queue.put(None) # sentinel:producer done
 
         prod_task = asyncio.create_task(_producer())
         try:
@@ -1051,7 +1051,7 @@ class Handlers:
                 prod_task.cancel()
                 try:
                     await prod_task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                except (asyncio.CancelledError, Exception): # noqa: BLE001
                     pass
             # Ask 模式中途斷線 → 把 pending future 全 deny,避免懸吊
             for fut in list(self._approvals.values()):
@@ -1072,25 +1072,25 @@ class Handlers:
             if new_msgs:
                 try:
                     await storage.append_messages(engine, sid, new_msgs)
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     # Persistence 失敗不該炸 sidecar — 之後重 send 還是會嘗試
                     pass
-            # ─── Plan Mode persist + notification(Phase 31-J)──────────
+            # ─── Plan Mode persist + notification──────────
             # Read ctx 上被 tools 修改過的 state,寫回 DB。狀態變化時 emit
             # 對應 notification 讓 renderer 更新 UI。
             try:
                 await self._persist_plan_state_and_notify(sid, ctx)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 print(
                     f"[plan_mode] persist/notify failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
-            # ─── Budget post-check(Phase 31-Q)─────────────────────────
+            # ─── Budget post-check─────────────────────────
             # 累積成本超 cap → 設 exceeded flag + emit notification,renderer
             # 收到後浮 banner 提示。下次 send 會被 pre-check 攔下。
             try:
                 await self._check_budget_and_notify(sid, conv, engine)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 print(
                     f"[budget] check/notify failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
@@ -1115,7 +1115,7 @@ class Handlers:
         """
         AUTO_ALLOW_TOOLS = {"AskUserQuestion"}
 
-        async def _gate(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult:  # noqa: ARG001
+        async def _gate(tool: Any, tool_input: dict[str, Any], ctx: AgentContext) -> PermissionResult: # noqa: ARG001
             tool_name = getattr(tool, "name", type(tool).__name__)
             # ① Policy deny / allow — 每次 reload 拿最新 rule
             policy = perm_mod.load_policy(workspace_dir)
@@ -1228,7 +1228,7 @@ class Handlers:
         catalog = list_stt_catalog()
         env_map = {
             "openai": "OPENAI_API_KEY",
-            "google": "GOOGLE_STT_API_KEY",  # Google STT 沒走 proxy,直連檢查
+            "google": "GOOGLE_STT_API_KEY", # Google STT 沒走 proxy,直連檢查
         }
         # OpenAI 走 proxy 時 client 不必直接有 key。Google 不走 proxy(audio/stt.py
         # 的 _google_base 永遠回真實 https://speech.googleapis.com),維持直連檢查。
@@ -1257,7 +1257,7 @@ class Handlers:
         """讀單一 scope 的 policy。
 
         params: { scope: 'global' | 'project', workspace_dir?: str }
-        回:    { scope, allow: [...], deny: [...] }
+        回: { scope, allow: [...], deny: [...] }
         """
         from pathlib import Path as _P
 
@@ -1273,7 +1273,7 @@ class Handlers:
         ws = _P(ws_raw) if isinstance(ws_raw, str) and ws_raw else None
         try:
             pol = perm_mod.load_scope(scope, ws)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "LOAD_FAILED", "message": str(e)},
@@ -1311,7 +1311,7 @@ class Handlers:
         ws = _P(ws_raw) if isinstance(ws_raw, str) and ws_raw else None
         try:
             perm_mod.save_policy(perm_mod.Policy(allow=allow, deny=deny), scope=scope, workspace_dir=ws)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "SAVE_FAILED", "message": str(e)},
@@ -1368,7 +1368,7 @@ class Handlers:
         pricing = get_pricing(provider, model)
         input_price = pricing.get("input", 0.0)
         output_price = pricing.get("output", 0.0)
-        cache_read_price = pricing.get("cache_read", input_price)  # fallback to input
+        cache_read_price = pricing.get("cache_read", input_price) # fallback to input
         cache_creation_price = pricing.get("cache_creation", input_price)
 
         def _cost(input_t: int, output_t: int, c_read: int, c_creation: int) -> float:
@@ -1506,7 +1506,7 @@ class Handlers:
                 include_env_info=conv.include_env_info,
             )
             system_segments = build_system_prompt_list(parts)
-        except Exception:  # noqa: BLE001 — fallback,不擋整個 RPC
+        except Exception: # noqa: BLE001 — fallback,不擋整個 RPC
             system_segments = [conv.system_prompt] if conv.system_prompt else []
         system_text = "\n\n".join(s for s in system_segments if s)
         if conv.system_prompt and not any(conv.system_prompt in s for s in system_segments):
@@ -1523,7 +1523,7 @@ class Handlers:
                 continue
             try:
                 schema = tool.input_schema.model_json_schema()
-            except Exception:  # noqa: BLE001
+            except Exception: # noqa: BLE001
                 schema = {}
             schema_dict = {
                 "name": tname,
@@ -1579,7 +1579,7 @@ class Handlers:
                 skills_detail.append(
                     {"name": sk.name, "source": source, "tokens": len(text) // 4}
                 )
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
         skills_tokens = sum(d["tokens"] for d in skills_detail)
 
@@ -1589,8 +1589,8 @@ class Handlers:
         # ─── 6/7) Buffer + Free ─────────────────────────────────────────
         max_context = conv.provider.capabilities.max_context_tokens
         # threshold 優先序:RPC params(renderer 帶當下 settings)
-        #   > conv.auto_compact_threshold(上輪 send 寫入的)
-        #   > 預設 0.8。
+        # > conv.auto_compact_threshold(上輪 send 寫入的)
+        # > 預設 0.8。
         # 沒這 fallback 鏈,user 還沒送任何 prompt 就跑 /context 時 threshold 會
         # 走預設值,跟 Settings 顯示的不一致(看起來像「亂寫」)。
         threshold: float = 0.8
@@ -1599,7 +1599,7 @@ class Handlers:
         rpc_threshold = params.get("auto_compact_threshold")
         if isinstance(rpc_threshold, (int, float)) and 0.1 <= rpc_threshold <= 0.99:
             threshold = float(rpc_threshold)
-            conv.auto_compact_threshold = threshold  # 同時 sync 進 conv,下次 send 不會回退
+            conv.auto_compact_threshold = threshold # 同時 sync 進 conv,下次 send 不會回退
         # round 取代 int — 避免 1_000_000 * 0.2 因浮點落到 199_999
         autocompact_buffer_tokens = round(max_context * (1.0 - threshold))
         used = (
@@ -1679,7 +1679,7 @@ class Handlers:
         pre_compact_state_count = len(conv.state_messages)
         try:
             result = await conv.compact(force=force)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "COMPACT_FAILED", "message": str(e)},
@@ -1711,7 +1711,7 @@ class Handlers:
                 compacted_count=compacted_count,
                 tombstone_msg=tombstone_msg,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             import sys
             print(f"[sidecar] compact DB sync failed: {e}", file=sys.stderr, flush=True)
 
@@ -1765,7 +1765,7 @@ class Handlers:
             "final": True,
         }
 
-    # ─── Plan Mode RPC(Phase 31-J)────────────────────────────────────
+    # ─── Plan Mode RPC────────────────────────────────────
 
     def _plan_lock(self, sid: str) -> asyncio.Lock:
         if sid not in self._plan_action_lock:
@@ -2198,7 +2198,7 @@ class Handlers:
         current_names = set(self._mcp.active_extra.keys())
         wanted_names = set(wanted.keys())
         if current_names == wanted_names and not wanted:
-            return  # 兩邊都 empty,無事可做
+            return # 兩邊都 empty,無事可做
         if current_names == wanted_names:
             # 同 names,內容可能不同 — 比 dump
             cur_dump = {k: v.model_dump() for k, v in self._mcp.active_extra.items()}
@@ -2363,7 +2363,7 @@ class Handlers:
                     }
                     return
             except (OSError, RuntimeError):
-                pass  # resolve 失敗 → 走 copy 路徑
+                pass # resolve 失敗 → 走 copy 路徑
         # 外部檔 → copy 到 uploads dir
         uploads = await self._resolve_uploads_dir(sid, engine)
         uploads.mkdir(parents=True, exist_ok=True)
@@ -2453,7 +2453,7 @@ class Handlers:
         }
         try:
             groups = list_builtin_tool_groups(extra_groups=[browser_tool_group(), agent_group])
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "LIST_FAILED", "message": str(e)},
@@ -2540,7 +2540,7 @@ class Handlers:
                 "cron_expr": params.get("cron_expr"),
                 "trigger_type": "prompt",
                 "payload": params.get("prompt"),
-                "scope": "user",  # loop 跟 session bound,scope 概念意義不大
+                "scope": "user", # loop 跟 session bound,scope 概念意義不大
                 "target_session_id": target_sid,
             })
 
@@ -2590,13 +2590,13 @@ class Handlers:
         host_tools: list[Any] = [
             OpenUrlTool(),
             OpenPathTool(),
-            # Plan Mode tools(Phase 31-J)— SDK 自動透過 plan_mode_aware
+            # Plan Mode tools— SDK 自動透過 plan_mode_aware
             # wrapper enforce read-only 白名單。Host 不用包 policy。
             EnterPlanModeTool(),
             ExitPlanModeTool(),
         ]
         if is_browser_available():
-            host_tools.extend(build_browser_tools())  # type: ignore[arg-type]
+            host_tools.extend(build_browser_tools()) # type: ignore[arg-type]
         tools = (
             build_default_tool_set(
                 asker=None,
@@ -2606,7 +2606,7 @@ class Handlers:
             )
             + mcp.tools
         )
-        # AgentTool(Phase 31-K)— spawn 子 agent 跑 self-contained 任務。
+        # AgentTool— spawn 子 agent 跑 self-contained 任務。
         # child_tools 是當前已 build 的全套 tools(AgentTool 自身會過濾掉自己,
         # 防止 sub-agent 再 spawn sub-agent;sub_agent_depth >= 1 也有守)。
         # 預設 disabled(在 cowork_prefs.disabled_tools 內由 init_storage 一次性
@@ -3474,7 +3474,7 @@ class Handlers:
             removed = await storage.truncate_messages_from(
                 engine, sid, raw_index=msg_idx,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "TRUNCATE_FAILED", "message": str(e)},
@@ -3523,7 +3523,7 @@ class Handlers:
                     continue
                 try:
                     images.append(ImageBlock(media_type=media_type, data=data))
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     continue
 
         # 先發 truncate_complete 讓 UI 清舊訊息,再 send 串流新 turn
@@ -3556,7 +3556,7 @@ class Handlers:
             if new_msgs:
                 try:
                     await storage.append_messages(engine, sid, new_msgs)
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     pass
 
     async def conversation_fork(
@@ -3613,7 +3613,7 @@ class Handlers:
                 "final": True,
             }
             return
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
                 "data": {"code": "FORK_FAILED", "message": f"{type(e).__name__}: {e}"},
@@ -3669,7 +3669,7 @@ class Handlers:
         send 預設 append user msg。所以這裡 manual 重 query — 把 state
         cut 後直接 call Conversation 內部 query_loop。
 
-        Phase 31-D 簡化版:從最後一個 user msg 的 text 重 send。把那個 user
+        簡化版:從最後一個 user msg 的 text 重 send。把那個 user
         msg + 之後全砍,當作沒送過,從原 text 重新呼 send。
         """
         sid = params.get("session_id")
@@ -3781,7 +3781,7 @@ class Handlers:
             if new_msgs:
                 try:
                     await storage.append_messages(engine, sid, new_msgs)
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     pass
 
 
@@ -3813,7 +3813,7 @@ def _compute_cumulative_cost(conv: Any) -> float:
             / 1_000_000,
             6,
         )
-    except Exception:  # noqa: BLE001
+    except Exception: # noqa: BLE001
         return 0.0
 
 
@@ -3832,7 +3832,7 @@ def _apply_summary_provider(conv: Conversation, params: dict[str, Any]) -> None:
         return
     try:
         conv.compact_summary_provider = get_provider(sp_name, sp_model)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         import sys
         print(
             f"[sidecar] summary provider build failed ({sp_name}/{sp_model}): {e}",
@@ -3971,9 +3971,9 @@ def _to_ui_messages_from_raw(
             if _row_is_tombstone(cj2):
                 break
             if r2 == "user" and _is_user_prompt_row(cj2):
-                break  # 進入下個 turn
+                break # 進入下個 turn
             if r2 == "user" and _is_user_prompt_row(cj2):
-                break  # 進入下個 turn
+                break # 進入下個 turn
             if isinstance(cj2, list):
                 for b in cj2:
                     if not isinstance(b, dict):
@@ -4048,7 +4048,7 @@ def _to_ui_messages_from_raw(
 def _to_ui_messages(messages: "list[Any]") -> list[dict[str, Any]]:
     """SDK NormalizedMessage → renderer UI Message dict。
 
-    Phase 31-D 慢載入修:attachment 不 inline base64,只送 ref
+    慢載入修:attachment 不 inline base64,只送 ref
     (message_index, attachment_index),renderer 用 `conversation.attachment`
     lazy fetch。整個 history 不再背 5MB+ × N 張的 base64。
 
@@ -4079,7 +4079,7 @@ def _to_ui_messages(messages: "list[Any]") -> list[dict[str, Any]]:
                     })
                     att_idx += 1
         if not text and not attachments:
-            continue  # 跳過純 tool_use / tool_result 訊息
+            continue # 跳過純 tool_use / tool_result 訊息
         out.append({
             "role": role,
             "text": text,

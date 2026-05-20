@@ -40,7 +40,7 @@ async def test_list_when_empty_name(
         e
         async for e in tool.call(SkillInput(skill_name=""), AgentContext())
     ]
-    text = events[0].text  # type: ignore[union-attr]
+    text = events[0].text # type: ignore[union-attr]
     assert "- a" in text
     assert "- b" in text
 
@@ -78,7 +78,7 @@ async def test_path_traversal_rejected(
 async def test_no_dir_falls_back_to_builtin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Phase 8:user dir 不存在 → 仍可列出內建 skills(be-concise 等)。"""
+    """user dir 不存在 → 仍可列出內建 skills(be-concise 等)。"""
     nope = tmp_path / "nonexistent"
     monkeypatch.setenv("ORION_SKILLS_DIR", str(nope))
     monkeypatch.setenv("ORION_USER_SKILLS_DIR", str(nope))
@@ -103,7 +103,7 @@ async def test_ported_bundled_skills_listed(
     monkeypatch.setenv("ORION_USER_SKILLS_DIR", str(nope))
     tool = SkillTool()
     events = [e async for e in tool.call(SkillInput(), AgentContext())]
-    text = events[0].text  # type: ignore[union-attr]
+    text = events[0].text # type: ignore[union-attr]
     for name in (
         "be-concise",
         "review-diff",
@@ -176,7 +176,7 @@ async def test_folder_skill_md_overrides_flat(
     # 結果:flat 覆蓋 folder。這是 backwards-compat 行為(舊用戶寫 flat 不被覆蓋)
     assert "FLAT" in shared.body
     # 確認 folder 版有被掃到(未來可改順序的話這 test 提醒)
-    assert _user_skills_dir is not None  # silence unused import
+    assert _user_skills_dir is not None # silence unused import
 
 
 @pytest.mark.asyncio
@@ -194,7 +194,7 @@ async def test_skill_args_appended(
             AgentContext(),
         )
     ]
-    text = events[0].text  # type: ignore[union-attr]
+    text = events[0].text # type: ignore[union-attr]
     assert "Arguments" in text
     assert "focus on auth module" in text
 
@@ -221,7 +221,7 @@ async def test_user_skills_isolated_per_tenant(
     events_a = [
         e async for e in tool.call(SkillInput(), AgentContext(user_id="alice"))
     ]
-    text_a = events_a[0].text  # type: ignore[union-attr]
+    text_a = events_a[0].text # type: ignore[union-attr]
     assert "alice-secret" in text_a
     assert "bob-secret" not in text_a
 
@@ -229,7 +229,7 @@ async def test_user_skills_isolated_per_tenant(
     events_b = [
         e async for e in tool.call(SkillInput(), AgentContext(user_id="bob"))
     ]
-    text_b = events_b[0].text  # type: ignore[union-attr]
+    text_b = events_b[0].text # type: ignore[union-attr]
     assert "bob-secret" in text_b
     assert "alice-secret" not in text_b
 
@@ -257,7 +257,7 @@ async def test_user_skills_overlay_system_last_wins(
             AgentContext(user_id="alice"),
         )
     ]
-    text = events[0].text  # type: ignore[union-attr]
+    text = events[0].text # type: ignore[union-attr]
     assert "ALICE OVERRIDE" in text
     assert "SYSTEM VERSION" not in text
 

@@ -1,18 +1,18 @@
-"""Hook event 型別 — Phase 1 + Phase 8 完整 8 種。
+"""Hook event 型別 + 完整 8 種。
 
-Phase 1 用 dataclass 提供 PreToolUseEvent / PostToolUseEvent(in-process callback,
-帶 Tool / AgentContext object reference)。Phase 8 補齊另 6 種 event,並提供
+用 dataclass 提供 PreToolUseEvent / PostToolUseEvent(in-process callback,
+帶 Tool / AgentContext object reference)。補齊另 6 種 event,並提供
 serializable 視圖(`.to_serializable()`)給 settings.json shell hook / webhook 用。
 
 事件清單:
-1. PreToolUseEvent          工具執行前(可阻擋 / 改 input)
-2. PostToolUseEvent         工具執行成功後(read-only)
-3. PostToolUseFailureEvent  工具執行失敗
-4. UserPromptSubmitEvent    使用者送入新 prompt
-5. SessionStartEvent        Conversation 建立 / resume
-6. SetupEvent               app lifespan startup(只觸發一次)
-7. SubagentStartEvent       AgentTool 開子 agent
-8. FileChangedEvent         FileWrite / FileEdit 改檔成功
+1. PreToolUseEvent 工具執行前(可阻擋 / 改 input)
+2. PostToolUseEvent 工具執行成功後(read-only)
+3. PostToolUseFailureEvent 工具執行失敗
+4. UserPromptSubmitEvent 使用者送入新 prompt
+5. SessionStartEvent Conversation 建立 / resume
+6. SetupEvent app lifespan startup(只觸發一次)
+7. SubagentStartEvent AgentTool 開子 agent
+8. FileChangedEvent FileWrite / FileEdit 改檔成功
 
 每個 event 有 `.to_serializable() -> dict` 把 in-process object refs 拿掉,
 留純 JSON-serializable 欄位給 shell hook / webhook 用。
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from orion_sdk.core.tool import Tool
 
 
-# ─── Phase 1 events ─────────────────────────────────────────────────────────
+# ─── events ─────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -39,7 +39,7 @@ class PreToolUseEvent:
     - 回 False → 視同 permission deny
     - raise → 中斷 query_loop
 
-    Phase 8:加 session_id / user_id / tool_name / tool_use_id 給 settings hook 用。
+   :加 session_id / user_id / tool_name / tool_use_id 給 settings hook 用。
     """
 
     type: Literal["PreToolUse"] = "PreToolUse"
@@ -47,7 +47,7 @@ class PreToolUseEvent:
     tool_input: dict[str, Any] | None = None
     ctx: AgentContext | None = None
 
-    # Phase 8 加,給 serializable 用
+    # 加,給 serializable 用
     session_id: str | None = None
     user_id: str | None = None
     tool_name: str | None = None
@@ -93,7 +93,7 @@ class PostToolUseEvent:
         }
 
 
-# ─── Phase 8 events ─────────────────────────────────────────────────────────
+# ─── events ─────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -272,8 +272,8 @@ HOOK_EVENT_NAMES: tuple[str, ...] = (
 class PreToolUseResult:
     """PreToolUse hook 回值。
 
-    - abort=True → 阻擋工具(同 Phase 1 回 False)
-    - modified_input=...  → 改 tool input(覆蓋 caller 給的)
+    - abort=True → 阻擋工具(同 回 False)
+    - modified_input=... → 改 tool input(覆蓋 caller 給的)
     """
 
     abort: bool = False

@@ -1,12 +1,12 @@
-"""Phase 7 — DB-backed auth(bcrypt password)。
+"""DB-backed auth(bcrypt password)。
 
-Phase 6 是 dev 模式任意 username 通過。Phase 7 加 User table + bcrypt。
+是 dev 模式任意 username 通過。加 User table + bcrypt。
 
 兩種登入路徑(動態切換):
 - DB 模式(`ORION_DB_URL` 設):查 users 表,verify password
 - Dev fallback(無 DB / verify_password 失敗 + ORION_AUTH_MODE=dev):任意 username 過
 
-Caller 仍用 issue_token / verify_token(Phase 6 的 JWT 不變)。
+Caller 仍用 issue_token / verify_token(的 JWT 不變)。
 """
 
 from __future__ import annotations

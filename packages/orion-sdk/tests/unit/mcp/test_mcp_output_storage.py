@@ -1,4 +1,4 @@
-"""storage/mcp_output.py — Phase 5 真實實作(persist_mcp_binary / load_mcp_binary)。"""
+"""storage/mcp_output.py 真實實作(persist_mcp_binary / load_mcp_binary)。"""
 
 from __future__ import annotations
 

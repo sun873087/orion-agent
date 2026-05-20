@@ -128,9 +128,9 @@ async def run_one_tool(
 ) -> AsyncIterator[ToolUpdate]:
     """單一 tool 執行流程,yield ToolProgressUpdate*,最後 yield 一個 ToolResultUpdate。
 
-    Phase 9:wrap 一個 OTel span(`orion_agent.tool`),自動記 duration / errors。
+   :wrap 一個 OTel span(`orion_agent.tool`),自動記 duration / errors。
     """
-    # Phase 9:OTel span 包整個 generator
+    # OTel span 包整個 generator
     import time
 
     from orion_sdk.telemetry.otel import (
@@ -190,7 +190,7 @@ async def _run_one_tool_inner(
     hooks: HookRegistry,
     ctx: AgentContext,
 ) -> AsyncIterator[ToolUpdate]:
-    """原 run_one_tool 內容(Phase 9 把它分出來;wrapper 加 OTel)。"""
+    """原 run_one_tool 內容(把它分出來;wrapper 加 OTel)。"""
 
     # ─── 1. find tool ───────────────────────────────────────────────────────
     tool = tools_by_name.get(tool_name)
@@ -241,7 +241,7 @@ async def _run_one_tool_inner(
             tool_use_id=tool_use_id, tool_name=tool_name, message=msg, is_error=True,
         )
         return
-    # Phase 8:hook 可改 input(覆蓋 caller 給的)
+    # hook 可改 input(覆蓋 caller 給的)
     if pre_result.modified_input is not None:
         raw_input = pre_result.modified_input
         try:
@@ -301,8 +301,8 @@ async def _run_one_tool_inner(
             elif isinstance(event, ErrorEvent):
                 error_msgs.append(event.message)
             elif isinstance(event, ProgressEvent):
-                pass  # progress 不進結果
-    except Exception as e:  # noqa: BLE001 — 工具任何例外都不該炸 loop
+                pass # progress 不進結果
+    except Exception as e: # noqa: BLE001 — 工具任何例外都不該炸 loop
         error_msgs.append(f"Tool execution raised {type(e).__name__}: {e}")
 
     is_error = bool(error_msgs)
@@ -355,7 +355,7 @@ async def _run_one_tool_inner(
                 ),
             )
 
-    # ─── 7. Phase 2 第 2 層持久化:大結果寫檔 + 換 preview ─────────────────
+    # ─── 7. 第 2 層持久化:大結果寫檔 + 換 preview ─────────────────
     persisted = maybe_persist_large_tool_result(
         ctx.session_id, tool_use_id, result_text,
     )

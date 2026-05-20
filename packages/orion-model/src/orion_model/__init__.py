@@ -1,6 +1,6 @@
 """LLM Provider 抽象層 — Anthropic + OpenAI 雙支援。
 
-Phase 1+ 的 query_loop 透過 `LLMProvider.stream()` 取 normalized events,
++ 的 query_loop 透過 `LLMProvider.stream()` 取 normalized events,
 完全不見 anthropic / openai SDK 細節。
 
 用法:

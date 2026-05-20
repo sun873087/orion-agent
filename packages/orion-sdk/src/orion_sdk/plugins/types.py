@@ -1,4 +1,4 @@
-"""Plugin manifest 型別 — Phase 8。
+"""Plugin manifest 型別。
 
 `plugin.json` 範例:
 

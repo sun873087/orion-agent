@@ -19,13 +19,13 @@ import os
 from orion_cowork_sidecar.handlers import Handlers
 from orion_cowork_sidecar.rpc import RpcServer
 
-# Phase 32 attribution:proxy usage_log.client_id 知道請求來自 Cowork。
+# attribution:proxy usage_log.client_id 知道請求來自 Cowork。
 # CLI / chat-api 也各自設 "orion-cli" / "orion-chat-api"。
 os.environ.setdefault("ORION_CLIENT_ID", "orion-cowork")
 
 
 def _install_test_provider_override() -> None:
-    """Phase 31-F e2e:ORION_PROVIDER_OVERRIDE=mock → 全 get_provider 回 MockProvider。
+    """F e2e:ORION_PROVIDER_OVERRIDE=mock → 全 get_provider 回 MockProvider。
 
     Scripted turns 可由 ORION_MOCK_SCRIPT_JSON env var 傳:
         [{"text": "hi"}, {"text": "second turn"}]

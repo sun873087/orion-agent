@@ -1,4 +1,4 @@
-"""Tests for orion_sdk.memory.quota (Phase 31-G Layer 4)。"""
+"""Tests for orion_sdk.memory.quota (Layer 4)。"""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def test_over_quota_types(monkeypatch: pytest.MonkeyPatch) -> None:
         _make_memory("a", MemoryType.USER),
         _make_memory("b", MemoryType.FEEDBACK),
         _make_memory("c", MemoryType.FEEDBACK),
-        _make_memory("d", MemoryType.FEEDBACK),  # 3 > quota 2
+        _make_memory("d", MemoryType.FEEDBACK), # 3 > quota 2
     ]
     over = over_quota_types(mems)
     assert len(over) == 1

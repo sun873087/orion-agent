@@ -1,4 +1,4 @@
-"""forked_agent — Phase 12 cache-safe fork 機制測試。"""
+"""forked_agent cache-safe fork 機制測試。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ async def test_simple_fork_returns_text() -> None:
         parent_ctx=parent_ctx,
         parent_params=cache_safe,
         user_prompt="do the thing",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert "forked answer" in result.final_text
     assert result.transition_reason == "natural_stop"
@@ -52,7 +52,7 @@ async def test_byte_identical_prefix_passes_to_provider() -> None:
         parent_ctx=parent_ctx,
         parent_params=cache_safe,
         user_prompt="new task",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     call = provider.captured_calls[0]
     # system 維持 list[str](Anthropic provider 在倒數第二段加 cache_control)
@@ -88,7 +88,7 @@ async def test_parent_messages_mutation_does_not_affect_fork() -> None:
         parent_ctx=AgentContext(),
         parent_params=cache_safe,
         user_prompt="fork task",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     sent_msgs = provider.captured_calls[0]["messages"]
     # 應該只看到 capture 當時的 1 則 + 新 user_prompt = 2
@@ -104,9 +104,9 @@ async def test_fork_increments_subagent_depth() -> None:
     captured: list[int] = []
 
     class SpyProvider(MockProvider):
-        async def stream(self, **kwargs: object):  # type: ignore[override,no-untyped-def]
+        async def stream(self, **kwargs: object): # type: ignore[override,no-untyped-def]
             # 取不到 ctx;改從 query_loop 觀察 — 用較直接路徑:在 fork 後 ctx 應該 +1
-            async for ev in super().stream(**kwargs):  # type: ignore[arg-type]
+            async for ev in super().stream(**kwargs): # type: ignore[arg-type]
                 yield ev
 
     provider = SpyProvider(turns=[MockTurn(text="x")])
@@ -122,11 +122,11 @@ async def test_fork_increments_subagent_depth() -> None:
         parent_ctx=parent_ctx,
         parent_params=cache_safe,
         user_prompt="x",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     # 父 ctx depth 沒變
     assert parent_ctx.sub_agent_depth == 0
-    _ = captured  # 只是 sanity check 變數還在
+    _ = captured # 只是 sanity check 變數還在
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_fork_aggregates_usage() -> None:
         parent_ctx=AgentContext(),
         parent_params=cache_safe,
         user_prompt="t",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.total_usage["input_tokens"] >= 10
     assert result.total_usage["output_tokens"] >= 20
@@ -157,7 +157,7 @@ async def test_cache_safe_params_immutable_capture() -> None:
     msgs: list[NormalizedMessage] = []
     cs = CacheSafeParams.from_parts(
         system_prompt=["a"],
-        tools=tools_list,  # type: ignore[arg-type]
+        tools=tools_list, # type: ignore[arg-type]
         messages=msgs,
     )
     # 改 outer
@@ -173,7 +173,7 @@ async def test_fork_does_not_inherit_parent_abort() -> None:
     """父 abort 不影響 fork — fork 有自己的 abort_event。"""
     import anyio
     parent_ctx = AgentContext()
-    parent_ctx.abort_event.set()  # 父已 abort
+    parent_ctx.abort_event.set() # 父已 abort
 
     provider = MockProvider(turns=[MockTurn(text="ok")])
     cache_safe = CacheSafeParams.from_parts(
@@ -186,7 +186,7 @@ async def test_fork_does_not_inherit_parent_abort() -> None:
         parent_ctx=parent_ctx,
         parent_params=cache_safe,
         user_prompt="t",
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.transition_reason == "natural_stop"
     # sanity:確認 anyio import 還在用(避免 lint 抱怨)

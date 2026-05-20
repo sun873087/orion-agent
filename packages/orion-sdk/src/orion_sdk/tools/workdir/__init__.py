@@ -1,4 +1,4 @@
-"""Workdir tools — Phase 9。
+"""Workdir tools。
 
 EnterWorkdirTool / ExitWorkdirTool 取代 TS 的 EnterWorktreeTool。
 不依賴 git,純改 ctx.cwd 並 push/pop stack。

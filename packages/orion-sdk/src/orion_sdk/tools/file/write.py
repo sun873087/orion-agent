@@ -5,7 +5,7 @@
 安全:
 - 路徑必須絕對
 - 父目錄必須已存在(不自動 mkdir,避免意外建一堆深目錄)
-- 限制 1 MB(Phase 1 範圍,大檔屬 streaming write 範疇,延後)
+- 限制 1 MB(範圍,大檔屬 streaming write 範疇,延後)
 - non-concurrency-safe(寫入有副作用)
 - non-read-only
 """
@@ -21,7 +21,7 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 from orion_sdk.storage.file_history import make_snapshot
 
-_MAX_BYTES = 1024 * 1024  # 1 MB
+_MAX_BYTES = 1024 * 1024 # 1 MB
 
 
 class FileWriteInput(ToolInput):
@@ -77,7 +77,7 @@ class FileWriteTool:
 
         existed = path.exists()
 
-        # Phase 12:覆寫既有檔必須先 Read 過 + 沒被外部改動
+        # 覆寫既有檔必須先 Read 過 + 沒被外部改動
         # 新建檔(existed=False)不需要 Read(沒得讀)
         from orion_sdk.services.file_state import FileStateCache, require_fresh_read
 
@@ -92,12 +92,12 @@ class FileWriteTool:
                 yield ErrorEvent(message=err)
                 return
 
-        # Phase 2:寫前快照(若原檔存在)
+        # 寫前快照(若原檔存在)
         snap_note = ""
         if existed:
             snap = make_snapshot(ctx.session_id, path)
             if snap.snapshot_path is not None:
-                snap_note = f"  [snapshot: {snap.snapshot_path}]"
+                snap_note = f" [snapshot: {snap.snapshot_path}]"
 
         try:
             path.write_bytes(data)
@@ -105,7 +105,7 @@ class FileWriteTool:
             yield ErrorEvent(message=f"Failed to write {path}: {e}")
             return
 
-        # Phase 12:更新 cache snapshot(無論新建 / 覆寫,寫完後新內容才是 baseline)
+        # 更新 cache snapshot(無論新建 / 覆寫,寫完後新內容才是 baseline)
         if cache is not None:
             cache.record_read(path)
 
@@ -117,11 +117,11 @@ class FileWriteTool:
             )
         )
 
-    def is_concurrency_safe(self, input: FileWriteInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileWriteInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: FileWriteInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileWriteInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:
-        return 1_000  # 結果只是一行確認訊息
+        return 1_000 # 結果只是一行確認訊息

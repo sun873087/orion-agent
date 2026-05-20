@@ -325,7 +325,7 @@ export default {
   'schedule.error.payloadRequired': 'スキルを選ぶかプロンプトを入力してください',
   'schedule.error.cronInvalid': 'Cron 式の形式が不正です — 5 フィールド必要(分 時 日 月 曜)',
 
-  // Plan Mode(Phase 31-J)
+  // Plan Mode
   'plan.banner.active': 'Plan Mode 進行中 — Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion のみ許可',
   'plan.banner.awaiting': 'プラン送信済み — 承認をお待ちください',
   'plan.modal.title': 'プランをレビュー',
@@ -406,7 +406,7 @@ export default {
   'mcp.field.envHint': '任意。平文保存 — 機密はコミットしない',
   'mcp.field.url': 'URL',
   'mcp.field.headers': 'ヘッダ(KEY=VALUE、1 行 1 つ)',
-  'settings.about.text': 'Orion Cowork · Phase 31。モデル / 外観の設定は localStorage に保存されます。MCP サーバーは ~/.orion/mcp.json で管理されます。',
+  'settings.about.text': 'Orion Cowork ·。モデル / 外観の設定は localStorage に保存されます。MCP サーバーは ~/.orion/mcp.json で管理されます。',
 
   'lang.zh-TW': '繁體中文',
   'lang.en': 'English',

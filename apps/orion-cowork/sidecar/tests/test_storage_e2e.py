@@ -1,4 +1,4 @@
-"""Phase 31-D:Cowork SQLite persistence cross-restart 驗證。
+"""D:Cowork SQLite persistence cross-restart 驗證。
 
 不需要真 LLM:用 sub-process spawn sidecar → 注 stdin / 讀 stdout 驗證
 list / delete 跨 process 都對。
@@ -176,7 +176,7 @@ async def test_delete_many_sessions_bulk(data_dir: str) -> None:
     stats = await storage.delete_many_sessions(engine, [drop1, drop2])
     assert stats["requested"] == 2
     assert stats["deleted"] == 2
-    assert stats["descendants_deleted"] == 1  # drop1_fork
+    assert stats["descendants_deleted"] == 1 # drop1_fork
 
     listed = await storage.list_sessions(engine)
     ids = {s.session_id for s in listed}

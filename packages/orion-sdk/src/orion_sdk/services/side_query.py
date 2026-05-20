@@ -1,6 +1,6 @@
 """side_query — 主迴圈中插入小 LLM 呼叫,不汙染主對話。
 
-對應 TS Claude Code `src/utils/sideQuery.ts`。Phase 12。
+對應 TS Claude Code `src/utils/sideQuery.ts`。
 
 特性:
   - **不寫 transcript**(主對話 / SessionStorage 完全沒紀錄)
@@ -10,9 +10,9 @@
     若 provider 不支援就走純文字 + caller 自行解析)
 
 Caller 範例:
-  - Phase 3 `select_relevant_memories`:挑相關 memory 名單(JSON list[str])
-  - Phase 3 compaction summary:摘要前段對話
-  - Phase 11 title generation / prompt suggestion(預留)
+  - `select_relevant_memories`:挑相關 memory 名單(JSON list[str])
+  - compaction summary:摘要前段對話
+  - title generation / prompt suggestion(預留)
 
 設計上 **不直接呼 anthropic SDK**;改透過 LLMProvider.stream(同 query_loop 用的介面),
 換 provider 也能用。沒有 SessionStorage 注入 → 自動不寫 transcript。
@@ -93,7 +93,7 @@ def _build_schema_tool(schema: dict[str, Any]) -> ToolDefinition:
     name = str(schema.get("name") or "respond")
     inner = schema.get("schema")
     if not isinstance(inner, dict):
-        inner = schema  # caller 直接傳 schema dict 也支援
+        inner = schema # caller 直接傳 schema dict 也支援
     return ToolDefinition(
         name=name,
         description="Respond with structured JSON conforming to the provided schema.",

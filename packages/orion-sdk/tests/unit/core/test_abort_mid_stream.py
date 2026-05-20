@@ -1,4 +1,4 @@
-"""Phase 16 — ctx.abort_event 中途 set 時,provider.stream() 不應跑完才停。
+"""ctx.abort_event 中途 set 時,provider.stream() 不應跑完才停。
 
 目標:
 - SlowMockProvider 模擬一個會慢慢吐 chunk 的 stream
@@ -60,13 +60,13 @@ class SlowMockProvider:
     async def stream(
         self,
         *,
-        system: str | list[str],  # noqa: ARG002
-        messages: list[NormalizedMessage],  # noqa: ARG002
-        tools: list[ToolDefinition] | None = None,  # noqa: ARG002
-        max_tokens: int = 4096,  # noqa: ARG002
-        temperature: float | None = None,  # noqa: ARG002
-        cache_breakpoints: list[int] | None = None,  # noqa: ARG002
-        reasoning_effort: Any = None,  # noqa: ARG002
+        system: str | list[str], # noqa: ARG002
+        messages: list[NormalizedMessage], # noqa: ARG002
+        tools: list[ToolDefinition] | None = None, # noqa: ARG002
+        max_tokens: int = 4096, # noqa: ARG002
+        temperature: float | None = None, # noqa: ARG002
+        cache_breakpoints: list[int] | None = None, # noqa: ARG002
+        reasoning_effort: Any = None, # noqa: ARG002
     ) -> AsyncIterator[NormalizedEvent]:
         yield MessageStartEvent(message_id="slow_msg", model=self.model)
         for i in range(self.total_chunks):
@@ -88,7 +88,7 @@ async def test_abort_during_stream_terminates_immediately() -> None:
     ctx = AgentContext()
 
     params = QueryParams(
-        provider=slow_provider,  # type: ignore[arg-type]
+        provider=slow_provider, # type: ignore[arg-type]
         system_prompt="x",
         tools=[],
         can_use_tool=always_allow,
@@ -123,7 +123,7 @@ async def test_abort_after_stream_finished_normal() -> None:
     ctx = AgentContext()
 
     params = QueryParams(
-        provider=fast_provider,  # type: ignore[arg-type]
+        provider=fast_provider, # type: ignore[arg-type]
         system_prompt="x",
         tools=[],
         can_use_tool=always_allow,
@@ -161,5 +161,5 @@ async def test_abort_aware_scope_triggers_on_event_set() -> None:
     async with abort_aware_scope(event, poll_interval=0.01) as scope:
         async with anyio.create_task_group() as tg:
             tg.start_soon(setter)
-            await anyio.sleep(5.0)  # 會被 cancel
+            await anyio.sleep(5.0) # 會被 cancel
     assert scope.cancel_called

@@ -67,7 +67,7 @@ ACTIONS = """\
 TOOLS = """\
 # Available tools
 
-You have these tools (Phase 1+):
+You have these tools (+):
 - **Read** — read a text file (absolute path, line offsets)
 - **Write** — overwrite or create a file (parent dir must exist)
 - **Edit** — string-replace within a file (must match exactly)

@@ -1,4 +1,4 @@
-"""Plan mode 機制 — Phase 12。
+"""Plan mode 機制。
 
 Plan mode 是「模型只讀規劃,不寫任何檔」的特殊狀態。三態:
   - INACTIVE:正常模式

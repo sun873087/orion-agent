@@ -2,11 +2,11 @@
 
 對應 spec § 5 transports.py。
 
-Phase 5 範圍:
+範圍:
 - stdio:本機 subprocess(主流)
-- http:遠端 HTTP(透過 mcp SDK,Phase 5 範圍只 stub 待測)
+- http:遠端 HTTP(透過 mcp SDK 範圍只 stub 待測)
 
-SSE / InProcess 留 Phase 5b。
+SSE / InProcess 留。
 
 每個 connect_* function 回 (read_stream, write_stream) 給 ClientSession 用。
 """
@@ -50,11 +50,11 @@ def _open_stdio(config: StdioMcpConfig) -> AbstractAsyncContextManager[tuple[Any
 
 
 def _open_http(config: HttpMcpConfig) -> AbstractAsyncContextManager[tuple[Any, Any]]:
-    """HTTP transport — Phase 5 stub。
+    """HTTP transport stub。
 
-    TODO Phase 5b:接 mcp.client.streamable_http.streamablehttp_client。
+    TODO:接 mcp.client.streamable_http.streamablehttp_client。
     """
     raise NotImplementedError(
-        f"HTTP MCP transport for {config.url!r} not implemented in Phase 5; "
-        "see Phase 5b roadmap"
+        f"HTTP MCP transport for {config.url!r} not implemented in; "
+        "see roadmap"
     )

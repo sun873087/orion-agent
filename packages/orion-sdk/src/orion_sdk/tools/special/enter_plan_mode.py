@@ -1,4 +1,4 @@
-"""EnterPlanModeTool — 進入 plan mode。Phase 12。
+"""EnterPlanModeTool — 進入 plan mode。
 
 對應 TS Claude Code `src/tools/EnterPlanModeTool/`。
 
@@ -47,7 +47,7 @@ class EnterPlanModeTool:
 
     async def call(
         self,
-        input: EnterPlanModeInput,  # noqa: ARG002
+        input: EnterPlanModeInput, # noqa: ARG002
         ctx: AgentContext,
     ) -> AsyncIterator[ToolEvent]:
         current = ctx.plan_mode_state
@@ -78,10 +78,10 @@ class EnterPlanModeTool:
             )
         )
 
-    def is_concurrency_safe(self, input: EnterPlanModeInput) -> bool:  # noqa: ARG002
-        return False  # mutates ctx state
+    def is_concurrency_safe(self, input: EnterPlanModeInput) -> bool: # noqa: ARG002
+        return False # mutates ctx state
 
-    def is_read_only(self, input: EnterPlanModeInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: EnterPlanModeInput) -> bool: # noqa: ARG002
         # 純切狀態,不寫檔案內容
         return True
 

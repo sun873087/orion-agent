@@ -1,15 +1,15 @@
-"""Cowork local SQLite persistence(Phase 31-D)。
+"""Cowork local SQLite persistence。
 
 跟 chat-api 的 DbSessionManager 不同:
 - Single-user 模式 — 用固定 dummy user "cowork-local"
 - 不依賴 fastapi / jwt(只用 orion-sdk storage primitives)
 - Root 跟 CLI / chat-api 共用 `~/.orion/`,sessions 透過子目錄 + 不同檔名隔離:
-    `~/.orion/sessions/cowork.db`    Cowork DB(本檔案管理)
-    `~/.orion/sessions/cli.db`        CLI 的 DB(不在這檔案管轄)
+    `~/.orion/sessions/cowork.db` Cowork DB(本檔案管理)
+    `~/.orion/sessions/cli.db` CLI 的 DB(不在這檔案管轄)
 - `$ORION_COWORK_DATA_DIR` env 可覆蓋 root(e2e test 用),DB 仍走 sessions/cowork.db
 
 Public API:
-    init_storage() -> engine                   # call once at startup
+    init_storage() -> engine # call once at startup
     save_session_metadata(engine, sid, ...)
     update_title_if_empty(engine, sid, title)
     list_sessions(engine) -> list[SessionMeta]
@@ -72,7 +72,7 @@ def get_blob_store() -> BlobStore:
 def _persist_image_blocks(content_value: Any, blob: BlobStore) -> Any:
     """寫前處理:list 內 image dict 的 inline base64 data 抽 blob,改成 ref。
 
-    Input:  list[dict],dict 可能含 {type: "image", media_type, data: base64-str}
+    Input: list[dict],dict 可能含 {type: "image", media_type, data: base64-str}
     Output: 同 list,但 image dict 換成 {type: "image", media_type, blob_id}
     其他 block 原樣保留。已經是 ref 形式(無 data 有 blob_id)的也原樣。
     """
@@ -95,7 +95,7 @@ def _persist_image_blocks(content_value: Any, blob: BlobStore) -> Any:
                     "blob_id": blob_id,
                 })
                 continue
-            except Exception:  # noqa: BLE001
+            except Exception: # noqa: BLE001
                 # base64 decode 壞了,保留原樣不要丟資料
                 pass
         out.append(b)
@@ -181,25 +181,25 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             "scheduled_by_id TEXT",
             "scheduled_by_name TEXT",
             "starred INTEGER NOT NULL DEFAULT 0",
-            # Plan Mode(Phase 31-J)— per-session plan state 持久化:
-            "plan_mode_status TEXT",            # 'idle' / 'active' / 'awaiting_approval'
-            "plan_id TEXT",                     # uuid12,跟 SDK PlanModeState.plan_id 對應
-            "plan_file_path TEXT",              # 絕對路徑 ~/.orion/plans/plan-{id}.md
-            "plan_content TEXT",                # 提交的 plan markdown(crash recovery 用)
+            # Plan Mode— per-session plan state 持久化:
+            "plan_mode_status TEXT", # 'idle' / 'active' / 'awaiting_approval'
+            "plan_id TEXT", # uuid12,跟 SDK PlanModeState.plan_id 對應
+            "plan_file_path TEXT", # 絕對路徑 ~/.orion/plans/plan-{id}.md
+            "plan_content TEXT", # 提交的 plan markdown(crash recovery 用)
             "plan_entered_at_message_index INTEGER",
-            # Cost budget(Phase 31-Q)— 累積成本超 cap 自動 abort:
-            "budget_usd_cap REAL",              # NULL = 不限,>0 = 上限(USD);0 視同 NULL
-            "budget_exceeded INTEGER NOT NULL DEFAULT 0",  # 已觸發過 → 阻擋下一次 send
-            # Fork lineage(Phase 31-R)— 顯「分叉自 X」badge 用:
-            "forked_from_session_id TEXT",      # source session uuid
-            "forked_from_message_index INTEGER",  # 分叉點 chronological row index(inclusive)
+            # Cost budget— 累積成本超 cap 自動 abort:
+            "budget_usd_cap REAL", # NULL = 不限,>0 = 上限(USD);0 視同 NULL
+            "budget_exceeded INTEGER NOT NULL DEFAULT 0", # 已觸發過 → 阻擋下一次 send
+            # Fork lineage— 顯「分叉自 X」badge 用:
+            "forked_from_session_id TEXT", # source session uuid
+            "forked_from_message_index INTEGER", # 分叉點 chronological row index(inclusive)
         ):
             try:
                 await conn.exec_driver_sql(
                     f"ALTER TABLE cowork_session_ext ADD COLUMN {col_def}"
                 )
-            except Exception:  # noqa: BLE001
-                pass  # duplicate column — OK
+            except Exception: # noqa: BLE001
+                pass # duplicate column — OK
         await conn.exec_driver_sql(
             """
             CREATE TABLE IF NOT EXISTS cowork_projects (
@@ -249,7 +249,7 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             await conn.exec_driver_sql(
                 "ALTER TABLE cowork_schedules ADD COLUMN target_session_id TEXT"
             )
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS cowork_schedules_enabled_idx "
@@ -319,7 +319,7 @@ class SessionMeta:
     title: str | None
     created_at: float
     n_messages: int
-    # Fork lineage(Phase 31-S)— sidebar 樹狀視覺化用,None = 不是 fork 來的
+    # Fork lineage— sidebar 樹狀視覺化用,None = 不是 fork 來的
     forked_from_session_id: str | None = None
     forked_from_message_index: int | None = None
 
@@ -484,7 +484,7 @@ async def count_fork_descendants(
 
 async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
     """Cascade delete:DB rows + 該 session 的 blob 檔 + 綁該 session 的 Loop 排程
-    + **fork 子孫**(Phase 31-T)。
+    + **fork 子孫**。
 
     Fork 子孫:用 forked_from_session_id 遞迴往下找,每個子孫都跑同樣的
     清理流程(messages / meta / ext / schedules / blob)。child fork 仍指向
@@ -533,7 +533,7 @@ async def delete_session(engine: AsyncEngine, session_id: str) -> bool:
     for bid in all_blob_ids:
         try:
             blob.delete(bid)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
     return True
 
@@ -717,7 +717,7 @@ async def set_session_project(
         await conn.commit()
 
 
-# ─── Plan Mode(Phase 31-J)──────────────────────────────────────────────
+# ─── Plan Mode──────────────────────────────────────────────
 
 
 async def get_plan_state(
@@ -814,7 +814,7 @@ async def list_awaiting_approval_sessions(
     ]
 
 
-# ─── Cost budget(Phase 31-Q)──────────────────────────────────────────────
+# ─── Cost budget──────────────────────────────────────────────
 
 
 async def get_session_budget(
@@ -888,7 +888,7 @@ async def list_referenced_plan_files(engine: AsyncEngine) -> set[str]:
     return {r[0] for r in rows if r[0]}
 
 
-# ─── Fork(Phase 31-R)──────────────────────────────────────────────
+# ─── Fork──────────────────────────────────────────────
 
 
 async def fork_session(
@@ -991,7 +991,7 @@ async def fork_session(
 
     # blob ref 繼承自然有效 — content-hash 不會 collision,delete_session 走
     # cleanup_orphan_blobs 後備掃描,不會在 source / fork 仍 ref 的時候誤刪
-    _ = blob  # 顯式留 ref 提醒讀者
+    _ = blob # 顯式留 ref 提醒讀者
     return new_sid
 
 
@@ -1167,7 +1167,7 @@ async def truncate_messages_from(
     for bid in blob_ids:
         try:
             blob.delete(bid)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             pass
     return len(to_delete)
 
@@ -1439,7 +1439,7 @@ class SearchHit:
     model: str
     created_at: float
     match_count: int
-    snippet: str  # 第一個 match 周邊 ~100 字
+    snippet: str # 第一個 match 周邊 ~100 字
 
 
 def _extract_text_from_content(content_json: Any) -> str:
@@ -1530,7 +1530,7 @@ class Schedule:
     project_id: str | None
     name: str
     cron_expr: str
-    trigger_type: str       # 'skill' | 'prompt'
+    trigger_type: str # 'skill' | 'prompt'
     payload: str
     enabled: bool
     last_run_at: float | None
@@ -1581,17 +1581,17 @@ _SCHEDULE_COLS = (
 async def list_schedules(
     engine: AsyncEngine,
     *,
-    scope: str = "all",          # 'user' | 'project' | 'all'
+    scope: str = "all", # 'user' | 'project' | 'all'
     project_id: str | None = None,
     enabled_only: bool = False,
     due_before: float | None = None,
 ) -> list[Schedule]:
     """Filter:
-       - scope='user'      → project_id IS NULL
-       - scope='project'   → 指定 project_id;沒給 → 全部 project-scoped
-       - scope='all'       → 都拿
-       - enabled_only       → enabled = 1
-       - due_before         → next_run_at <= due_before(scheduler tick 用)
+       - scope='user' → project_id IS NULL
+       - scope='project' → 指定 project_id;沒給 → 全部 project-scoped
+       - scope='all' → 都拿
+       - enabled_only → enabled = 1
+       - due_before → next_run_at <= due_before(scheduler tick 用)
     """
     where: list[str] = []
     params: list[Any] = []
@@ -1734,7 +1734,7 @@ async def record_schedule_run(
     last_run_at: float,
     next_run_at: float | None,
     last_run_session_id: str | None,
-    status: str,                    # 'ok' | 'error' | 'skipped'
+    status: str, # 'ok' | 'error' | 'skipped'
     error: str | None = None,
 ) -> None:
     """寫一次 fire 結果。即使 status='error' 也要更新 next_run_at 往前推,
@@ -1792,7 +1792,7 @@ async def migrate_inline_attachments_to_blobs(engine: AsyncEngine) -> dict[str, 
                         changed = True
                         blobs_written += 1
                         continue
-                    except Exception:  # noqa: BLE001
+                    except Exception: # noqa: BLE001
                         # 壞 base64,保留原樣
                         pass
                 new_list.append(b)

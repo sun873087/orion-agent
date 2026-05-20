@@ -1,11 +1,11 @@
-"""/preferences — Phase 13。
+"""/preferences。
 
 REST endpoints 管理 per-user / per-conversation custom instructions。
 
-- GET  /me/custom-instructions       → 取 user-level
-- PUT  /me/custom-instructions       → 設 user-level(空字串 / null = 清除)
-- GET  /sessions/{sid}/custom-instructions → 取 conversation-level
-- PUT  /sessions/{sid}/custom-instructions → 設 conversation-level
+- GET /me/custom-instructions → 取 user-level
+- PUT /me/custom-instructions → 設 user-level(空字串 / null = 清除)
+- GET /sessions/{sid}/custom-instructions → 取 conversation-level
+- PUT /sessions/{sid}/custom-instructions → 設 conversation-level
 
 對應 ChatGPT 的「About me」/「Custom Instructions for this chat」。
 所有 endpoint JWT-protected。

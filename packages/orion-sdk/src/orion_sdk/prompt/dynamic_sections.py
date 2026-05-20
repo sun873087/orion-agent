@@ -101,7 +101,7 @@ async def memory_section(
 ) -> str:
     """挑相關 memory 並 render 成 system prompt 區塊。
 
-    包 Phase 3 機制:scan + rank + render。沒 memory / 載入失敗 → 回空字串。
+    包 機制:scan + rank + render。沒 memory / 載入失敗 → 回空字串。
 
     extra_memory_dirs:除了 user-level memory 外,額外讀的 memory 目錄(例如
     Cowork project 的 `<workspace>/.orion/memory/`)。 union 後一起 rank。
@@ -118,7 +118,7 @@ async def memory_section(
                 # 把 dir 包成 MemoryPaths(root=d.parent, dir_name=d.name 假設叫 memory)
                 fake = _MP(user_id="_extra_", root=d.parent)
                 if fake.memory_dir != d:
-                    continue  # extra dir 不叫 memory,略過(預期一律叫 memory)
+                    continue # extra dir 不叫 memory,略過(預期一律叫 memory)
                 ex = scan_memory_dir(fake, exclude_expired=True)
                 all_memories.extend(ex.memories)
         if not all_memories:
@@ -131,23 +131,23 @@ async def memory_section(
             memory_dir=paths.memory_dir,
         )
         return render_memories(relevant)
-    except Exception:  # noqa: BLE001 — memory 載入失敗不該影響對話
+    except Exception: # noqa: BLE001 — memory 載入失敗不該影響對話
         return ""
 
 
 def output_style_section(style: str | None = None) -> str:
     """選用的 output style。
 
-    Phase 13:若 `style` 是已註冊的 output style 名(`~/.orion/output-styles/<name>.md`
+   :若 `style` 是已註冊的 output style 名(`~/.orion/output-styles/<name>.md`
     或 `<cwd>/.orion/output-styles/<name>.md`),直接用該檔的 prompt body 作 section。
-    找不到對應檔則 fallback 到簡易 hint(維持 Phase 0 行為)。
+    找不到對應檔則 fallback 到簡易 hint(維持 行為)。
     """
     if not style:
         return ""
     try:
         from orion_sdk.output_styles.loader import find_output_style
         loaded = find_output_style(style)
-    except Exception:  # noqa: BLE001 — loader 失敗不該影響對話
+    except Exception: # noqa: BLE001 — loader 失敗不該影響對話
         loaded = None
     if loaded is not None:
         return f"# Output style: {loaded.name}\n\n{loaded.prompt.strip()}"
@@ -172,7 +172,7 @@ def session_guidance_section(extra: str | None = None) -> str:
 
 
 def mcp_instructions_section(mcp_manager: object | None) -> str:
-    """Phase 5:已連 MCP servers + 工具列表。
+    """已連 MCP servers + 工具列表。
 
     Args:
         mcp_manager: McpManager instance(避免循環 import,型別 object)

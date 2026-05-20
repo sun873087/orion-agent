@@ -1,6 +1,6 @@
-"""Slash command 全域 registry — Phase 11。
+"""Slash command 全域 registry。
 
-Phase 11 範圍:單 process 全域 registry。Phase 11c 加 per-conversation override
+範圍:單 process 全域 registry。加 per-conversation override
 (plugin 可註冊只限該 session 用的命令)。
 """
 
@@ -37,8 +37,8 @@ def clear_registry() -> None:
 def register_builtins() -> None:
     """啟動時呼一次 — 註冊內建命令。
 
-    Phase 11 範圍 2 個:/help / /model。其餘 6 個(/clear / /compact / /init /
-    /memory / /cost / /history)由前端 UI 取代(Phase 11c 補回)。
+    範圍 2 個:/help / /model。其餘 6 個(/clear / /compact / /init /
+    /memory / /cost / /history)由前端 UI 取代(補回)。
     """
     from orion_cli.commands.builtin.help import HelpCommand
     from orion_cli.commands.builtin.model import ModelCommand

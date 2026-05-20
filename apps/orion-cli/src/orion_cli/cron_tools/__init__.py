@@ -1,6 +1,6 @@
 """Cron tools — APScheduler-backed cron schedule。
 
-**CLI-only**:Phase 31-H 後從 orion-sdk 搬到 CLI host,因為只 CLI 用 shell
+**CLI-only**:後從 orion-sdk 搬到 CLI host,因為只 CLI 用 shell
 based cron(Cowork 有自己的 LLM 對話排程走 ScheduleCreate / LoopCreate,跟
 shell cron 不重疊)。SDK 不再背 apscheduler dep。
 """

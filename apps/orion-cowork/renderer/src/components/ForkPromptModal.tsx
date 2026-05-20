@@ -1,14 +1,14 @@
 /**
- * 分叉對話的輸入 modal — Phase 31-R。
+ * 分叉對話的輸入 modal。
  *
  * 訂閱 useAgentStore.forkRequest;非 null 時 render,渲染在 App.tsx top-level
  * (跟 NewProjectModal / PlanApprovalModal 同位置),完全避開 chat / MessageBubble
  * 父層 CSS / event 影響。
  *
  * 行為依 fork 點 role 區分:
- *   - 從 user 訊息分叉:輸入框是「新訊息」— 空 = 用原訊息重 ask AI,有值
- *     = 換問法。title 從新訊息前 60 字自動取
- *   - 從 assistant 訊息分叉:輸入框是「分支標題」— user 之後在輸入框打下個 prompt
+ * - 從 user 訊息分叉:輸入框是「新訊息」— 空 = 用原訊息重 ask AI,有值
+ * = 換問法。title 從新訊息前 60 字自動取
+ * - 從 assistant 訊息分叉:輸入框是「分支標題」— user 之後在輸入框打下個 prompt
  *
  * Enter 送出、Esc 取消、點背景關閉。
  */

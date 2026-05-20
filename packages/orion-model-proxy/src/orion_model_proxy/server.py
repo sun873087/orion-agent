@@ -1,15 +1,13 @@
-"""FastAPI service — transparent reverse proxy to OpenAI / Anthropic。
-
-Phase 31-X.4(transparent reverse)+ Phase 32(multi-tenant + DB + admin + 計費)。
+"""FastAPI service — transparent reverse proxy to OpenAI / Anthropic。4(transparent reverse)+(multi-tenant + DB + admin + 計費)。
 
 Endpoints:
-    /openai/{path:path}     → https://api.openai.com/{path}
-    /anthropic/{path:path}  → https://api.anthropic.com/{path}
+    /openai/{path:path} → https://api.openai.com/{path}
+    /anthropic/{path:path} → https://api.anthropic.com/{path}
     /v1/health[/{provider}] / /v1/catalog
-    /admin/*                                multi-tenant CRUD + usage rollup
-    /admin/ui/*                             server-rendered web UI
+    /admin/* multi-tenant CRUD + usage rollup
+    /admin/ui/* server-rendered web UI
 
-Auth(Phase 32 唯一模式):
+Auth(唯一模式):
 - 多租戶:Bearer token 走 sha256 DB lookup,token 由 admin 透過 REST / UI 生成
 - Admin 自己用 `ORION_MODEL_PROXY_ADMIN_KEY` env(獨立)— 沒設 admin endpoints 503
 """
@@ -28,7 +26,7 @@ from orion_model_proxy.auth import enforce_budget, enforce_rate_limit, require_a
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Startup:init DB(create_all idempotent)。Phase 32 後 multi-tenant 是唯一模式。"""
+    """Startup:init DB(create_all idempotent)。後 multi-tenant 是唯一模式。"""
     from orion_model_proxy.db import init_db
     await init_db()
     yield
@@ -84,7 +82,7 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    # Admin routes(REST + Web UI)永遠掛上(Phase 32 多租戶為唯一模式)。
+    # Admin routes(REST + Web UI)永遠掛上(多租戶為唯一模式)。
     from orion_model_proxy.admin_routes import router as admin_router
     from orion_model_proxy.admin_ui import router as admin_ui_router
     app.include_router(admin_router)
@@ -132,7 +130,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"provider": provider, "ok": ok})
 
     # ─── Transparent reverse proxy(全部 chat / responses / audio / embeddings
-    #     / files / 任何 OpenAI 未來新加 endpoint 自動支援)─────────────────
+    # / files / 任何 OpenAI 未來新加 endpoint 自動支援)─────────────────
     from orion_model_proxy.upstream_proxy import (
         anthropic_reverse_proxy,
         openai_reverse_proxy,
@@ -156,7 +154,7 @@ def create_app() -> FastAPI:
     async def anthropic_compat(req: Request, path: str) -> StreamingResponse:
         return await anthropic_reverse_proxy(req, path)
 
-    # Phase 33-E:OpenAI Realtime WebSocket pass-through 骨架。實作未完成 —
+    # E:OpenAI Realtime WebSocket pass-through 骨架。實作未完成 —
     # 主要 use case 是 voice。先註冊 endpoint + 503,避免 path 撞到 catch-all。
     @app.websocket("/openai/v1/realtime")
     async def openai_realtime_ws(ws: WebSocket) -> None:
@@ -166,7 +164,7 @@ def create_app() -> FastAPI:
             "error": {
                 "code": "NOT_IMPLEMENTED",
                 "message": (
-                    "WebSocket realtime proxy 尚未實作 — Phase 33-E skeleton。"
+                    "WebSocket realtime proxy 尚未實作 skeleton。"
                     "目前只支援 HTTP /openai/{path}。"
                 ),
             },

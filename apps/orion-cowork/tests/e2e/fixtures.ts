@@ -1,5 +1,5 @@
 /**
- * Playwright Electron fixtures(Phase 31-F)。
+ * Playwright Electron fixtures。
  *
  * 啟一個 Electron 進程,override sidecar 用 MockProvider(env var)。
  * 每個 test 一個獨立 tmp data dir,避免共用 ~/.orion/sessions/cowork.db。
@@ -37,9 +37,9 @@ export const test = base.extend<Fixtures>({
       cwd: repoRoot,
       env: {
         ...process.env,
-        NODE_ENV: 'development',           // 用 vite :5174,要 dev server 跑著
-        ORION_COWORK_DATA_DIR: dataDir,    // 隔離 sidecar DB
-        ORION_PROVIDER_OVERRIDE: 'mock',   // sidecar 走 MockProvider,不打真 API
+        NODE_ENV: 'development', // 用 vite :5174,要 dev server 跑著
+        ORION_COWORK_DATA_DIR: dataDir, // 隔離 sidecar DB
+        ORION_PROVIDER_OVERRIDE: 'mock', // sidecar 走 MockProvider,不打真 API
         ORION_MOCK_SCRIPT_JSON: JSON.stringify([{ text: 'mocked response' }]),
       },
       timeout: 30_000,

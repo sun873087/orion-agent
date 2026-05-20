@@ -1,4 +1,4 @@
-"""Phase 31-T:TTS cache 驗證。
+"""T:TTS cache 驗證。
 
 不打真 OpenAI — monkeypatch httpx.AsyncClient.post 回固定 fake audio bytes。
 驗證:

@@ -1,7 +1,7 @@
 """Browser-use tools — 透過 system Chrome(Playwright `channel='chrome'`)做
 互動式網頁操作。
 
-**Cowork-only**:Phase 31-H 後從 orion-sdk 搬到 Cowork sidecar,因為只 Cowork
+**Cowork-only**:後從 orion-sdk 搬到 Cowork sidecar,因為只 Cowork
 host 用 — SDK 不再背 playwright dep。CLI / chat-api 都不會註冊這組工具。
 
 啟用條件:
@@ -21,7 +21,7 @@ from typing import Any
 def is_browser_available() -> bool:
     """playwright Python client 有裝且 system 有 Chrome 可用。"""
     try:
-        import playwright  # noqa: F401
+        import playwright # noqa: F401
     except ImportError:
         return False
     return find_chrome_executable() is not None
@@ -96,7 +96,7 @@ def browser_tool_group() -> dict[str, Any]:
     `list_builtin_tool_groups(extra_groups=...)`。"""
     return {
         "group": "Browser",
-        "tools": [{"name": t.name, "description": t.description} for t in build_browser_tools()],  # type: ignore[attr-defined]
+        "tools": [{"name": t.name, "description": t.description} for t in build_browser_tools()], # type: ignore[attr-defined]
     }
 
 

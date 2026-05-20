@@ -1,4 +1,4 @@
-"""Phase 31-E:基礎 e2e — health + register/login flow。
+"""E:基礎 e2e — health + register/login flow。
 
 驗證 chat-api 真的能起 + auth flow 通(寫進 DB → 拿 JWT → /me 帶 token 回 user)。
 不涉及 WS / LLM,完全 deterministic。

@@ -1,6 +1,6 @@
 """LocalBackend — 無隔離,直接走 host。
 
-對應 Phase 1-6 既有行為(BashTool 直接 anyio.open_process,FileWriteTool 直接 Path.write_bytes)。
+對應-6 既有行為(BashTool 直接 anyio.open_process,FileWriteTool 直接 Path.write_bytes)。
 LocalBackend 把這些行為包進 SandboxBackend interface,讓 proxy_tools 統一接口。
 
 **生產環境慎用** — 任意 user 輸入都能讀/寫 host fs,沒隔離。Docker / K8s backend 才安全。
@@ -44,8 +44,8 @@ class LocalBackend:
             with anyio.move_on_after(timeout) as scope:
                 process = await anyio.open_process(
                     argv,
-                    stdout=-1,  # PIPE
-                    stderr=-2,  # STDOUT(合併)
+                    stdout=-1, # PIPE
+                    stderr=-2, # STDOUT(合併)
                     cwd=cwd,
                     env=merged_env,
                 )
@@ -84,7 +84,7 @@ class LocalBackend:
                 raise SandboxError(f"command timed out after {timeout}s")
         except SandboxError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             raise SandboxError(f"local exec failed: {type(e).__name__}: {e}") from e
 
         output = b"".join(output_chunks).decode("utf-8", errors="replace")

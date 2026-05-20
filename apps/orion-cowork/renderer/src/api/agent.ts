@@ -2,9 +2,9 @@
  * Renderer-side wrapper of window.agent.call。
  *
  * 對外:
- *   - createConversation({ provider, model }) → session_id
- *   - sendPrompt(session_id, prompt, onEvent) → 等 turn 完成
- *   - abort(session_id)
+ * - createConversation({ provider, model }) → session_id
+ * - sendPrompt(session_id, prompt, onEvent) → 等 turn 完成
+ * - abort(session_id)
  */
 
 export type SidecarEvent =
@@ -81,7 +81,7 @@ export type SessionExt = {
   workspace_dir: string | null
   project_id: string | null
   /** Session 的最終 cwd(session override > project > app default)。
-   *  /export 等想實際寫檔到對話工作目錄的 caller 用這個。 */
+   * /export 等想實際寫檔到對話工作目錄的 caller 用這個。 */
   resolved_cwd: string | null
 }
 
@@ -276,7 +276,7 @@ export type SkillListItem = {
   editable: boolean
   source_path: string | null
   /** Cowork 桌面 chat 場景是否該顯示。預設 true;false 表此 skill 是 CLI / web 用,
-   *  在 Cowork popover 跟 Settings → 技能列表都應隱藏(LLM 仍可載)。 */
+   * 在 Cowork popover 跟 Settings → 技能列表都應隱藏(LLM 仍可載)。 */
   cowork_visible?: boolean
 }
 
@@ -335,7 +335,7 @@ export async function deleteSkill(filename: string, projectId?: string | null): 
 export type ImportedSkill = { name: string; filename: string; targetDir: string }
 
 /** 匯入外部 skill 資料夾(含 SKILL.md + 附帶檔)— sidecar copytree 整段。
- *  ALREADY_EXISTS error 時 caller 可加 overwrite=true 再呼一次覆蓋。 */
+ * ALREADY_EXISTS error 時 caller 可加 overwrite=true 再呼一次覆蓋。 */
 export async function importSkillFolder(
   sourcePath: string,
   opts?: { projectId?: string | null; filename?: string; overwrite?: boolean },
@@ -403,8 +403,8 @@ export async function listBuiltinTools(): Promise<BuiltinToolGroup[]> {
 }
 
 export type Attachment = {
-  media_type: string  // "image/png" / "image/jpeg" / ...
-  data: string        // base64-encoded(no data: prefix)
+  media_type: string // "image/png" / "image/jpeg" / ...
+  data: string // base64-encoded(no data: prefix)
   /** Frontend-only:給 UI 預覽用,sidecar 忽略。 */
   preview_url?: string
   /** Frontend-only:檔名,只顯示用。 */
@@ -462,8 +462,8 @@ export type ContextBreakdown = {
 }
 
 /** /context — 拉當前 session 的 context window 分配(全 sidecar 本機計算,不打 LLM)。
- *  autoCompactThreshold 應由 caller 從 settings 帶進來,否則 sidecar 用 conv 內的
- *  舊值或預設 0.8,跟 UI 顯示的可能不一致。 */
+ * autoCompactThreshold 應由 caller 從 settings 帶進來,否則 sidecar 用 conv 內的
+ * 舊值或預設 0.8,跟 UI 顯示的可能不一致。 */
 export async function getContextBreakdown(
   sessionId: string,
   opts?: { autoCompactThreshold?: number },
@@ -505,7 +505,7 @@ export async function getContextBreakdown(
 }
 
 /** 從指定 message_index 起 truncate;有 resendText 就重跑 send,沒給就純 delete。
- *  Cache 影響:被刪 message 以後的 prefix 變了 → BP3 / BP4 cache 失效,要重寫。 */
+ * Cache 影響:被刪 message 以後的 prefix 變了 → BP3 / BP4 cache 失效,要重寫。 */
 export async function truncateConversation(
   sessionId: string,
   messageIndex: number,
@@ -536,7 +536,7 @@ export async function truncateConversation(
 }
 
 /** 手動觸發對話壓縮 — UI 攔到 /compact 後呼叫。force=true 跳過 threshold 直接壓。
- *  locale 控制摘要語系(zh-TW / zh-CN / ja / en),sidecar 傳給 SDK 摘要 prompt。 */
+ * locale 控制摘要語系(zh-TW / zh-CN / ja / en),sidecar 傳給 SDK 摘要 prompt。 */
 export async function compactConversation(
   sessionId: string,
   onEvent: (ev: SidecarEvent) => void,
@@ -657,11 +657,11 @@ export async function getConversationStats(
   return out
 }
 
-// ─── Cost budget(Phase 31-Q)──────────────────────────────────────────
+// ─── Cost budget──────────────────────────────────────────
 
 export type SessionBudget = {
   sessionId: string
-  budgetUsdCap: number | null  // null = unlimited
+  budgetUsdCap: number | null // null = unlimited
   currentUsd: number
   exceeded: boolean
 }
@@ -717,10 +717,10 @@ export async function setPermissionMode(
   )
 }
 
-// ─── Plan Mode(Phase 31-J)──────────────────────────────────────────
+// ─── Plan Mode──────────────────────────────────────────
 
 /** 開 / 關 Plan Mode — enabled=true 設 pending flag,下次 send 切 ACTIVE。
- *  enabled=false 從 active/awaiting → reject_and_exit + 刪 plan_file。 */
+ * enabled=false 從 active/awaiting → reject_and_exit + 刪 plan_file。 */
 export async function setPlanMode(
   sessionId: string,
   enabled: boolean,
@@ -784,7 +784,7 @@ export type PlanStatusResult = {
   plan_file_path: string | null
 }
 
-// ─── Attachment staging(Phase 31-N)──────────────────────────────────
+// ─── Attachment staging──────────────────────────────────
 
 export type AttachmentStaged = {
   finalPath: string
@@ -793,9 +793,9 @@ export type AttachmentStaged = {
 }
 
 /** Drag-drop 後告訴 sidecar 源檔路徑,sidecar 判斷:
- *  - 在 workspace 內 → 不 copy,回原 path
- *  - 在外面 → copy 到 <ws>/.orion/uploads/<safe>,回新 path
- *  LLM 收到的 prompt prefix 只列 path,不 inline content。 */
+ * - 在 workspace 內 → 不 copy,回原 path
+ * - 在外面 → copy 到 <ws>/.orion/uploads/<safe>,回新 path
+ * LLM 收到的 prompt prefix 只列 path,不 inline content。 */
 export async function prepareAttachmentDrop(
   sessionId: string,
   sourcePath: string,
@@ -825,8 +825,8 @@ export type WorkspaceFileEntry = {
 }
 
 /** 列 workspace 內檔(給 @file: mention popup),sidecar 端 skip 重的目錄
- *  (node_modules / .git / dist 等)、跳 dotfile / dot-dir。回的 list
- *  最多 500 條,truncated=true 表示有更多沒回。 */
+ * (node_modules / .git / dist 等)、跳 dotfile / dot-dir。回的 list
+ * 最多 500 條,truncated=true 表示有更多沒回。 */
 export async function listWorkspaceFiles(
   sessionId: string,
   max?: number,
@@ -982,7 +982,7 @@ export type SttResult = {
 }
 
 /** 上傳錄音 base64 → 回 transcript + estimated cost。可能 throw(沒 key / API 失敗)。
- *  durationSeconds 由前端錄音時量;後端用 catalog pricing × duration 算 cost。 */
+ * durationSeconds 由前端錄音時量;後端用 catalog pricing × duration 算 cost。 */
 export async function sttTranscribe(
   provider: 'openai' | 'google',
   audioBase64: string,
@@ -1030,7 +1030,7 @@ export async function sttTranscribe(
   return result
 }
 
-// ─── TTS(Phase 31-T)──────────────────────────────────────────────────
+// ─── TTS──────────────────────────────────────────────────
 
 export type TtsResult = {
   audioBase64: string
@@ -1153,7 +1153,7 @@ export type OllamaListResult = {
 }
 
 /** 從 user 本機 Ollama 抓已 pull 的 model 列表(GET /api/tags)。
- *  失敗(Ollama 沒開 / 連不上)會 throw — caller 自己處理 banner UI。 */
+ * 失敗(Ollama 沒開 / 連不上)會 throw — caller 自己處理 banner UI。 */
 export async function listOllamaModels(baseUrl?: string): Promise<OllamaListResult> {
   let result: OllamaListResult | null = null
   let errMsg: string | null = null
@@ -1270,7 +1270,7 @@ export type BulkDeleteStats = {
   totalTargets: number
 }
 
-/** Bulk delete 多個 session — 每個都 cascade fork 子孫。回統計。Phase 31-U。 */
+/** Bulk delete 多個 session — 每個都 cascade fork 子孫。回統計。 */
 export async function deleteConversations(
   sessionIds: string[],
 ): Promise<BulkDeleteStats> {
@@ -1499,7 +1499,7 @@ export async function countForkDescendants(sessionId: string): Promise<number> {
 /**
  * 從 source session 第 N 筆訊息(inclusive)分叉出新 session — 原 session 完全不動。
  * 新 session messages [0..upToMessageIndex] 來自 source,workspace / project 繼承,
- * budget / plan 不繼承。回傳新 session_id。Phase 31-R。
+ * budget / plan 不繼承。回傳新 session_id。
  */
 export async function forkConversation(
   sourceSessionId: string,

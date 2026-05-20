@@ -1,12 +1,12 @@
-"""/me/settings — Phase 14。Web chat 跨機器設定同步(REST CRUD)。
+"""/me/settings。Web chat 跨機器設定同步(REST CRUD)。
 
 spec § 5.2 web chat 簡化版 — 不做 diff push / merge / conflict,直接 DB CRUD +
 **樂觀鎖**(`version` 欄位)防多 tab race。
 
 設計:
-- GET /me/settings        → 全部 settings(dict[str, Any])
-- GET /me/settings/{key}  → 單一(含 version)
-- PUT /me/settings/{key}  → 設(body 帶 expected_version → 不符 409)
+- GET /me/settings → 全部 settings(dict[str, Any])
+- GET /me/settings/{key} → 單一(含 version)
+- PUT /me/settings/{key} → 設(body 帶 expected_version → 不符 409)
 - DELETE /me/settings/{key} → 刪(idempotent,不存在仍 200)
 
 所有 endpoint JWT-protected,需 `ORION_DB_URL`。前端要實作:

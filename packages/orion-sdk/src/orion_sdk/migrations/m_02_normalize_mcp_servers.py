@@ -1,4 +1,4 @@
-"""v02:mcpServers 結構標準化。Phase 13。
+"""v02:mcpServers 結構標準化。
 
 舊格式可能是字串 → 包成 `{"command": <str>, "type": "stdio"}` dict。
 對應 TS migrate*.ts 的 mcp shape 標準化。

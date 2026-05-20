@@ -7,7 +7,7 @@
 - messages(從 message records)
 - ContentReplacementState(從 tool-result-replacement records + 已 seen 的 tool_use_id)
 
-Phase 27:`load_session(sid, engine=...)` 時優先讀 DB messages 表;
+:`load_session(sid, engine=...)` 時優先讀 DB messages 表;
 DB 無資料(舊 session / DB engine = None)走 JSONL fallback。
 transitions / replacements 永遠走 JSONL(沒對應 DB 表)。
 """
@@ -123,7 +123,7 @@ def validate_and_repair_messages(
     warnings: list[str] = []
 
     # 蒐集所有 tool_use 與 tool_result IDs
-    tool_use_info: list[tuple[int, str, str]] = []  # (msg_idx, id, name)
+    tool_use_info: list[tuple[int, str, str]] = [] # (msg_idx, id, name)
     tool_result_ids: set[str] = set()
 
     for i, m in enumerate(messages):
@@ -173,7 +173,7 @@ async def fetch_db_messages(
     session_id: UUID,
     engine: AsyncEngine,
 ) -> list[NormalizedMessage] | None:
-    """Phase 27:async 讀 DB messages 表。
+    """async 讀 DB messages 表。
 
     給 caller(DbSessionManager)在 async context 預先 await 拿到 messages,再把結果
     透過 `prebaked_messages` 傳進 sync load_session。這樣避免 sync 路徑跑 sync engine
@@ -207,13 +207,13 @@ async def fetch_db_messages(
 
 def load_session(
     session_id: UUID,
-    engine: AsyncEngine | None = None,  # noqa: ARG001 — kept for back-compat; use prebaked_messages
+    engine: AsyncEngine | None = None, # noqa: ARG001 — kept for back-compat; use prebaked_messages
     *,
     prebaked_messages: list[NormalizedMessage] | None = None,
 ) -> SessionSnapshot:
     """讀整個 transcript 重建 SessionSnapshot。
 
-    Phase 27:若 `prebaked_messages` 提供(caller 已 async 從 DB 撈出),用該 list 作
+   :若 `prebaked_messages` 提供(caller 已 async 從 DB 撈出),用該 list 作
     canonical messages;否則 messages 走 JSONL(legacy / CLI no-DB)。transitions /
     replacements 永遠 JSONL。`engine` 參數保留為 backwards-compat 標記,實際不使用 —
     讓 DbSessionManager 等 caller 提前 `await fetch_db_messages(...)` 再傳進來。
@@ -242,7 +242,7 @@ def load_session(
         elif kind == "transition":
             snapshot.transitions.append(r)
 
-    # Phase 27:prebaked_messages(DB)優先;否則 JSONL
+    # prebaked_messages(DB)優先;否則 JSONL
     snapshot.messages = (
         prebaked_messages if prebaked_messages is not None else jsonl_messages
     )

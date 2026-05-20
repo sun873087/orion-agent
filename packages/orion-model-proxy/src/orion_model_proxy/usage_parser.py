@@ -1,11 +1,11 @@
-"""Phase X.2 — 從 upstream response 解出 token 使用量 + 算 cost。
+"""從 upstream response 解出 token 使用量 + 算 cost。
 
 支援 endpoint:
-- /openai/v1/chat/completions       stream(SSE last chunk usage)+ non-stream
-- /openai/v1/responses              同上(Responses API wire 對齊)
-- /openai/v1/embeddings             non-stream usage
-- /openai/v1/audio/speech           request body 算 input chars × tts pricing
-- /anthropic/v1/messages            stream(message_delta 累加)+ non-stream
+- /openai/v1/chat/completions stream(SSE last chunk usage)+ non-stream
+- /openai/v1/responses 同上(Responses API wire 對齊)
+- /openai/v1/embeddings non-stream usage
+- /openai/v1/audio/speech request body 算 input chars × tts pricing
+- /anthropic/v1/messages stream(message_delta 累加)+ non-stream
 
 其他 endpoint 走 best-effort fallback:cost=0,只 log endpoint 名(讓 admin
 看得到誰打了什麼,即使沒算到費用)。
@@ -264,13 +264,13 @@ _ANTHROPIC_MESSAGES_PATH = re.compile(r"^/?v1/messages$")
 
 def parse_usage(
     *,
-    provider: str,                  # 'openai' | 'anthropic'
-    path: str,                      # 'v1/chat/completions' 之類(不含 /openai 或 /anthropic 前綴)
+    provider: str, # 'openai' | 'anthropic'
+    path: str, # 'v1/chat/completions' 之類(不含 /openai 或 /anthropic 前綴)
     method: str,
     request_body: bytes,
     response_body: bytes,
     content_type: str,
-    endpoint_full: str,             # 完整 endpoint name 給 log(e.g. '/openai/v1/chat/completions')
+    endpoint_full: str, # 完整 endpoint name 給 log(e.g. '/openai/v1/chat/completions')
 ) -> UsageEvent | None:
     """根據 path 分派。回 UsageEvent 或 None(未支援 endpoint)。
 
@@ -286,7 +286,7 @@ def parse_usage(
             content_type=content_type,
             endpoint_full=endpoint_full,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         _log.exception("usage_parser dispatch failed for %s: %s", endpoint_full, e)
         return None
 
@@ -341,7 +341,7 @@ def _dispatch(
             cost = round(char_count * price_per_1m / 1_000_000, 8)
             return UsageEvent(
                 provider=provider, model=model, endpoint=endpoint_full,
-                input_tokens=char_count,  # 借 input_tokens 欄存 char count
+                input_tokens=char_count, # 借 input_tokens 欄存 char count
                 output_tokens=0, cache_read_tokens=0, cache_creation_tokens=None,
                 cost_usd=cost,
             )

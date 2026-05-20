@@ -54,7 +54,7 @@ def current_user(
 ) -> str:
     """從 Authorization: Bearer <token> 取出 user_id(UUID 字串)。失敗 → 401。
 
-    Phase 29 後此值即 users.id;routes 直接拿來當 FK target,跟 schema 對齊。
+    後此值即 users.id;routes 直接拿來當 FK target,跟 schema 對齊。
     """
     try:
         return verify_token(creds.credentials)

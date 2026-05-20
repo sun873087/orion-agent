@@ -1,6 +1,6 @@
 """CronScheduler — APScheduler AsyncIOScheduler wrapper。
 
-Phase 10 範圍 single-instance,in-memory job store。
+範圍 single-instance,in-memory job store。
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ class CronScheduler:
                     stderr=asyncio.subprocess.STDOUT,
                 )
                 await proc.wait()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 logger.warning("cron job %s failed: %s", name, e)
 
         ap_job = self._sched.add_job(_run, trigger, id=job_id, name=name, replace_existing=True)

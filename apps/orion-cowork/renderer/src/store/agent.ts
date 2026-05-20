@@ -34,7 +34,7 @@ export type AttachmentRef = {
 
 export type AttachmentPreview = {
   /** 上傳完成後仍要顯預覽:user message 沒 ref(尚未 persist),從 base64 來;
-   *  history reload 才走 ref + lazy fetch。 */
+   * history reload 才走 ref + lazy fetch。 */
   previewUrl?: string
   filename: string
   media_type: string
@@ -43,7 +43,7 @@ export type AttachmentPreview = {
 }
 
 /** Assistant message 內的 block — 純文字 / tools 兩種。
- *  解 LLM 「stream text → 呼 tool → stream text → 呼 tool」交錯場景的順序。 */
+ * 解 LLM 「stream text → 呼 tool → stream text → 呼 tool」交錯場景的順序。 */
 export type AssistantBlock =
   | { type: 'text'; text: string }
   | { type: 'tools'; toolUseIds: string[] }
@@ -89,15 +89,15 @@ export type SessionSummary = {
   starred?: boolean
   /** 排程觸發產生的 session 帶這個標記;手動建的 session 為 null。 */
   scheduled_by?: { schedule_id: string; schedule_name: string } | null
-  /** Fork 系譜(Phase 31-S)— 從哪個 session 第幾輪分叉來的,null = 非 fork。 */
+  /** Fork 系譜— 從哪個 session 第幾輪分叉來的,null = 非 fork。 */
   forked_from_session_id?: string | null
   forked_from_message_index?: number | null
 }
 
 /** Fork modal 開啟 request — App.tsx top-level 渲染 modal,MessageBubble 只 dispatch。
- *  Phase 31-R 改:原本 modal 在 MessageBubble 內 createPortal,user 回報沒反應;
- *  改提到 top-level 跟 NewProjectModal / PlanApprovalModal 同 pattern,徹底避開
- *  ancestor CSS / event 干擾。 */
+ * 改:原本 modal 在 MessageBubble 內 createPortal,user 回報沒反應;
+ * 改提到 top-level 跟 NewProjectModal / PlanApprovalModal 同 pattern,徹底避開
+ * ancestor CSS / event 干擾。 */
 export type ForkRequest = {
   sessionId: string
   messageIndex: number
@@ -109,9 +109,9 @@ export type ForkRequest = {
 
 type AgentState = {
   sessionId: string | null
-  // ─── Per-session state(Phase 31-M)— 切走的 session 仍然背景跑,events
-  //     寫進對應 sid 的 slot,sidebar 顯 busy 指示。同時最多
-  //     `maxConcurrentSessions` 條 in-flight 串流(預設 5,可 Settings 調)。
+  // ─── Per-session state— 切走的 session 仍然背景跑,events
+  // 寫進對應 sid 的 slot,sidebar 顯 busy 指示。同時最多
+  // `maxConcurrentSessions` 條 in-flight 串流(預設 5,可 Settings 調)。
   messagesBySession: Record<string, Message[]>
   busyBySession: Record<string, boolean>
   errorBySession: Record<string, string | null>
@@ -120,8 +120,8 @@ type AgentState = {
   compactingBySession: Record<string, boolean>
   initError: string | null
   sessions: SessionSummary[]
-  /** Plan Mode(Phase 31-J)— 每 session 一個 state,從 sidecar notification
-   *  跟 plan_status RPC 同步。不存 localStorage,sidecar DB 是 source of truth。 */
+  /** Plan Mode— 每 session 一個 state,從 sidecar notification
+   * 跟 plan_status RPC 同步。不存 localStorage,sidecar DB 是 source of truth。 */
   planModeStatusBySession: Record<string, 'idle' | 'pending' | 'active' | 'awaiting_approval'>
   setPlanModeStatus: (sid: string, status: 'idle' | 'pending' | 'active' | 'awaiting_approval') => void
   /** Plan AWAITING_APPROVAL 對話的 plan markdown(modal 用)。 */
@@ -132,8 +132,8 @@ type AgentState = {
   }>
   setPendingPlanApproval: (sid: string, data: { planId: string | null; planMarkdown: string; planFilePath: string | null }) => void
   clearPendingPlanApproval: (sid: string) => void
-  /** Fork modal 全域 state(Phase 31-R)— 任意 MessageBubble 點分叉 dispatch
-   *  進來,App.tsx 頂層渲染 ForkPromptModal,避開 chat 容器 CSS 影響。 */
+  /** Fork modal 全域 state— 任意 MessageBubble 點分叉 dispatch
+   * 進來,App.tsx 頂層渲染 ForkPromptModal,避開 chat 容器 CSS 影響。 */
   forkRequest: ForkRequest
   openForkRequest: (
     sessionId: string,
@@ -143,8 +143,8 @@ type AgentState = {
   ) => void
   closeForkRequest: () => void
 
-  /** Sidebar 多選模式(Phase 31-U)— 啟用時 row 顯 checkbox 取代 icon,
-   *  點 row toggle 選取(不切 session)。退出時清空。Ephemeral,不 persist。 */
+  /** Sidebar 多選模式— 啟用時 row 顯 checkbox 取代 icon,
+   * 點 row toggle 選取(不切 session)。退出時清空。Ephemeral,不 persist。 */
   sidebarSelectionMode: boolean
   selectedSessionIds: string[]
   enterSidebarSelection: () => void
@@ -153,17 +153,17 @@ type AgentState = {
   selectAllSessions: (ids: string[]) => void
   clearSessionSelection: () => void
   /** 非 tool call 產生但要顯在 RightSidebar 工作資料夾的檔/夾路徑。
-   *  Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
-   *  App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
+   * Per-session map(key=sessionId),切回來還看得到自己之前 /export 的紀錄。
+   * App 重啟才清(in-memory only,DB 不存 — Session 工作目錄裡的物理檔本來就在)。 */
   extraOutputFiles: Record<string, string[]>
   addExtraOutputFile: (sessionId: string, path: string) => void
   /** /context — push user msg "/context" + system context-report card 到 messages。
-   *  不進 sidecar state_messages / DB,純 UI snapshot。 */
+   * 不進 sidecar state_messages / DB,純 UI snapshot。 */
   appendContextReportCard: (sid: string, report: ContextBreakdown) => void
   /** 壓縮完成 — 把現有訊息標 compacted(灰化,不再 LLM 可見)+ 插入 summary card。
-   *  `liveTailCount` 是要保留不標 compacted 的尾端訊息數
-   *  (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
-   *   手動 /compact 為 0)。 */
+   * `liveTailCount` 是要保留不標 compacted 的尾端訊息數
+   * (auto 路徑為 2:剛 append 的 user msg + assistant skeleton;
+   * 手動 /compact 為 0)。 */
   applyCompactComplete: (
     sid: string,
     summary: string,
@@ -179,7 +179,7 @@ type AgentState = {
   setBusy: (sid: string, b: boolean) => void
   setSessions: (s: SessionSummary[]) => void
   /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
-   *  舊 session 仍可在背景跑,切回來能看到最新狀態。 */
+   * 舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
   /** Hydrate 一個 session 的 messages(從 DB load 後初始化或刷新)。 */
   hydrateMessages: (sid: string, messages: Message[]) => void
@@ -201,7 +201,7 @@ type AgentState = {
   /** Ask 模式 — 標記 toolCall 在等使用者 approval(顯 banner)。 */
   markToolAwaitingApproval: (sid: string, toolUseId: string) => void
   /** User 已決 — 把 awaiting_approval 拉回 running,banner 立刻消失,
-   *  之後 tool_result 來再走 endToolCall 改 success / error。 */
+   * 之後 tool_result 來再走 endToolCall 改 success / error。 */
   clearToolApprovalUI: (sid: string, toolUseId: string) => void
 
   setPendingQuestion: (sid: string, q: PendingQuestion | null) => void
@@ -221,7 +221,7 @@ function updateSession<K extends keyof AgentState>(
   state: AgentState,
   field: K,
   sid: string | null,
-  updater: (prev: any) => any,  // eslint-disable-line @typescript-eslint/no-explicit-any
+  updater: (prev: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
 ): Partial<AgentState> {
   if (!sid) return {}
   const map = state[field] as Record<string, unknown>

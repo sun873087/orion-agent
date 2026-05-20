@@ -1,9 +1,9 @@
-"""AgentSummary — agent 完成後給人類看的兩三句摘要。Phase 15。
+"""AgentSummary — agent 完成後給人類看的兩三句摘要。
 
 對應 TS Claude Code `src/services/AgentSummary/agentSummary.ts`。
 
 設計:
-- 用 Phase 12 `services.side_query`(不汙染主對話)
+- 用 `services.side_query`(不汙染主對話)
 - 預設 model 為 Haiku — 摘要任務簡單,Sonnet 過度殺雞(spec § 6 設計決策)
 - 產出 2-4 句,聚焦「DO 了什麼」,不寫嘗試 / 過程
 - 失敗回 fallback 字串(不 raise),呼叫端可信任
@@ -115,7 +115,7 @@ async def generate_agent_summary(
             ),
             provider=provider,
         )
-    except Exception:  # noqa: BLE001 — 摘要失敗不該 raise
+    except Exception: # noqa: BLE001 — 摘要失敗不該 raise
         return f"[{agent_name} completed work without summary]"
 
     summary = result.text.strip()

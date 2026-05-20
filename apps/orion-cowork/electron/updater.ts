@@ -1,5 +1,5 @@
 /**
- * Phase 33-F — electron-updater wiring。
+ * electron-updater wiring。
  *
  * 啟動後延遲 5s autoCheck;有新版 → 自動 download → notify renderer →
  * user 按 Restart 才 quit+install。
@@ -36,7 +36,7 @@ function _load(): AutoUpdater | null {
 }
 
 /** Init auto-updater + 把事件 forward 給 renderer windows。
- *  `getWindows`:用 closure 抓 BrowserWindow list,避免 import 循環。
+ * `getWindows`:用 closure 抓 BrowserWindow list,避免 import 循環。
  */
 export function initAutoUpdater(getWindows: () => BrowserWindow[]): void {
   if (process.env.NODE_ENV === 'development') {

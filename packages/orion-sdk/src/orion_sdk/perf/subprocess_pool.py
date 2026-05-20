@@ -1,4 +1,4 @@
-"""SubprocessPool — Phase 10。
+"""SubprocessPool。
 
 asyncio.create_subprocess_exec 每次都 fork,跑 ripgrep / shell 等高頻短命令時
 fork overhead(macOS 上常見 5-15ms)會放大。本 pool 維持 N 個 idle worker
@@ -7,7 +7,7 @@ process(背景跑 daemon shell),拿到任務 send line / get reply。
 注意:**僅適用無狀態、可序列化的 short command**。複雜 stdin / interactive
 不該走這條(直接 create_subprocess_exec)。
 
-Phase 10 範圍簡化版:對 `["sh", "-c", <cmd>]` 形式的命令做 pool。
+範圍簡化版:對 `["sh", "-c", <cmd>]` 形式的命令做 pool。
 搜尋類(ripgrep)由 caller 自行用 SubprocessPool.exec_simple。
 """
 
@@ -48,7 +48,7 @@ class SubprocessPool:
     """簡單版:啟 N 個 long-lived `sh` worker,exec_simple 在其中跑 oneliner。
 
     若 N 個全 busy,fallback 到直接 create_subprocess_shell。
-    Phase 10b 可改 work-stealing / 排隊。
+    可改 work-stealing / 排隊。
     """
 
     def __init__(self, *, size: int = 4) -> None:
@@ -90,12 +90,12 @@ class SubprocessPool:
 
         # Pool worker 路徑:寫一個 sentinel 接結果。簡化版:每次新 sub-shell。
         # (long-lived shell 維持 stdin alive 但要 sentinel 抓 rc;為簡化先 fallback。)
-        # → Phase 10c 改真 sentinel-based 重用。Phase 10 範圍只 stat 框架。
+        # → 改真 sentinel-based 重用。範圍只 stat 框架。
         worker = self._try_acquire()
         if worker is not None:
             try:
                 self.stats.hits += 1
-                # 暫時做法:即使有 worker,還是 fork。Phase 10c 改 sentinel-based。
+                # 暫時做法:即使有 worker,還是 fork。改 sentinel-based。
                 proc = await asyncio.create_subprocess_shell(
                     command,
                     stdout=asyncio.subprocess.PIPE,

@@ -6,12 +6,12 @@
   class FileReadTool:
       name = "Read"
       description = "Read a file"
-      input_schema = FileReadInput  # 你的 Pydantic class
+      input_schema = FileReadInput # 你的 Pydantic class
 
       async def call(self, input, ctx):
           yield TextEvent(text=...)
 
-  isinstance(FileReadTool(), Tool)  # True (runtime_checkable)
+  isinstance(FileReadTool(), Tool) # True (runtime_checkable)
 """
 
 from __future__ import annotations
@@ -111,5 +111,5 @@ class Tool(Protocol[Input_T]):
         return False
 
     def max_result_size_chars(self) -> int | float:
-        """結果大小上限,超過要持久化(見 Phase 2)。預設 100_000。"""
+        """結果大小上限,超過要持久化(見)。預設 100_000。"""
         return 100_000

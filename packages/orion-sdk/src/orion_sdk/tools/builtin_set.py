@@ -78,7 +78,7 @@ def build_default_tool_set(
     """
     disabled = disabled_tools or set()
     all_candidates: list[Tool[Any]] = [
-        # Phase 1 — 基礎
+        # 基礎
         FileReadTool(),
         FileWriteTool(),
         FileEditTool(),
@@ -89,14 +89,14 @@ def build_default_tool_set(
         WebSearchTool(),
         SkillTool(),
         TodoWriteTool(),
-        # Phase 9 — workdir
+        # workdir
         EnterWorkdirTool(),
         ExitWorkdirTool(),
-        # Phase 10 — special
+        # special
         SleepTool(),
-        # Phase 10 — notebook
+        # notebook
         NotebookEditTool(),
-        # Phase 10 — task
+        # task
         TaskCreateTool(),
         TaskGetTool(),
         TaskListTool(),

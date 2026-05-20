@@ -1,7 +1,7 @@
-"""/me/memories — Phase 25。Memory CRUD over fs(per-user)。
+"""/me/memories。Memory CRUD over fs(per-user)。
 
-Memory 仍存 `~/.orion/users/<uid>/memory/*.md`(Phase 3 既有 layout),這層只包
-REST 殼讓 web UI 能 list / read / write / delete。**沒搬 DB** — Phase 3 設計就是
+Memory 仍存 `~/.orion/users/<uid>/memory/*.md`(既有 layout),這層只包
+REST 殼讓 web UI 能 list / read / write / delete。**沒搬 DB** 設計就是
 fs-based,搬 DB 是另一個 phase 的事。
 
 Frontmatter 格式由 `memory.scan.parse_frontmatter` 處理。寫入時我們重組 KEY: VALUE

@@ -1,8 +1,8 @@
-"""Conversation recovery — Phase 13。對應 TS `src/utils/conversationRecovery.ts`。
+"""Conversation recovery。對應 TS `src/utils/conversationRecovery.ts`。
 
 修復兩類 corrupt:
 1. **JSONL 半行**:`load_transcript_safe(path)` 跳過 `JSONDecodeError`,計數寫進 report
-2. **Orphan tool_use**:Phase 2 `storage/resume.py:validate_and_repair_messages` 已實作 —
+2. **Orphan tool_use**:`storage/resume.py:validate_and_repair_messages` 已實作 —
    本檔的 `load_session_with_recovery` 把那邊的 warnings 收進 RecoveryReport
 
 **閾值守門**(對應 spec § 8 踩雷 #2):corrupt 行 > 有效行 × 0.1 → raise
@@ -47,7 +47,7 @@ class RecoveryReport:
     """parse 失敗的行數(JSONDecodeError / 非 dict)。"""
 
     orphan_tool_use_warnings: list[str] = field(default_factory=list)
-    """Phase 2 validate_and_repair_messages 報的 dangling tool_use 訊息。"""
+    """validate_and_repair_messages 報的 dangling tool_use 訊息。"""
 
     fix_actions: list[str] = field(default_factory=list)
     """人類可讀的修補摘要(寫進 log / 顯示給 user)。"""
@@ -117,7 +117,7 @@ def load_session_with_recovery(
     *,
     raise_on_severe: bool = False,
 ) -> tuple[SessionSnapshot, RecoveryReport]:
-    """完整 recovery flow(整合 Phase 2 + Phase 13)。
+    """完整 recovery flow(整合 +)。
 
     Args:
         session_id: 要 resume 的 session ID。
@@ -126,18 +126,18 @@ def load_session_with_recovery(
 
     Returns:
         (SessionSnapshot, RecoveryReport)。
-        SessionSnapshot 已套用過 Phase 2 的 dangling tool_use 修補。
+        SessionSnapshot 已套用過 的 dangling tool_use 修補。
     """
     sp = session_paths(session_id)
 
-    # 用 load_transcript_safe 取得 corrupt 統計(Phase 13 新增)
+    # 用 load_transcript_safe 取得 corrupt 統計(新增)
     _records, report = load_transcript_safe(sp.transcript)
 
-    # 然後走 Phase 2 既有 load_session 拿完整 SessionSnapshot
+    # 然後走 既有 load_session 拿完整 SessionSnapshot
     # (內部用 iter_records_sync — 會 silently skip 同樣的 corrupt 行,結果一致)
     snapshot = load_session(session_id)
 
-    # Phase 2 的 dangling tool_use warnings 收進 report
+    # 的 dangling tool_use warnings 收進 report
     report.orphan_tool_use_warnings = list(snapshot.warnings)
     if snapshot.warnings:
         report.fix_actions.extend(snapshot.warnings)

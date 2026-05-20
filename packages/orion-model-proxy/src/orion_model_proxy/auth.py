@@ -139,11 +139,11 @@ async def require_auth(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     s: AsyncSession = Depends(db_session),
 ) -> AuthedPrincipal:
-    """Multi-tenant DB lookup。Phase 32 後唯一 auth path。
+    """Multi-tenant DB lookup。後唯一 auth path。
 
     對齊 OpenAI / Anthropic 的 status code 慣例:
         401 Unauthorized = 無身分(沒帶 / 格式錯 / 不在 DB)→ SDK AuthenticationError
-        403 Forbidden    = 有身分但無權(已 revoked)→ SDK PermissionDeniedError
+        403 Forbidden = 有身分但無權(已 revoked)→ SDK PermissionDeniedError
     """
     if creds is None:
         raise HTTPException(status_code=401, detail="missing Bearer token")
@@ -178,7 +178,7 @@ async def _touch_last_used(api_key_id: str) -> None:
                 update(ApiKey).where(ApiKey.id == api_key_id).values(last_used_at=int(_now()))
             )
             await s.commit()
-    except Exception:  # noqa: BLE001 — best-effort
+    except Exception: # noqa: BLE001 — best-effort
         pass
 
 
@@ -205,14 +205,14 @@ async def require_admin(
 
 
 async def enforce_budget(request: Request) -> None:
-    """Phase X.3 — pre-request:user 累計成本 >= budget cap → 402。
+    """pre-request:user 累計成本 >= budget cap → 402。
 
     Pre-request 不知這次 request 會花多少,所以是「已超 cap 才擋下一次」。
     最後一次可能略過 cap,文件已說明。
     """
     principal: AuthedPrincipal | None = getattr(request.state, "principal", None)
     if principal is None or principal.budget_usd is None:
-        return  # no cap
+        return # no cap
 
     from orion_model_proxy.usage_logger import get_running_cost
 
@@ -228,7 +228,7 @@ async def enforce_budget(request: Request) -> None:
 
 
 async def enforce_rate_limit(request: Request) -> None:
-    """Phase 33-B — pre-request rate limit。RPM 沒設或 0 → 不擋。"""
+    """pre-request rate limit。RPM 沒設或 0 → 不擋。"""
     principal: AuthedPrincipal | None = getattr(request.state, "principal", None)
     if principal is None or not principal.rate_limit_rpm:
         return

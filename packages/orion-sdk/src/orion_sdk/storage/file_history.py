@@ -33,7 +33,7 @@ _DEFAULT_MAX_SNAPSHOTS = 100
 
 
 def _max_snapshots_from_env() -> int:
-    """Phase 19:從 ORION_FILE_HISTORY_MAX_SNAPSHOTS 讀上限。
+    """從 ORION_FILE_HISTORY_MAX_SNAPSHOTS 讀上限。
 
     無效值(非整數 / 負數)fallback 預設 100。0 視為「不 prune」(避免 user 誤踩)。
     """
@@ -49,7 +49,7 @@ def _max_snapshots_from_env() -> int:
 
 
 def prune_old_snapshots(session_id: UUID, max_count: int) -> int:
-    """Phase 19:按 mtime 排序刪 file-history 內超量的舊 snapshot。
+    """按 mtime 排序刪 file-history 內超量的舊 snapshot。
 
     Args:
         session_id: 對應 file_history_dir
@@ -150,7 +150,7 @@ def make_snapshot(
     )
     snap_path.write_bytes(header.encode("utf-8") + data)
 
-    # Phase 19:寫成功 → prune 超量舊 snapshot。dedupe 路徑(snap_path 早已存在)
+    # 寫成功 → prune 超量舊 snapshot。dedupe 路徑(snap_path 早已存在)
     # 不會走到這裡,避免重複工作。
     prune_old_snapshots(session_id, _max_snapshots_from_env())
 

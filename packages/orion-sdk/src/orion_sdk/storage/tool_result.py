@@ -7,7 +7,7 @@
 - 工具產出 text >= 100KB → 寫到 ~/.orion/sessions/<sid>/tool-results/<tool_use_id>.txt,
   回填內容換成 preview(前 2KB)+ 包標籤 + 路徑
 - 空字串 → 替換成 "(tool produced no output)"
-- 後續 phase 3(budget aggregation)在此之上,決定哪些 ToolResult 進一步替換
+- 未來 3(budget aggregation)在此之上,決定哪些 ToolResult 進一步替換
 
 使用方式:`maybe_persist_large_tool_result(...)` 回傳「應送給模型的 content 字串」。
 """

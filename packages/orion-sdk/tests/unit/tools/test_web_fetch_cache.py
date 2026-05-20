@@ -1,4 +1,4 @@
-"""Phase 18:WebFetchTool URL cache 行為。
+"""WebFetchTool URL cache 行為。
 
 - 第二次 fetch 同 URL 不打網(httpx call_count 驗證)
 - TTL 過期後重新打網
@@ -80,7 +80,7 @@ async def test_different_urls_each_hit_network(
 
     [e async for e in tool.call(WebFetchInput(url="https://a/"), ctx)]
     [e async for e in tool.call(WebFetchInput(url="https://b/"), ctx)]
-    [e async for e in tool.call(WebFetchInput(url="https://a/"), ctx)]  # cached
+    [e async for e in tool.call(WebFetchInput(url="https://a/"), ctx)] # cached
 
     assert counter["n"] == 2
 
@@ -128,7 +128,7 @@ def test_lru_eviction() -> None:
     cache.put("b", b"B", "text/plain")
     cache.put("c", b"C", "text/plain")
     assert len(cache) == 3
-    cache.put("d", b"D", "text/plain")  # 應 evict a
+    cache.put("d", b"D", "text/plain") # 應 evict a
     assert len(cache) == 3
     assert cache.get("a") is None
     assert cache.get("d") is not None
@@ -142,7 +142,7 @@ def test_lru_recency_on_get() -> None:
     cache.put("c", b"C", "text/plain")
     # 把 'a' 訪問成 MRU
     cache.get("a")
-    cache.put("d", b"D", "text/plain")  # 應 evict 'b'(最舊)
+    cache.put("d", b"D", "text/plain") # 應 evict 'b'(最舊)
     assert cache.get("b") is None
     assert cache.get("a") is not None
 

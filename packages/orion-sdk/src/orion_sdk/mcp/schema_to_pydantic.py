@@ -12,7 +12,7 @@
 - anyOf / oneOf / allOf
 - 深層 nested
 
-對應 ToolInput pattern(Phase 0):新建的 model 繼承 ToolInput
+對應 ToolInput pattern:新建的 model 繼承 ToolInput
 (`model_config = {"extra": "forbid"}`)。
 
 Args:
@@ -92,7 +92,7 @@ def schema_to_pydantic_model(
         field_type: Any
         try:
             field_type = _resolve_field_type(prop_schema)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             field_type = Any
 
         description = prop_schema.get("description")

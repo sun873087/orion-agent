@@ -1,4 +1,4 @@
-"""Phase 31-D bug debug:Cowork sidecar 路徑 vision 是否真打通。
+"""D bug debug:Cowork sidecar 路徑 vision 是否真打通。
 
 Spawn sidecar subprocess、送 conversation.send 帶 image attachment(base64
 紅色 64x64 PNG)、驗 model 回應提到 "red"。
@@ -68,7 +68,7 @@ def test_sidecar_passes_attachment_to_model(provider: str, model: str) -> None:
             },
         })
 
-        # Phase 1:create → 拿 sid
+        # create → 拿 sid
         proc = subprocess.run(
             [sys.executable, "-m", "orion_cowork_sidecar"],
             input=create,
@@ -82,7 +82,7 @@ def test_sidecar_passes_attachment_to_model(provider: str, model: str) -> None:
         assert created["event"] == "conversation_created", f"create failed: {created}"
         sid = created["data"]["session_id"]
 
-        # Phase 2:send 帶圖 — 用真實 sid
+        # send 帶圖 — 用真實 sid
         send_real = send.replace("PLACEHOLDER", sid)
         proc = subprocess.run(
             [sys.executable, "-m", "orion_cowork_sidecar"],

@@ -1,10 +1,10 @@
 /**
- * Phase 31-F smoke e2e:Cowork 真的啟得起來,sidebar 顯示 New chat。
+ * smoke e2e:Cowork 真的啟得起來,sidebar 顯示 New chat。
  *
  * 跑法:cd apps/orion-cowork && npm run test:e2e
  * 前置:必須先 `npm run build -w @orion/cowork` 把 main process TS 編好,
- *       且 dev mode 需要 vite renderer dev server(:5174)— 此 smoke 只驗
- *       電子進程能起,不一定需要 renderer fully render(loadURL 會失敗也 OK)。
+ * 且 dev mode 需要 vite renderer dev server(:5174)— 此 smoke 只驗
+ * 電子進程能起,不一定需要 renderer fully render(loadURL 會失敗也 OK)。
  *
  * 不在這層驗:工具呼叫 / persistence / MCP — 留更深的 spec 補。
  */

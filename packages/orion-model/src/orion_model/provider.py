@@ -1,4 +1,4 @@
-"""LLMProvider Protocol — Phase 1+ 透過此介面跑 agent loop。
+"""LLMProvider Protocol —+ 透過此介面跑 agent loop。
 
 兩個實作:
   - AnthropicProvider:直接呼 Anthropic Messages API HTTP 端點
@@ -21,14 +21,14 @@ from orion_model.types import NormalizedMessage
 
 @dataclass
 class ProviderCapabilities:
-    """Provider 支援哪些 feature。Phase 4 / 6 / 9 等用 capability flag 條件處理。"""
+    """Provider 支援哪些 feature。/ 6 / 9 等用 capability flag 條件處理。"""
 
-    prompt_caching: bool         # 手動 cache_control(Anthropic)
-    auto_caching: bool            # 自動 caching(OpenAI prefix > 1024 tokens)
+    prompt_caching: bool # 手動 cache_control(Anthropic)
+    auto_caching: bool # 自動 caching(OpenAI prefix > 1024 tokens)
     parallel_tool_calls: bool
     native_mcp: bool
-    structured_output: bool       # response_format json_schema
-    reasoning_blocks: bool        # extended thinking / o-series reasoning
+    structured_output: bool # response_format json_schema
+    reasoning_blocks: bool # extended thinking / o-series reasoning
     max_context_tokens: int
 
 
@@ -38,7 +38,7 @@ ReasoningEffort = Literal["minimal", "low", "medium", "high"]
 class LLMProvider(Protocol):
     """LLM Provider 介面。"""
 
-    name: str  # "anthropic" / "openai"
+    name: str # "anthropic" / "openai"
     model: str
     capabilities: ProviderCapabilities
 
@@ -67,7 +67,7 @@ class LLMProvider(Protocol):
             reasoning_effort: 推理深度(僅支援 reasoning_blocks 的模型有效)。
 
         Yields:
-            NormalizedEvent — Phase 1+ 處理這些事件。
+            NormalizedEvent —+ 處理這些事件。
         """
         ...
 
@@ -88,7 +88,7 @@ _TEST_PROVIDER_FACTORY: "callable | None" = None
 
 
 def set_test_provider_factory(factory: "callable | None") -> None:
-    """Phase 31-E e2e:測試環境注入 fake provider。
+    """E e2e:測試環境注入 fake provider。
 
     使用方式(只在 test fixture 用,production 永遠 None):
         from orion_sdk._testing import MockProvider
@@ -111,10 +111,10 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
         對應的 LLMProvider 實例。
 
     優先順序:
-        1. `set_test_provider_factory()` 設定(Phase 31-E e2e)→ 回 fake
+        1. `set_test_provider_factory()` 設定(e2e)→ 回 fake
         2. 否則回對應 provider(Anthropic / OpenAI / Ollama)
 
-    `ORION_MODEL_PROXY_URL` env(Phase 31-X)有設時,各 provider 的 base_url
+    `ORION_MODEL_PROXY_URL` env有設時,各 provider 的 base_url
     自動換成 `{proxy}/openai` 或 `{proxy}/anthropic` — proxy 是 transparent
     reverse proxy,SDK 自己跟 proxy 講原生 wire format,**這個 factory 不必
     管 proxy 細節**。Ollama 本機 daemon,不經 proxy。

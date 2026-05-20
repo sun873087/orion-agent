@@ -1,14 +1,14 @@
 """WebFetchTool — fetch a URL,strip HTML 成 plain text。
 
-對應 TS Claude Code `src/tools/WebFetchTool/`。Phase 1 簡化版:
+對應 TS Claude Code `src/tools/WebFetchTool/`。簡化版:
 - httpx 抓 URL
 - BeautifulSoup4 移 script/style/nav/header/footer/aside
 - 取剩下文字,壓多餘空白
 - 30 秒 timeout、200KB 上限
 
-Phase 1 故意不做的:
+故意不做的:
 - readability 抽精華(spec 提了但有 timeout/error 風險,延後)
-- JS 渲染(headless browser,Phase 後段或不做)
+- JS 渲染(headless browser,延後或不做)
 - robots.txt 檢查
 """
 
@@ -57,7 +57,7 @@ class WebFetchTool:
             yield ErrorEvent(message=f"URL must start with http:// or https://: {url!r}")
             return
 
-        # Phase 18:per-session URL cache(TTL 預設 5 min)。同 URL 在同 session
+        # per-session URL cache(TTL 預設 5 min)。同 URL 在同 session
         # 內重複 fetch 走 cache,標 `[cached]` 給模型看。
         cache = get_or_create_url_cache(ctx)
         hit = cache.get(url)
@@ -66,7 +66,7 @@ class WebFetchTool:
                 yield ev
             return
 
-        # Phase 16:abort_aware_scope 讓 ctx.abort_event 中途 set 時即刻關 httpx 連線
+        # abort_aware_scope 讓 ctx.abort_event 中途 set 時即刻關 httpx 連線
         resp: httpx.Response | None = None
         try:
             async with abort_aware_scope(ctx.abort_event) as abort_scope:
@@ -117,7 +117,7 @@ class WebFetchTool:
         ).lower():
             try:
                 text = body.decode("utf-8", errors="replace")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 return [ErrorEvent(message=f"could not decode body: {e}")]
             return [
                 TextEvent(
@@ -143,7 +143,7 @@ class WebFetchTool:
             )
             text = soup.get_text(separator="\n", strip=True)
             text = re.sub(r"\n{3,}", "\n\n", text)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             return [ErrorEvent(message=f"HTML parse failed: {type(e).__name__}: {e}")]
 
         out = f"# {title}{marker}\nURL: {url}\n\n{text}"
@@ -155,10 +155,10 @@ class WebFetchTool:
             return s
         return s[:_MAX_OUTPUT_CHARS] + f"\n... [+{len(s) - _MAX_OUTPUT_CHARS} chars truncated]"
 
-    def is_concurrency_safe(self, input: WebFetchInput) -> bool:  # noqa: ARG002
-        return True  # 純讀(沒有 mutate 本機 state)
+    def is_concurrency_safe(self, input: WebFetchInput) -> bool: # noqa: ARG002
+        return True # 純讀(沒有 mutate 本機 state)
 
-    def is_read_only(self, input: WebFetchInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: WebFetchInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

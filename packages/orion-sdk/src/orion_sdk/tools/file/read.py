@@ -1,4 +1,4 @@
-"""FileReadTool — Phase 0 唯一示範工具。
+"""FileReadTool 唯一示範工具。
 
 對應 TS Claude Code `src/tools/FileReadTool/FileReadTool.tsx`(簡化版)。
 讀本機檔案,做基本安全檢查(只允許絕對路徑、限制大小)。
@@ -14,7 +14,7 @@ from pydantic import Field
 from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 
-_MAX_BYTES = 256 * 1024  # 256 KB
+_MAX_BYTES = 256 * 1024 # 256 KB
 
 
 class FileReadInput(ToolInput):
@@ -91,7 +91,7 @@ class FileReadTool:
             )
             return
 
-        # Phase 12:登錄到 file_state_cache(Edit/Write 之後驗證 staleness)
+        # 登錄到 file_state_cache(Edit/Write 之後驗證 staleness)
         from orion_sdk.services.file_state import FileStateCache
 
         if isinstance(ctx.file_state_cache, FileStateCache):
@@ -107,10 +107,10 @@ class FileReadTool:
         )
         yield TextEvent(text=numbered or "(empty file)")
 
-    def is_concurrency_safe(self, input: FileReadInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileReadInput) -> bool: # noqa: ARG002
         return True
 
-    def is_read_only(self, input: FileReadInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileReadInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

@@ -1,4 +1,4 @@
-"""Phase X.3 — budget cap 達 → 402,沒設 cap → 一律放行。"""
+"""budget cap 達 → 402,沒設 cap → 一律放行。"""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ async def test_budget_under_cap_passes(proxy_db, admin_token, monkeypatch) -> No
 
     app = create_app()
     uid, token = await _create_user_with_key(app, admin_token, "under@x.com", 1.0)
-    await incr_running_cost(uid, 0.5)  # 用一半,還沒滿
+    await incr_running_cost(uid, 0.5) # 用一半,還沒滿
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -133,7 +133,7 @@ async def test_budget_over_cap_blocks_402(proxy_db, admin_token, monkeypatch) ->
 
     app = create_app()
     uid, token = await _create_user_with_key(app, admin_token, "over@x.com", 1.0)
-    await incr_running_cost(uid, 1.5)  # 已超 cap
+    await incr_running_cost(uid, 1.5) # 已超 cap
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

@@ -1,4 +1,4 @@
-"""Tests for orion_sdk.mcp.supervisor (Phase 31-H)。
+"""Tests for orion_sdk.mcp.supervisor。
 
 用 FakeManager(實作 failed_servers + reconnect 介面)隔離 supervisor 邏輯,
 不依賴實際 MCP transport。
@@ -81,7 +81,7 @@ async def test_gives_up_after_max_retries() -> None:
     now = 0.0
     for _ in range(3):
         await sup._check_once(now=now)
-        now += 10.0  # 確保越過 backoff
+        now += 10.0 # 確保越過 backoff
 
     assert sup.attempts("bad") == 3
     assert sup.has_given_up("bad")
@@ -101,7 +101,7 @@ async def test_backoff_skips_check_until_due() -> None:
 
     # t=0.5 還沒到 → skip(不該再 reconnect)
     await sup._check_once(now=0.5)
-    assert manager.reconnect_calls == ["x"]  # 仍 1 次
+    assert manager.reconnect_calls == ["x"] # 仍 1 次
 
     # t=1.5 已過 backoff → retry,這次成功
     await sup._check_once(now=1.5)

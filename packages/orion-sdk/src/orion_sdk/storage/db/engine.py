@@ -30,7 +30,7 @@ def _get_db_url() -> str:
 def _install_sqlite_fk_pragma(engine: AsyncEngine) -> None:
     """SQLite 預設 `foreign_keys=OFF` — 開 PRAGMA 才會 enforce。
 
-    Phase 29 修完 sub=user.id 後可安全開啟。**每條新 connection** 都要設一次
+    修完 sub=user.id 後可安全開啟。**每條新 connection** 都要設一次
     (SQLite per-connection state),故掛在 `connect` event 上。
 
     SQLAlchemy `event.listens_for` 接的是 sync engine — 對 async engine 要綁
@@ -38,7 +38,7 @@ def _install_sqlite_fk_pragma(engine: AsyncEngine) -> None:
     """
 
     @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
+    def _set_sqlite_pragma(dbapi_connection, _connection_record): # type: ignore[no-untyped-def]
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA foreign_keys=ON")
@@ -50,7 +50,7 @@ def create_db_engine(url: str | None = None) -> AsyncEngine:
     """建立 async engine。
 
     SQLite 模式自動加 connect_args={"check_same_thread": False}(async 用)+
-    `PRAGMA foreign_keys=ON` connect listener(Phase 29 — auth sub=user.id 對齊
+    `PRAGMA foreign_keys=ON` connect listener( auth sub=user.id 對齊
     schema 後可安全打開)。
     """
     effective_url = url or _get_db_url()

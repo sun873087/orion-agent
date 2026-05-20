@@ -1,10 +1,10 @@
 """MCP 大結果處理 — 25K token 門檻持久化。
 
-對應 spec § 5 large_output.py + 接 Phase 2 storage/mcp_output stub。
+對應 spec § 5 large_output.py + 接 storage/mcp_output stub。
 
-Phase 2 第 2 層 tool_result.py 處理一般工具的 100KB 門檻。MCP 結果常含結構化
+第 2 層 tool_result.py 處理一般工具的 100KB 門檻。MCP 結果常含結構化
 schema(JSON 序列化保留 type / nested 資訊),門檻可寬一些 — 用 25K token
-(~100KB chars)為 Phase 5 spec 約定值。
+(~100KB chars)為 spec 約定值。
 
 流程:
 - result < threshold → 原樣回(text 化或 JSON dump)
@@ -23,7 +23,7 @@ from uuid import UUID
 
 from orion_sdk.storage.paths import session_paths
 
-MCP_LARGE_THRESHOLD_BYTES = 25_000 * 4  # ~25K tokens × 4 chars/token = 100KB
+MCP_LARGE_THRESHOLD_BYTES = 25_000 * 4 # ~25K tokens × 4 chars/token = 100KB
 """MCP 結果超過此 byte 數就持久化。"""
 
 MCP_PREVIEW_MAX_CHARS = 2048
@@ -90,8 +90,8 @@ def process_mcp_result(
         f"{preview}\n"
         f"\n"
         f"# To inspect the full result:\n"
-        f"#   Use Read or Bash to access {path}\n"
-        f"#   Try: jq '.content[0].text' {path}\n"
+        f"# Use Read or Bash to access {path}\n"
+        f"# Try: jq '.content[0].text' {path}\n"
         f"</persisted-mcp-output>"
     )
 

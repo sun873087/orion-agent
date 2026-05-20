@@ -1,4 +1,4 @@
-"""Streaming events。Phase 1 query_loop 接收這些 normalized event。
+"""Streaming events。query_loop 接收這些 normalized event。
 
 Provider 把 anthropic / openai 的原始 streaming events 翻譯成這些。
 """
@@ -19,7 +19,7 @@ class NormalizedUsage:
     output_tokens: int
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
-    reasoning_tokens: int = 0  # OpenAI o-series / GPT-5 的 reasoning
+    reasoning_tokens: int = 0 # OpenAI o-series / GPT-5 的 reasoning
 
 
 class MessageStartEvent(BaseModel):

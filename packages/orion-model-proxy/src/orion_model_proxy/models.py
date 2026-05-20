@@ -29,9 +29,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     budget_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Phase 33-B per-user rate limit(requests / min);NULL or 0 = unlimited。
+    # B per-user rate limit(requests / min);NULL or 0 = unlimited。
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Phase 33-D 多 org 用;NULL = orphan / 個人。
+    # D 多 org 用;NULL = orphan / 個人。
     organization_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
     )
@@ -96,7 +96,7 @@ class AuditLog(Base):
     ts: Mapped[int] = mapped_column(BigInteger, nullable=False)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     # e.g. "user.create", "user.delete", "key.create", "key.revoke",
-    #      "key.rotate", "budget.set", "webhook.set"
+    # "key.rotate", "budget.set", "webhook.set"
     target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # "user" / "key" / "webhook" / ...
     target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -108,7 +108,7 @@ Index("idx_audit_ts", AuditLog.ts)
 
 
 class Webhook(Base):
-    """Phase 33 webhook config — budget threshold 觸發 POST 給這 URL。
+    """webhook config — budget threshold 觸發 POST 給這 URL。
 
     每個 user 可有多筆 webhook(預算 80% / 100% / revoke 等不同 event)。
     """
@@ -118,7 +118,7 @@ class Webhook(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
-    )  # NULL = 系統級(所有 user 共用,e.g. ops Slack)
+    ) # NULL = 系統級(所有 user 共用,e.g. ops Slack)
     event: Mapped[str] = mapped_column(String(64), nullable=False)
     # "budget.warning_80" / "budget.exceeded" / "key.revoked" / "user.created"
     url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -127,7 +127,7 @@ class Webhook(Base):
 
 
 class RoutingAlias(Base):
-    """Phase 33 routing alias — per-user model override。
+    """routing alias — per-user model override。
     Client 送 'auto-fast' → proxy lookup → 改成 'gpt-5-mini' forward。
     """
 
@@ -136,14 +136,14 @@ class RoutingAlias(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
-    )  # NULL = global default
+    ) # NULL = global default
     alias: Mapped[str] = mapped_column(String(64), nullable=False)
     target_provider: Mapped[str] = mapped_column(String(32), nullable=False)
     target_model: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
 class PromptCache(Base):
-    """Phase 33 prompt cache layer — content hash → cached response。
+    """prompt cache layer — content hash → cached response。
 
     Hash 算 system prompt + messages 後存。read hit 省 upstream cost。
     """
@@ -163,7 +163,7 @@ Index("idx_prompt_cache_hash", PromptCache.content_hash)
 
 
 class Organization(Base):
-    """Phase 33 multi-org — flat users 升 multi-tenant org tree。"""
+    """multi-org — flat users 升 multi-tenant org tree。"""
 
     __tablename__ = "organizations"
 
@@ -181,7 +181,7 @@ class UsageMonthlyRollup(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    year_month: Mapped[str] = mapped_column(String(7), nullable=False)  # "2026-05"
+    year_month: Mapped[str] = mapped_column(String(7), nullable=False) # "2026-05"
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     total_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)

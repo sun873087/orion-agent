@@ -1,6 +1,6 @@
-"""Structured logging via structlog — Phase 7。
+"""Structured logging via structlog。
 
-對應 Phase 7 spec § 4.3 telemetry/observability(基礎)。
+對應 spec § 4.3 telemetry/observability(基礎)。
 
 兩種 renderer:
 - production:JSON(易進 CloudWatch / Loki / Datadog)

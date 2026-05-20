@@ -1,4 +1,4 @@
-"""Command Protocol — Phase 11。對應 TS Command interface。
+"""Command Protocol。對應 TS Command interface。
 
 Slash command 不只是 alias — 可以 mutate conversation state(/clear 清訊息),
 或注入 prompt(/init 把分析 prompt 灌進主對話)。

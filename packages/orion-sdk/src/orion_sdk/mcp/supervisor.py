@@ -1,4 +1,4 @@
-"""MCP server supervisor — Phase 31-H。
+"""MCP server supervisor。
 
 Long-running async task,定期檢查 McpManager.failed_servers,對每個失敗 server
 跑 reconnect 嘗試。指數 backoff,max retries 後放棄(下次 fresh check 重新計次)。
@@ -17,9 +17,9 @@ Notification 透過 caller-provided callback(避免循環依賴 hook system):
 `kind` ∈ {"recovered", "retry_failed", "gave_up"}。
 
 環境變數:
-- ORION_MCP_CHECK_INTERVAL_SECONDS  default 5.0
-- ORION_MCP_MAX_RETRIES             default 3
-- ORION_MCP_BASE_BACKOFF_SECONDS    default 1.0 (1, 2, 4, ...)
+- ORION_MCP_CHECK_INTERVAL_SECONDS default 5.0
+- ORION_MCP_MAX_RETRIES default 3
+- ORION_MCP_BASE_BACKOFF_SECONDS default 1.0 (1, 2, 4, ...)
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ class McpSupervisor:
             result = self.on_event(kind, name, message)
             if asyncio.iscoroutine(result):
                 await result
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             log.warning("mcp.supervisor.callback_error", error=str(e), kind=kind, name=name)
 
     async def _check_once(self, now: float) -> None:
@@ -161,7 +161,7 @@ class McpSupervisor:
         while not self._stop_event.is_set():
             try:
                 await self._check_once(time.monotonic())
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 log.warning("mcp.supervisor.check_error", error=str(e))
             try:
                 await asyncio.wait_for(

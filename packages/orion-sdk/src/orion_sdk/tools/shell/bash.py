@@ -1,14 +1,14 @@
 """BashTool — 跑任意 shell command。對應 TS Claude Code `src/tools/BashTool/`。
 
-Phase 1 範圍:
+範圍:
 - asyncio subprocess + 預設 30s timeout(5min 上限)
 - 捕捉合併 stdout + stderr
 - 檢查 ctx.abort_event,被觸發就 kill
 - non-concurrency-safe(side effects)、non-read-only
 
-Phase 1 故意不做的:
+故意不做的:
 - 真正的 streaming output(整個跑完才回)
-- Sandbox 隔離(Phase 7 / Phase 12)
+- Sandbox 隔離(/)
 - Sibling abort(StreamingToolExecutor 來處理)
 """
 
@@ -26,8 +26,8 @@ from orion_sdk.core.state import AgentContext
 from orion_sdk.core.tool import ErrorEvent, TextEvent, ToolEvent, ToolInput
 
 _DEFAULT_TIMEOUT_S = 30
-_MAX_TIMEOUT_S = 300  # 5 min hard cap
-_MAX_OUTPUT_BYTES = 30_000  # 大輸出截斷
+_MAX_TIMEOUT_S = 300 # 5 min hard cap
+_MAX_OUTPUT_BYTES = 30_000 # 大輸出截斷
 
 
 class BashInput(ToolInput):
@@ -93,8 +93,8 @@ class BashTool:
             with anyio.move_on_after(input.timeout_seconds) as scope:
                 process = await anyio.open_process(
                     argv,
-                    stdout=-1,  # asyncio.subprocess.PIPE
-                    stderr=-2,  # asyncio.subprocess.STDOUT — 合併
+                    stdout=-1, # asyncio.subprocess.PIPE
+                    stderr=-2, # asyncio.subprocess.STDOUT — 合併
                     cwd=cwd,
                 )
                 # 一邊讀 output 一邊監看 abort_event
@@ -131,7 +131,7 @@ class BashTool:
                     await process.wait()
                     # process 結束後,read_output 自然完成,watch_abort 被取消
                     tg.cancel_scope.cancel()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"Failed to run bash: {type(e).__name__}: {e}")
             return
 
@@ -151,7 +151,7 @@ class BashTool:
 
         try:
             output_text = b"".join(output_chunks).decode("utf-8", errors="replace")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"Could not decode output: {e}")
             return
 
@@ -168,11 +168,11 @@ class BashTool:
         else:
             yield TextEvent(text=full)
 
-    def is_concurrency_safe(self, input: BashInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: BashInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: BashInput) -> bool:  # noqa: ARG002
-        # 動態判斷太複雜(`ls` vs `rm`),Phase 1 保守 False
+    def is_read_only(self, input: BashInput) -> bool: # noqa: ARG002
+        # 動態判斷太複雜(`ls` vs `rm`) 保守 False
         return False
 
     def max_result_size_chars(self) -> int | float:

@@ -1,4 +1,4 @@
-"""Phase 33-C — proxy DB backup / restore 跨 schema round-trip。"""
+"""proxy DB backup / restore 跨 schema round-trip。"""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ async def test_restore_rejects_bad_zip(proxy_db) -> None:
         path = Path(f.name)
     try:
         async with factory() as s:
-            with pytest.raises(Exception):  # zipfile.BadZipFile or ValueError
+            with pytest.raises(Exception): # zipfile.BadZipFile or ValueError
                 await restore_from_zip(s, path)
     finally:
         path.unlink(missing_ok=True)

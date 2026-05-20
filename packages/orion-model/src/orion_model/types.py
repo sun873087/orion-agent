@@ -1,6 +1,6 @@
 """Normalized 訊息型別。
 
-Phase 1+ 只見這些,看不到 anthropic / openai SDK 細節。
++ 只見這些,看不到 anthropic / openai SDK 細節。
 Provider 內部把這些翻譯成各家原生格式。
 """
 
@@ -40,8 +40,8 @@ class ImageBlock(BaseModel):
     """圖片(base64-encoded)。"""
 
     type: Literal["image"] = "image"
-    media_type: str  # "image/png" / "image/jpeg" / "image/gif" / "image/webp"
-    data: str         # base64-encoded
+    media_type: str # "image/png" / "image/jpeg" / "image/gif" / "image/webp"
+    data: str # base64-encoded
 
 
 class ThinkingBlock(BaseModel):
@@ -52,7 +52,7 @@ class ThinkingBlock(BaseModel):
 
 
 class TombstoneBlock(BaseModel):
-    """被 autoCompact 替換掉的訊息範圍 placeholder(Phase 3)。
+    """被 autoCompact 替換掉的訊息範圍 placeholder。
 
     送給模型看的時候只是一段 "summary" text。內部保留 range_start_uuid /
     range_end_uuid 給 resume 對齊用 — 萬一兩個 conversation 共用 transcript,

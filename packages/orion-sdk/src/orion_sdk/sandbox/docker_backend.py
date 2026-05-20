@@ -1,6 +1,6 @@
 """DockerBackend — per-session Docker container 隔離。
 
-對應 Phase 7 spec § 5(主文件 Docker 路線)。
+對應 spec § 5(主文件 Docker 路線)。
 
 設計:
 - 每 conversation 一個 container(image: 預設 `python:3.12-slim`)
@@ -62,7 +62,7 @@ class DockerBackend:
             return self._container
 
         try:
-            import docker  # type: ignore[import-untyped]
+            import docker # type: ignore[import-untyped]
         except ImportError as e:
             raise SandboxError("docker package not installed") from e
 
@@ -101,7 +101,7 @@ class DockerBackend:
 
         try:
             client, container = await anyio.to_thread.run_sync(_start)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             raise SandboxError(f"docker container start failed: {e}") from e
 
         self._client = client
@@ -139,7 +139,7 @@ class DockerBackend:
                 raise SandboxError(f"command timed out after {timeout}s")
         except SandboxError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             raise SandboxError(f"docker exec failed: {e}") from e
 
         truncated = False
@@ -182,7 +182,7 @@ class DockerBackend:
             return await anyio.to_thread.run_sync(_read)
         except SandboxError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             raise SandboxError(f"read_file failed: {e}") from e
 
     async def write_file(self, path: str, data: bytes) -> None:
@@ -209,7 +209,7 @@ class DockerBackend:
             await anyio.to_thread.run_sync(_write)
         except SandboxError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             raise SandboxError(f"write_file failed: {e}") from e
 
     async def cleanup(self) -> None:

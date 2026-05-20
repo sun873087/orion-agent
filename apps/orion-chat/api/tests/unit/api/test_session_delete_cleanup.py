@@ -1,4 +1,4 @@
-"""Phase 28:介面刪 session 必須清光所有相關資料(fs + DB cascade)。
+"""介面刪 session 必須清光所有相關資料(fs + DB cascade)。
 
 涵蓋:
 - DbSessionManager.delete 同時清 DB sessions row + fs 目錄
@@ -37,12 +37,12 @@ class _DummyProvider:
     name = "anthropic"
     model = "claude-sonnet-4-6"
 
-    async def stream(self, *args, **kwargs):  # noqa: ARG002, ANN001, ANN201
+    async def stream(self, *args, **kwargs): # noqa: ARG002, ANN001, ANN201
         raise NotImplementedError
 
 
 def _dummy_conv() -> Conversation:
-    return Conversation(provider=_DummyProvider())  # type: ignore[arg-type]
+    return Conversation(provider=_DummyProvider()) # type: ignore[arg-type]
 
 
 async def _new_user(engine, username: str) -> str:

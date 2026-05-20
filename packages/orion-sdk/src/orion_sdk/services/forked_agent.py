@@ -1,6 +1,6 @@
 """forked_agent — 共享父 prompt cache 的 fork agent。
 
-對應 TS Claude Code `src/utils/forkedAgent.ts`。Phase 12。
+對應 TS Claude Code `src/utils/forkedAgent.ts`。
 
 關鍵概念:**byte-identical prefix → Anthropic prompt cache 命中**。
 
@@ -9,12 +9,12 @@
 副本不受影響,進 LLM 時前綴仍與父先前那次 turn 相同 → 命中 cache。
 
 caller 範例:
-- Phase 3 `extract_memories`(背景萃取,不影響主對話)
-- Phase 1 `AgentTool.call`(spawn 子 agent)
+- `extract_memories`(背景萃取,不影響主對話)
+- `AgentTool.call`(spawn 子 agent)
 - 任何「跑一段子流程但要省 token」的場景
 
 設計:
-- 沿用 Phase 9 `fork_context_for_subagent`(獨立 abort / sandbox / sub_agent_depth+1)
+- 沿用 `fork_context_for_subagent`(獨立 abort / sandbox / sub_agent_depth+1)
 - 新 HookRegistry(fork **不繼承** 父 hook,避免重複觸發)
 - skip_transcript=True 預設 — fork 不寫 SessionStorage(對應 TS skipTranscript)
 - 結果包 `ForkedAgentResult`:final messages、累積 usage、寫過的檔案路徑
@@ -51,7 +51,7 @@ class CacheSafeParams:
 
     tools: list[Tool[Any]]
     """父對話的 tools list(immutable snapshot)。注意:Tool instance 本身可能還是
-    mutable;Phase 12 範圍內信任 tool 不會在 fork 期間改自身 schema。"""
+    mutable 範圍內信任 tool 不會在 fork 期間改自身 schema。"""
 
     messages_prefix: list[NormalizedMessage]
     """父對話到 fork 前的訊息歷史(deep enough copy 避免 mutate)。"""
@@ -108,7 +108,7 @@ async def run_forked_agent(
     provider: LLMProvider,
     can_use_tool: CanUseToolFn = always_allow,
     max_turns: int = 5,
-    fork_label: str = "fork",  # noqa: ARG001  ─ 預留供未來 telemetry tag
+    fork_label: str = "fork", # noqa: ARG001 ─ 預留供未來 telemetry tag
     sandbox_factory: SandboxFactory | None = None,
     inherit_sandbox: bool = False,
 ) -> ForkedAgentResult:
@@ -156,7 +156,7 @@ async def run_forked_agent(
         system_prompt=parent_params.system_prompt,
         tools=parent_params.tools,
         can_use_tool=can_use_tool,
-        hooks=HookRegistry(),  # fork 不繼承父 hook,避免重複觸發 SessionStart 等
+        hooks=HookRegistry(), # fork 不繼承父 hook,避免重複觸發 SessionStart 等
         initial_messages=fork_messages,
         max_turns=max_turns,
     )

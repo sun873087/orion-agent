@@ -1,4 +1,4 @@
-"""Unit tests for orion_sdk.memory.merge_suggester (Phase 31-G Layer 4)。
+"""Unit tests for orion_sdk.memory.merge_suggester (Layer 4)。
 
 只測純邏輯(_cosine / _cluster / persistence helpers)。
 真實 embedding + LLM 整合測試在 tests/integration/test_memory_merge_suggest.py。
@@ -76,7 +76,7 @@ def test_cluster_no_groups_when_dissimilar() -> None:
         [0.0, 0.0, 1.0],
     ]
     clusters = _cluster(mems, embeds, threshold=0.5)
-    assert clusters == []  # 沒 cluster ≥2
+    assert clusters == [] # 沒 cluster ≥2
 
 
 def test_cluster_excludes_singletons() -> None:
@@ -85,7 +85,7 @@ def test_cluster_excludes_singletons() -> None:
     embeds = [
         [1.0, 0.0],
         [0.99, 0.01],
-        [0.0, 1.0],  # 孤兒
+        [0.0, 1.0], # 孤兒
     ]
     clusters = _cluster(mems, embeds, threshold=0.95)
     assert clusters == [[0, 1]]

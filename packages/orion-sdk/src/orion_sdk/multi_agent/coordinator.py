@@ -1,4 +1,4 @@
-"""Coordinator(Leader-Worker)pattern。Phase 15。
+"""Coordinator(Leader-Worker)pattern。
 
 對應 TS Claude Code `src/coordinator/coordinatorMode.ts`。
 
@@ -6,7 +6,7 @@
   Coordinator(leader)拿到 N 個 TaskAssignment → 並行 spawn N 個 worker 跑各自任務 →
   收集 WorkerReport → caller 自行整合(coordinator 本身只負責 dispatch)。
 
-每個 worker 透過 Phase 12 `services.forked_agent.run_forked_agent` 跑,共享父
+每個 worker 透過 `services.forked_agent.run_forked_agent` 跑,共享父
 prompt cache(若 caller 傳同 system + tools + messages_prefix);個別 worker 失敗
 **不影響其他**(回 status="failed" + error message)。
 
@@ -126,7 +126,7 @@ class Coordinator:
                 max_turns=assignment.max_turns,
                 fork_label=worker_id,
             )
-        except Exception as e:  # noqa: BLE001 — 個別 worker 失敗隔離
+        except Exception as e: # noqa: BLE001 — 個別 worker 失敗隔離
             return WorkerReport(
                 task_id=assignment.task_id,
                 worker_id=worker_id,
@@ -167,7 +167,7 @@ class Coordinator:
                 provider=self.summary_provider,
                 agent_name=agent_name,
             )
-        except Exception:  # noqa: BLE001 — 摘要失敗不該影響 dispatch
+        except Exception: # noqa: BLE001 — 摘要失敗不該影響 dispatch
             return ""
 
     @staticmethod

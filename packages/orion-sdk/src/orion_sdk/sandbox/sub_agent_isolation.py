@@ -1,4 +1,4 @@
-"""Sub-agent isolation — Phase 9。對應 TS forkSubagent + EnterWorktreeTool。
+"""Sub-agent isolation。對應 TS forkSubagent + EnterWorktreeTool。
 
 每個子 agent 拿:
 - 新 session_id(獨立)
@@ -71,7 +71,7 @@ async def fork_context_for_subagent(
     elif sandbox_factory is not None:
         result = sandbox_factory()
         if hasattr(result, "__await__"):
-            new_sandbox = await result  # type: ignore[misc]
+            new_sandbox = await result # type: ignore[misc]
         else:
             new_sandbox = result
 
@@ -82,7 +82,7 @@ async def fork_context_for_subagent(
         feature_flags=dict(parent.feature_flags),
         sub_agent_depth=parent.sub_agent_depth + 1,
         user_id=parent.user_id,
-        replacement_state=None,  # 子 agent 不繼承 parent 的 replacement_state
+        replacement_state=None, # 子 agent 不繼承 parent 的 replacement_state
         sandbox_backend=new_sandbox,
     )
     return SubagentHandle(

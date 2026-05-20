@@ -1,4 +1,4 @@
-"""Multi-agent 訊息協議。Phase 15。
+"""Multi-agent 訊息協議。
 
 `TaskAssignment` / `WorkerReport`:Coordinator(leader-worker)用。
 `PeerMessage`:Swarm(peer-to-peer)用。

@@ -1,12 +1,12 @@
-"""backfill user_id 從 username 改成 users.id — Phase 29
+"""backfill user_id 從 username 改成 users.id
 
-Phase 6/7 把 username 字串當 user_id 寫進 sessions / user_settings / user_preferences。
-schema 的 FK 卻指 users.id(UUID),SQLite FK off 才沒爆。Phase 29 起 auth 層改用
+/7 把 username 字串當 user_id 寫進 sessions / user_settings / user_preferences。
+schema 的 FK 卻指 users.id(UUID),SQLite FK off 才沒爆。起 auth 層改用
 user.id,本 migration 把既存資料修齊。
 
 策略:對每張表跑 `UPDATE ... SET user_id = (SELECT id FROM users WHERE
 username = <table>.user_id)`,只在「current user_id 不是任何 users.id 但是某
-users.username」時動 — 已是 UUID 的新資料(Phase 29 之後寫入)不會被改。
+users.username」時動 — 已是 UUID 的新資料(之後寫入)不會被改。
 
 Revision ID: 0004_backfill_user_id_fk
 Revises: 0003_user_settings
@@ -41,7 +41,7 @@ def upgrade() -> None:
             )
             WHERE user_id NOT IN (SELECT id FROM users)
               AND user_id IN (SELECT username FROM users)
-            """  # noqa: S608 — table name is hard-coded in _BACKFILL_TABLES, not user input
+            """ # noqa: S608 — table name is hard-coded in _BACKFILL_TABLES, not user input
         )
 
 
@@ -55,5 +55,5 @@ def downgrade() -> None:
                 SELECT username FROM users WHERE users.id = {table}.user_id
             )
             WHERE user_id IN (SELECT id FROM users)
-            """  # noqa: S608 — same as upgrade
+            """ # noqa: S608 — same as upgrade
         )

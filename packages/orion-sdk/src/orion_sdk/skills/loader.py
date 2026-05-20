@@ -1,4 +1,4 @@
-"""Skill 載入 — Phase 8(Phase 7+ 多租戶調整 + bundled folder convention)。
+"""Skill 載入 —(+ 多租戶調整 + bundled folder convention)。
 
 Skill = markdown 檔 + YAML frontmatter。對應 TS skills/loadSkillsDir.ts。
 
@@ -6,8 +6,8 @@ Skill = markdown 檔 + YAML frontmatter。對應 TS skills/loadSkillsDir.ts。
 ```
 skills/
 └── <skill-name>/
-    └── SKILL.md           ← 主 skill 檔(必)
-    ├── examples/...       ← 任何附加資料(可選,model 用 Read 取)
+    └── SKILL.md ← 主 skill 檔(必)
+    ├── examples/... ← 任何附加資料(可選,model 用 Read 取)
     └── ...
 ```
 
@@ -77,7 +77,7 @@ def _parse_skill_md(md_path: Path, default_name: str) -> Skill | None:
         return None
     try:
         post = frontmatter.load(md_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         logger.warning("failed to parse skill %s: %s", md_path, e)
         return None
 
@@ -97,7 +97,7 @@ def _parse_skill_md(md_path: Path, default_name: str) -> Skill | None:
             cowork_visible=cowork_visible,
             source_path=md_path,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         logger.warning("failed to build skill from %s: %s", md_path, e)
         return None
 

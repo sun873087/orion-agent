@@ -1,6 +1,6 @@
 """v01:加 default model 欄位(若 settings 沒有的話)。
 
-對應 TS migrations 中 model 欄位的初始化。Phase 13。
+對應 TS migrations 中 model 欄位的初始化。
 """
 
 from __future__ import annotations

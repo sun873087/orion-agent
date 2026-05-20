@@ -1,6 +1,6 @@
 """In-memory SessionManager — 保存 user × session_id → Conversation。
 
-Phase 6 範圍。Phase 7 換 Postgres + cross-instance shared store。
+範圍。換 Postgres + cross-instance shared store。
 
 設計:
 - key: (user_id, session_id) tuple
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _rmtree_session_dir(session_id: UUID) -> None:
     """刪整個 `~/.orion/sessions/<sid>/`(transcript / file-history / tool-results /
-    workspace)。Phase 28:介面刪 session 該把所有相關資料一起清。"""
+    workspace)。:介面刪 session 該把所有相關資料一起清。"""
     root = session_paths(session_id).root
     if root.exists():
         shutil.rmtree(root, ignore_errors=True)
@@ -73,7 +73,7 @@ class SessionManager:
     async def delete(self, user_id: str, session_id: UUID) -> bool:
         async with self._lock:
             removed = self._sessions.pop((user_id, session_id), None) is not None
-        # Phase 28:fs cleanup(in-memory mode 也有 transcript / file-history 等)
+        # fs cleanup(in-memory mode 也有 transcript / file-history 等)
         await anyio.to_thread.run_sync(_rmtree_session_dir, session_id)
         return removed
 

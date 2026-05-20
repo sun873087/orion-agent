@@ -52,7 +52,7 @@ class OpenAIProvider:
         client: AsyncOpenAI | None = None,
     ) -> None:
         self.model = model
-        # Phase 31-X — proxy 透傳:env ORION_MODEL_PROXY_URL 設了把 base_url
+        # proxy 透傳:env ORION_MODEL_PROXY_URL 設了把 base_url
         # 指 /openai/v1,SDK 自己做 reverse 沒翻譯;沒設走 OpenAI 預設。
         if client is None:
             import os as _os
@@ -62,7 +62,7 @@ class OpenAIProvider:
                 # 端塞 placeholder 騙過 SDK。proxy reverse 那層用真實
                 # OPENAI_API_KEY 覆寫 Authorization header。
                 #
-                # Phase 32 proxy 永遠要求 user token Bearer auth。
+                # proxy 永遠要求 user token Bearer auth。
                 # client 端讀 ORION_MODEL_PROXY_KEY(admin 給的 `sk-orion-...`)
                 # → default_headers 蓋掉 SDK 從 api_key 自動生的 Authorization。
                 extra_headers: dict[str, str] = {}
@@ -99,12 +99,12 @@ class OpenAIProvider:
         tools: list[ToolDefinition] | None = None,
         max_tokens: int = 4096,
         temperature: float | None = None,
-        cache_breakpoints: list[int] | None = None,  # noqa: ARG002 — 忽略,OpenAI 自動 cache
+        cache_breakpoints: list[int] | None = None, # noqa: ARG002 — 忽略,OpenAI 自動 cache
         reasoning_effort: ReasoningEffort | None = None,
     ) -> AsyncIterator[NormalizedEvent]:
         """yield NormalizedEvent。
 
-        Phase 16:OpenAI SDK 的 stream object 沒提供 `async with`,中途被 cancel 時
+       :OpenAI SDK 的 stream object 沒提供 `async with`,中途被 cancel 時
         必須手動 aclose 才能關連線。用 try/finally + getattr aclose 兼容不同版本 SDK。
         """
         # OpenAI 不支 cache_control,system list 拼成單字串
@@ -238,7 +238,7 @@ class OpenAIProvider:
                         import sys as _sys
                         try:
                             raw_dump = usage.model_dump() if hasattr(usage, "model_dump") else vars(usage)
-                        except Exception:  # noqa: BLE001
+                        except Exception: # noqa: BLE001
                             raw_dump = str(usage)
                         print(
                             f"[openai usage] model={self.model} input={usage.input_tokens} "
@@ -258,14 +258,14 @@ class OpenAIProvider:
                         ),
                     )
         finally:
-            # Phase 16:中途 cancel 時手動關 stream 釋放 httpx connection
+            # 中途 cancel 時手動關 stream 釋放 httpx connection
             aclose = getattr(stream_obj, "aclose", None) or getattr(stream_obj, "close", None)
             if aclose is not None:
                 try:
                     result = aclose()
                     if hasattr(result, "__await__"):
                         await result
-                except Exception:  # noqa: BLE001
+                except Exception: # noqa: BLE001
                     pass
 
     @staticmethod
@@ -285,8 +285,8 @@ class OpenAIProvider:
         input_tokens: int,
         output_tokens: int,
         cache_read_tokens: int = 0,
-        cache_creation_tokens: int = 0,  # noqa: ARG002 — OpenAI 沒 cache_creation 概念
-        reasoning_tokens: int = 0,  # noqa: ARG002 — 已含於 output_tokens
+        cache_creation_tokens: int = 0, # noqa: ARG002 — OpenAI 沒 cache_creation 概念
+        reasoning_tokens: int = 0, # noqa: ARG002 — 已含於 output_tokens
     ) -> float:
         """估算 USD 成本。reasoning_tokens 已計入 output_tokens(OpenAI 計價方式)。"""
         p = get_pricing("openai", self.model)

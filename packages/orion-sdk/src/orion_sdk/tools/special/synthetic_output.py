@@ -1,4 +1,4 @@
-"""SyntheticOutputTool — Phase 10。對應 TS SyntheticOutputTool / hookHelpers structured output。
+"""SyntheticOutputTool。對應 TS SyntheticOutputTool / hookHelpers structured output。
 
 這支工具的存在純粹是給模型一個「我要回結構化資料」的指示。Caller 把 JSON Schema
 塞到 input_schema,模型 emit tool_use 等同回符合 schema 的 JSON。
@@ -49,16 +49,16 @@ class SyntheticOutputTool:
     async def call(
         self,
         input: BaseModel,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         self.last_output = input.model_dump()
         # echo 回去當 tool result(模型看了知道已收到)
         yield TextEvent(text="(structured output recorded)")
 
-    def is_concurrency_safe(self, input: BaseModel) -> bool:  # noqa: ARG002
-        return False  # 寫 self.last_output
+    def is_concurrency_safe(self, input: BaseModel) -> bool: # noqa: ARG002
+        return False # 寫 self.last_output
 
-    def is_read_only(self, input: BaseModel) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: BaseModel) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

@@ -36,7 +36,7 @@ async function refreshSessions() {
 
 /**
  * 啟動時 refresh sidebar 的 sessions 列表(從 DB)。不再 auto-create — 等
- * user 真的送 prompt 才會建新 session(lazy create,Phase 31-D 後修)。
+ * user 真的送 prompt 才會建新 session(lazy create 後修)。
  */
 export function useInitConversation() {
   useEffect(() => {
@@ -129,7 +129,7 @@ export function usePlanStatusRehydrate(): void {
 
 /**
  * 訂閱 sidecar 推的 plan_mode.* 事件,同步 renderer store。
- * Phase 31-J — Plan Mode UI 反應 sidecar 狀態變化。
+ * Plan Mode UI 反應 sidecar 狀態變化。
  */
 export function usePlanModeNotifications(): void {
   useEffect(() => {
@@ -168,7 +168,7 @@ export function usePlanModeNotifications(): void {
 }
 
 /**
- * 訂閱 sidecar 推的 budget.exceeded 事件(Phase 31-Q)。
+ * 訂閱 sidecar 推的 budget.exceeded 事件。
  *
  * 累積成本超 cap 時 sidecar 會 emit 一次(設新 cap 後才會再 emit)。
  * 這邊把訊息塞進對應 session 的 errorBySession,UI 顯紅 banner。
@@ -193,7 +193,7 @@ export function useBudgetNotifications(): void {
  * useSendPrompt 偵測 sessionId==null 才呼叫 createConversation。
  *
  * 其他 session 的 messages / busy / pendingQuestion 仍留在 store 內背景跑,
- * 切回去時 instantly visible(Phase 31-M)。
+ * 切回去時 instantly visible。
  */
 export function useNewConversation() {
   return useCallback(() => {
@@ -335,7 +335,7 @@ export function useSendPrompt() {
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
     let sid = store.sessionId
-    // 並發上限 — 同時 in-flight 不超過 maxConcurrentSessions(Phase 31-M)
+    // 並發上限 — 同時 in-flight 不超過 maxConcurrentSessions
     // 同一 session 的 re-send(continue)不算新並發,所以只在「新開一條」時擋
     const runningCount = Object.values(store.busyBySession).filter(Boolean).length
     const isContinuingExisting = sid && store.busyBySession[sid]
@@ -414,7 +414,7 @@ export function useSendPrompt() {
       refreshSessions()
       // 補新訊息的 messageIndex,讓 edit / delete 立刻可用,不必等切換對話
       void backfillMessageIndices(targetSid)
-      // TTS autoplay(Phase 31-T)— 開啟且 turn 自然結束就念這則
+      // TTS autoplay— 開啟且 turn 自然結束就念這則
       const settings = useSettingsStore.getState()
       if (settings.ttsAutoplay && settings.ttsProvider !== 'off') {
         const msgs = useAgentStore.getState().messagesBySession[targetSid] ?? []
@@ -619,12 +619,12 @@ async function reloadCurrentMessages(sid: string): Promise<void> {
 
 /** Turn 結束後給 streaming-new 訊息補 messageIndex / compacted / kind。
  *
- *  跟 reloadCurrentMessages 不同 — 不重建整個 messages 陣列(避免訊息物件
- *  identity 改變,造成 React 重 mount + 圖片 lazy reload 閃爍)。只 patch
- *  缺欄位,讓 streaming 出來的 user / assistant 也能取得 DB row index,
- *  之後 edit / delete 按鈕就會出現。
+ * 跟 reloadCurrentMessages 不同 — 不重建整個 messages 陣列(避免訊息物件
+ * identity 改變,造成 React 重 mount + 圖片 lazy reload 閃爍)。只 patch
+ * 缺欄位,讓 streaming 出來的 user / assistant 也能取得 DB row index,
+ * 之後 edit / delete 按鈕就會出現。
  *
- *  Positional merge:第 i 筆 current ↔ 第 i 筆 loaded。長度不齊就略過尾段。 */
+ * Positional merge:第 i 筆 current ↔ 第 i 筆 loaded。長度不齊就略過尾段。 */
 async function backfillMessageIndices(sid: string): Promise<void> {
   try {
     const loaded = await loadMessages(sid)
@@ -680,16 +680,16 @@ export function useDeleteFrom() {
 }
 
 /** 從指定 messageIndex(inclusive)分叉出新 session — 原 session 完全不動。
- *  Phase 31-R。新 session 自動切過去顯示;sidebar refresh 看得到。
+ *。新 session 自動切過去顯示;sidebar refresh 看得到。
  *
- *  Auto-continue 機制(fork 點是 user 訊息時):
- *    - 預設用原訊息文字 resend(AI 在新 branch 重答)
- *    - `newPromptOverride` 給就用它取代,等於「換問法再試一次」— title 自動
- *      從 prompt 前 60 字產生,避免 user 又要輸入一次
+ * Auto-continue 機制(fork 點是 user 訊息時):
+ * - 預設用原訊息文字 resend(AI 在新 branch 重答)
+ * - `newPromptOverride` 給就用它取代,等於「換問法再試一次」— title 自動
+ * 從 prompt 前 60 字產生,避免 user 又要輸入一次
  *
- *  Fork 自 assistant 訊息時:無 auto-continue,新 session 直接停在 assistant
- *  回應,user 在輸入框打下個 prompt。title 用 caller 傳的(沒給 sidecar 自
- *  動帶「原標題 (fork)」)。 */
+ * Fork 自 assistant 訊息時:無 auto-continue,新 session 直接停在 assistant
+ * 回應,user 在輸入框打下個 prompt。title 用 caller 傳的(沒給 sidecar 自
+ * 動帶「原標題 (fork)」)。 */
 export function useFork() {
   return useCallback(
     async (
@@ -815,7 +815,7 @@ export function useEditAndResend() {
 }
 
 /** /compact 攔截 — InputBox 偵測到輸入文字是 /compact 時呼叫。
- *  不送 prompt,直接觸發 sidecar 的 conversation.compact RPC。 */
+ * 不送 prompt,直接觸發 sidecar 的 conversation.compact RPC。 */
 export function useCompactConversation() {
   const locale = useSettingsStore((s) => s.locale)
   const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)

@@ -89,7 +89,7 @@ class AnthropicProvider:
         client: AsyncAnthropic | None = None,
     ) -> None:
         self.model = model
-        # Phase 31-X — ORION_MODEL_PROXY_URL 有設就把 SDK 的 base_url 指到 proxy
+        # ORION_MODEL_PROXY_URL 有設就把 SDK 的 base_url 指到 proxy
         # /anthropic;沒設走 Anthropic 預設 https://api.anthropic.com。
         # 整個透傳邏輯由 anthropic SDK 自己處理(它本來就支援 base_url),
         # proxy 對它而言是 transparent reverse proxy。
@@ -101,7 +101,7 @@ class AnthropicProvider:
                 # 真 key,host 端塞 placeholder 騙過 SDK。proxy reverse 那層
                 # 會用真實 ANTHROPIC_API_KEY 覆寫 x-api-key header。
                 #
-                # Phase 32 proxy 永遠要求 user token Bearer auth。client 讀
+                # proxy 永遠要求 user token Bearer auth。client 讀
                 # ORION_MODEL_PROXY_KEY(admin 給的 `sk-orion-...`)塞進
                 # default_headers Authorization — Anthropic SDK 本來只送
                 # x-api-key,沒這條會直接 401。
@@ -146,7 +146,7 @@ class AnthropicProvider:
     ) -> AsyncIterator[NormalizedEvent]:
         """yield NormalizedEvent。
 
-        Phase 16:`async with client.messages.stream(...)` 是 SDK 提供的 context manager,
+       :`async with client.messages.stream(...)` 是 SDK 提供的 context manager,
         當外圍 cancel scope 觸發 CancelledError,__aexit__ 會關閉 httpx connection。
         因此中途 abort 不需要這層自己處理,直接讓 cancellation propagate 上去即可。
         """
@@ -178,7 +178,7 @@ class AnthropicProvider:
         # 直接呼 Anthropic API HTTP 端點
         async with self.client.messages.stream(
             model=self.model,
-            system=system_param,  # type: ignore[arg-type]
+            system=system_param, # type: ignore[arg-type]
             messages=cast(Any, anthropic_messages),
             tools=cast(Any, anthropic_tools) if anthropic_tools else cast(Any, []),
             max_tokens=max_tokens,

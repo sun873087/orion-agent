@@ -1,4 +1,4 @@
-"""Skills package — Phase 8。
+"""Skills package。
 
 Skill = markdown 檔(`.md`)+ YAML frontmatter,提供 prompt template + parameters
 + frontmatter hooks。

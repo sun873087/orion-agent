@@ -1,4 +1,4 @@
-"""MessageBus — pub/sub。Phase 15。"""
+"""MessageBus — pub/sub。"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ async def test_send_to_unknown_returns_false() -> None:
 @pytest.mark.asyncio
 async def test_send_without_to_agent_returns_false() -> None:
     bus = MessageBus()
-    sent = bus.send(PeerMessage(from_agent="a", content="?"))  # no to_agent
+    sent = bus.send(PeerMessage(from_agent="a", content="?")) # no to_agent
     assert sent is False
     await bus.close()
 
@@ -55,7 +55,7 @@ async def test_broadcast_excludes_sender() -> None:
         async with __import__("anyio").move_on_after(0.05):
             await sub_a.receive()
             sub_a_done = True
-    except Exception:  # noqa: BLE001
+    except Exception: # noqa: BLE001
         sub_a_done = False
     assert not sub_a_done
     await bus.close()

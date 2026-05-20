@@ -1,11 +1,11 @@
-"""Phase 33-E — prompt cache layer。
+"""prompt cache layer。
 
 對 chat/completions、messages、embeddings 等 request body content hash:
     sha256(model + system + messages + temperature)→ key
 DB 內 lookup PromptCache 表 → 命中 → 直接回 response_blob,不打 upstream。
 
 只 cache 非 stream non-tool requests(stream / tool-call sequences 重用
-不安全)。Phase E 起步用,後續再加 TTL / eviction policy。
+不安全)。起步用,後續再加 TTL / eviction policy。
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ async def store(
         )
     ).scalar_one_or_none()
     if existing is not None:
-        return  # collision,don't overwrite
+        return # collision,don't overwrite
     s.add(PromptCache(
         content_hash=content_hash,
         provider=provider,

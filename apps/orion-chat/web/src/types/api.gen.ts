@@ -51,8 +51,8 @@ export interface paths {
          * Login
          * @description 登入。
          *
-         *     DB 模式(engine 設):必驗密碼,失敗 401。
-         *     Dev 模式(engine None):任意 username 通過(向後兼容 Phase 6)。
+         * DB 模式(engine 設):必驗密碼,失敗 401。
+         * Dev 模式(engine None):任意 username 通過(向後兼容)。
          */
         post: operations["login_auth_login_post"];
         delete?: never;
@@ -126,7 +126,7 @@ export interface paths {
         };
         /**
          * Session Cost
-         * @description Phase 9:回該 session 的 token / cost 摘要。
+         * @description:回該 session 的 token / cost 摘要。
          */
         get: operations["session_cost_sessions__session_id__cost_get"];
         put?: never;
@@ -282,7 +282,7 @@ export interface paths {
          * Get All Settings
          * @description 回 user 全部 settings 為 dict[key -> value](不含 version)。
          *
-         *     若 client 需要 version(做樂觀鎖),改打單筆 GET。
+         * 若 client 需要 version(做樂觀鎖),改打單筆 GET。
          */
         get: operations["get_all_settings_me_settings_get"];
         put?: never;

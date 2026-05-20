@@ -1,4 +1,4 @@
-"""Phase 33-B — per-user token bucket rate limit。
+"""per-user token bucket rate limit。
 
 Single-process in-memory bucket(production 多 instance 改 Redis-backed)。
 User 上 rate_limit_rpm 在 users 表 add 一個 column;沒設 → 不限。
@@ -7,7 +7,7 @@ Algorithm:每 user 一個 bucket = (tokens float, last_refill_ts float)。
 每次 request:
     elapsed = now - last_refill_ts
     tokens += elapsed * (rpm / 60.0)
-    tokens = min(tokens, rpm)  # cap at burst size = rpm
+    tokens = min(tokens, rpm) # cap at burst size = rpm
     if tokens >= 1: tokens -= 1; return ok
     else: 429
 """

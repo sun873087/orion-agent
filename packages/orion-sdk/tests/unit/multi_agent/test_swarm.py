@@ -1,4 +1,4 @@
-"""SwarmRunner — Phase 15。"""
+"""SwarmRunner。"""
 
 from __future__ import annotations
 
@@ -40,11 +40,11 @@ async def test_two_agent_mention_routes() -> None:
     config = SwarmConfig(
         agents=_agents(
             ("a", "asker", "say hi to b"),
-            ("b", "responder", ""),  # empty initial → b 等 mention 才動作
+            ("b", "responder", ""), # empty initial → b 等 mention 才動作
         ),
         max_rounds=3,
     )
-    runner = SwarmRunner(config=config, provider=provider)  # type: ignore[arg-type]
+    runner = SwarmRunner(config=config, provider=provider) # type: ignore[arg-type]
     result = await runner.run()
 
     # 雙方都至少跑過一輪
@@ -77,7 +77,7 @@ async def test_max_rounds_caps() -> None:
         ),
         max_rounds=2,
     )
-    runner = SwarmRunner(config=config, provider=provider)  # type: ignore[arg-type]
+    runner = SwarmRunner(config=config, provider=provider) # type: ignore[arg-type]
     result = await runner.run()
 
     for name in ("a", "b"):
@@ -100,7 +100,7 @@ async def test_leader_stop_swarm() -> None:
         leader="l",
         max_rounds=10,
     )
-    runner = SwarmRunner(config=config, provider=provider)  # type: ignore[arg-type]
+    runner = SwarmRunner(config=config, provider=provider) # type: ignore[arg-type]
     result = await runner.run()
 
     assert result.stopped_by_leader is True
@@ -118,7 +118,7 @@ async def test_dup_agent_names_raises() -> None:
         ),
     )
     with pytest.raises(ValueError, match="duplicate"):
-        SwarmRunner(config=config, provider=MockProvider())  # type: ignore[arg-type]
+        SwarmRunner(config=config, provider=MockProvider()) # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -128,24 +128,24 @@ async def test_unknown_leader_raises() -> None:
         leader="ghost",
     )
     with pytest.raises(ValueError, match="leader"):
-        SwarmRunner(config=config, provider=MockProvider())  # type: ignore[arg-type]
+        SwarmRunner(config=config, provider=MockProvider()) # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
 async def test_empty_initial_prompt_skips_first_turn() -> None:
     """initial_prompt='' 的 agent 不會在 round 1 就跑。"""
     provider = MockProvider(turns=[
-        MockTurn(text="@b: hi"),  # a 的 initial
-        MockTurn(text="@a: ok"),  # b 收到後
+        MockTurn(text="@b: hi"), # a 的 initial
+        MockTurn(text="@a: ok"), # b 收到後
     ])
     config = SwarmConfig(
         agents=_agents(
             ("a", "x", "say hi"),
-            ("b", "y", ""),  # empty
+            ("b", "y", ""), # empty
         ),
         max_rounds=2,
     )
-    runner = SwarmRunner(config=config, provider=provider)  # type: ignore[arg-type]
+    runner = SwarmRunner(config=config, provider=provider) # type: ignore[arg-type]
     result = await runner.run()
     # b 等 a 的 mention,b 第一條訊息 history 應該是 user(來自 a)
     b_msgs = result.logs["b"].messages
@@ -163,7 +163,7 @@ async def test_self_mention_ignored() -> None:
         agents=_agents(("a", "x", "test")),
         max_rounds=3,
     )
-    runner = SwarmRunner(config=config, provider=provider)  # type: ignore[arg-type]
+    runner = SwarmRunner(config=config, provider=provider) # type: ignore[arg-type]
     result = await runner.run()
 
     a_sent = result.logs["a"].sent_messages

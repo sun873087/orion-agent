@@ -1,6 +1,6 @@
 """EnterWorkdirTool — 切換 ctx.cwd 並把舊值 push 進 stack。
 
-對應 TS EnterWorktreeTool 但不依賴 git。Phase 7 sandbox 啟用時,cwd 是 sandbox 內視角。
+對應 TS EnterWorktreeTool 但不依賴 git。sandbox 啟用時,cwd 是 sandbox 內視角。
 sandbox 不啟時,cwd 是 host fs 視角(下游 tools 用此 cwd 解析 relative path)。
 
 Behaviour:
@@ -77,10 +77,10 @@ class EnterWorkdirTool:
             ),
         )
 
-    def is_concurrency_safe(self, input: EnterWorkdirInput) -> bool:  # noqa: ARG002
-        return False  # 改 ctx 共享狀態,不能並行
+    def is_concurrency_safe(self, input: EnterWorkdirInput) -> bool: # noqa: ARG002
+        return False # 改 ctx 共享狀態,不能並行
 
-    def is_read_only(self, input: EnterWorkdirInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: EnterWorkdirInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:

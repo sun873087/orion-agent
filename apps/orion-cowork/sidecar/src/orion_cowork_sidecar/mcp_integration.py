@@ -1,13 +1,13 @@
-"""Cowork MCP integration(Phase 31-D 下)。
+"""Cowork MCP integration(下)。
 
 Global MCP config 跟 CLI / chat-api **共用** `~/.orion/mcp.json` — 一邊裝的 MCP
 server 另一邊也看見。Project-level config 在 `<workspace>/.orion/mcp.json`,
 可被 user 在 project context 內覆蓋 global。
 
 Lifecycle:
-  manager.start()    啟動 McpManager + Supervisor,connect 所有 server
-  manager.tools      給 Conversation inject 的 tools list
-  manager.list()     UI 顯示的 server 狀態
+  manager.start() 啟動 McpManager + Supervisor,connect 所有 server
+  manager.tools 給 Conversation inject 的 tools list
+  manager.list() UI 顯示的 server 狀態
   manager.shutdown() sidecar 退出時清理
 """
 
@@ -69,7 +69,7 @@ def _load_cowork_configs() -> dict[str, McpServerConfig]:
                 parsed[name] = StdioMcpConfig.model_validate(raw)
             elif t == "http":
                 parsed[name] = HttpMcpConfig.model_validate(raw)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             continue
     return parsed
 
@@ -77,7 +77,7 @@ def _load_cowork_configs() -> dict[str, McpServerConfig]:
 @dataclass
 class McpServerStatus:
     name: str
-    status: str  # connected / failed / pending
+    status: str # connected / failed / pending
     error: str | None
     tools: list[str]
 
@@ -128,7 +128,7 @@ class CoworkMcpManager:
         if self._stack is not None:
             try:
                 await self._stack.aclose()
-            except Exception:  # noqa: BLE001
+            except Exception: # noqa: BLE001
                 pass
             self._stack = None
         self._manager = None
@@ -220,7 +220,7 @@ def load_project_mcp_configs(workspace_dir: Path) -> dict[str, McpServerConfig]:
                 parsed[name] = StdioMcpConfig.model_validate(raw)
             elif t == "http":
                 parsed[name] = HttpMcpConfig.model_validate(raw)
-        except Exception:  # noqa: BLE001
+        except Exception: # noqa: BLE001
             continue
     return parsed
 

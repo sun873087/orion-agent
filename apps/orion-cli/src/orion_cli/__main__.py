@@ -1,8 +1,8 @@
-"""Phase 1 demo CLI — 完整 agent loop。
+"""demo CLI — 完整 agent loop。
 
 跑法:
   orion --provider anthropic --model claude-sonnet-4-6 "Look at /etc and tell me about it"
-  orion --provider openai    --model gpt-5-mini         "..."
+  orion --provider openai --model gpt-5-mini "..."
 
 支援多 turn 對話、平行工具執行、permission policy(預設 always_allow)、
 streaming text + tool 進度顯示。
@@ -23,33 +23,33 @@ from dotenv import load_dotenv
 # provider 之前。不抓 project root .env;每 app 各自隔離 secret。
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-# Phase 32 attribution(可被外層 env 覆蓋)— proxy usage_log 看得出來源
+# attribution(可被外層 env 覆蓋)— proxy usage_log 看得出來源
 import os as _os
 _os.environ.setdefault("ORION_CLIENT_ID", "orion-cli")
 
-from orion_sdk.core.conversation import Conversation  # noqa: E402
-from orion_sdk.core.query_loop import (  # noqa: E402
+from orion_sdk.core.conversation import Conversation # noqa: E402
+from orion_sdk.core.query_loop import ( # noqa: E402
     AssistantTextDelta,
     AssistantThinkingDelta,
     AssistantTurnComplete,
     LoopTerminated,
 )
-from orion_sdk.core.state import AgentContext  # noqa: E402
-from orion_sdk.core.tool import ErrorEvent, ProgressEvent, TextEvent, Tool  # noqa: E402
-from orion_sdk.core.tool_execution import (  # noqa: E402
+from orion_sdk.core.state import AgentContext # noqa: E402
+from orion_sdk.core.tool import ErrorEvent, ProgressEvent, TextEvent, Tool # noqa: E402
+from orion_sdk.core.tool_execution import ( # noqa: E402
     ToolProgressUpdate,
     ToolResultUpdate,
 )
-from orion_model.provider import get_provider  # noqa: E402
-from orion_sdk.services.feature_flags import load_feature_flags  # noqa: E402
-from orion_sdk.tools.interactive.ask_user import (  # noqa: E402
+from orion_model.provider import get_provider # noqa: E402
+from orion_sdk.services.feature_flags import load_feature_flags # noqa: E402
+from orion_sdk.tools.interactive.ask_user import ( # noqa: E402
     make_stdin_asker,
 )
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
-# Phase 4:system prompt 改由 Conversation 自己組(prompt/static_sections + 動態段)。
+# system prompt 改由 Conversation 自己組(prompt/static_sections + 動態段)。
 # 不再在 main.py 寫死 — Conversation(system_prompt="") 會走 assembler 路徑。
 
 
@@ -73,7 +73,7 @@ def _build_tools() -> list[Tool[Any]]:
     )
 
 
-# Phase 30-C:`orion serve` 移到 orion-chat-api package(`orion-chat-api serve`)
+# C:`orion serve` 移到 orion-chat-api package(`orion-chat-api serve`)
 # CLI 殼不該 import uvicorn / fastapi。
 
 
@@ -117,7 +117,7 @@ def run(
         bool,
         typer.Option(
             "--no-memory",
-            help="Disable memory load + auto-extract (Phase 3 features).",
+            help="Disable memory load + auto-extract (features).",
         ),
     ] = False,
     mcp_config: Annotated[
@@ -131,21 +131,21 @@ def run(
         bool,
         typer.Option(
             "--no-mcp",
-            help="Disable MCP servers entirely (Phase 5)。",
+            help="Disable MCP servers entirely。",
         ),
     ] = False,
     sandbox: Annotated[
         str,
         typer.Option(
             "--sandbox",
-            help="Sandbox backend: local | docker(預設 local;Phase 7)。",
+            help="Sandbox backend: local | docker(預設 local)。",
         ),
     ] = "local",
 ) -> None:
     """跑完整 agent loop:多 turn、tool feedback、streaming。
 
-    Phase 2:預設啟用 transcript JSONL 寫入(~/.orion/sessions/<id>/transcript.jsonl)。
-    Phase 3:預設啟用 per-user memory + autoCompact。
+   :預設啟用 transcript JSONL 寫入(~/.orion/sessions/<id>/transcript.jsonl)。
+   :預設啟用 per-user memory + autoCompact。
     `--resume <id>` 從先前 session 載入歷史繼續對話。
     """
     from orion_sdk.memory.paths import default_user_id as _default_uid
@@ -171,7 +171,7 @@ def run(
 
 
 def _install_sigint_handler(ctx: AgentContext) -> None:
-    """Phase 16:第一次 Ctrl-C → graceful abort;5 秒內第二次 → force exit。
+    """第一次 Ctrl-C → graceful abort;5 秒內第二次 → force exit。
 
     Linux/macOS only(用 asyncio add_signal_handler)。Windows fallback 用預設
     KeyboardInterrupt(asyncio 不支援 add_signal_handler)。
@@ -188,7 +188,7 @@ def _install_sigint_handler(ctx: AgentContext) -> None:
         if ctx.abort_event.is_set() and (now - last_press["t"]) < _DOUBLE_PRESS_WINDOW:
             # 第二次:強制終止
             print("\n[abort] force quit", flush=True)
-            os._exit(130)  # 130 = 128 + SIGINT
+            os._exit(130) # 130 = 128 + SIGINT
         # 第一次:graceful
         last_press["t"] = now
         ctx.abort_event.set()
@@ -233,7 +233,7 @@ async def _run_async(
     _install_sigint_handler(ctx)
     llm = get_provider(provider, model)
 
-    # ─── Phase 7:選 sandbox backend ───────────────────────────────────
+    # ─── :選 sandbox backend ───────────────────────────────────
     sandbox_backend = None
     sandboxed_tools_list: list[Any] = []
     if sandbox != "local":
@@ -241,17 +241,17 @@ async def _run_async(
             sandbox_backend = get_sandbox_backend(sandbox)
             sandboxed_tools_list = build_sandboxed_tools(sandbox_backend)
             print(f"[sandbox] using {sandbox} backend", flush=True)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             print(f"[sandbox] failed to init {sandbox!r}: {e}", flush=True)
             sandbox_backend = None
 
     async with AsyncExitStack() as stack:
-        # ─── Phase 5:啟動 McpManager(若有 config 或啟用)─────────────────
+        # ─── :啟動 McpManager(若有 config 或啟用)─────────────────
         mcp_manager: McpManager | None = None
         if not no_mcp:
             extra_path = Path(mcp_config) if mcp_config else None
             manager = McpManager(extra_config_path=extra_path)
-            if manager.configs:  # 有 config 才 connect,沒就跳過
+            if manager.configs: # 有 config 才 connect,沒就跳過
                 try:
                     mcp_manager = await stack.enter_async_context(manager)
                     if mcp_manager.connection_errors:
@@ -267,11 +267,11 @@ async def _run_async(
                             f"({len(mcp_manager.tools)} tools)",
                             flush=True,
                         )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(f"[mcp] initialization failed: {e}", flush=True)
                     mcp_manager = None
 
-        # Phase 7:tools 用 sandboxed 版本(若 backend 啟用)
+        # tools 用 sandboxed 版本(若 backend 啟用)
         effective_tools = sandboxed_tools_list if sandbox_backend is not None else _build_tools()
 
         if resume_id is not None:
@@ -320,11 +320,11 @@ async def _run_async(
             async for ev in conv.send(prompt, ctx=ctx):
                 _render(ev)
         finally:
-            # Phase 7:sandbox backend cleanup(如 Docker container)
+            # sandbox backend cleanup(如 Docker container)
             if sandbox_backend is not None:
                 try:
                     await sandbox_backend.cleanup()
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     print(f"[sandbox] cleanup error: {e}", flush=True)
 
         print(
@@ -354,9 +354,9 @@ def _render(ev: Any) -> None:
             # 工具的 final text 由 ToolResultUpdate 顯示,這裡跳過
             pass
         elif isinstance(ev.event, ProgressEvent):
-            print(f"  [\x1b[2m{ev.tool_name} progress\x1b[0m] {ev.event.data}", flush=True)
+            print(f" [\x1b[2m{ev.tool_name} progress\x1b[0m] {ev.event.data}", flush=True)
         elif isinstance(ev.event, ErrorEvent):
-            print(f"  [\x1b[31m{ev.tool_name} error\x1b[0m] {ev.event.message}", flush=True)
+            print(f" [\x1b[31m{ev.tool_name} error\x1b[0m] {ev.event.message}", flush=True)
     elif isinstance(ev, ToolResultUpdate):
         marker = "\x1b[31m✗\x1b[0m" if ev.is_error else "\x1b[32m✓\x1b[0m"
         # 印 tool 的縮排結果摘要(前 500 字)
@@ -366,8 +366,8 @@ def _render(ev: Any) -> None:
             raw = first_block.content
             text = raw if isinstance(raw, str) else str(raw)
         preview = text if len(text) <= 500 else text[:500] + f"\n... [+{len(text) - 500} chars]"
-        indented = "\n".join(f"    {line}" for line in preview.split("\n"))
-        print(f"\n  {marker} {ev.tool_name} (id={ev.tool_use_id}):", flush=True)
+        indented = "\n".join(f" {line}" for line in preview.split("\n"))
+        print(f"\n {marker} {ev.tool_name} (id={ev.tool_use_id}):", flush=True)
         print(indented, flush=True)
     elif isinstance(ev, LoopTerminated):
         print(

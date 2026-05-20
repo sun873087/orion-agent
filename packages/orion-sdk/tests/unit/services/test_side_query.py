@@ -1,4 +1,4 @@
-"""side_query — 通用小 LLM 呼叫。Phase 12。"""
+"""side_query — 通用小 LLM 呼叫。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ async def test_text_mode_returns_text() -> None:
     provider = MockProvider(turns=[MockTurn(text="hello world")])
     result = await side_query(
         SideQueryParams(system="be brief", user_text="say hi"),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.text == "hello world"
     assert result.structured is None
@@ -45,7 +45,7 @@ async def test_schema_mode_parses_tool_use() -> None:
             user_text="rank these",
             json_schema=schema,
         ),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.structured == {"indices": [2, 0, 5]}
 
@@ -66,7 +66,7 @@ async def test_schema_fallback_to_text_json() -> None:
             user_text="y",
             json_schema=schema,
         ),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.structured == {"indices": [1, 3]}
 
@@ -77,7 +77,7 @@ async def test_does_not_pollute_provider_call_count() -> None:
     provider = MockProvider(turns=[MockTurn(text="x")])
     await side_query(
         SideQueryParams(system="s", user_text="u"),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert len(provider.captured_calls) == 1
     # 沒繼承主 system 段組裝(side_query 預設不接 conversation 主 prompt)
@@ -90,7 +90,7 @@ async def test_usage_returned() -> None:
     provider = MockProvider(turns=[MockTurn(text="hi")])
     result = await side_query(
         SideQueryParams(system="s", user_text="u"),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     # MockProvider 在 turn 裡硬塞 input_tokens=10, output_tokens=20
     assert result.usage.input_tokens == 10
@@ -107,7 +107,7 @@ async def test_invalid_json_text_returns_none_structured() -> None:
             user_text="u",
             json_schema={"name": "respond", "schema": {"type": "object"}},
         ),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert result.structured is None
     assert result.text == "not valid json at all"
@@ -119,7 +119,7 @@ async def test_text_only_mode_does_not_send_tools() -> None:
     provider = MockProvider(turns=[MockTurn(text="x")])
     await side_query(
         SideQueryParams(system="s", user_text="u"),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     assert provider.captured_calls[0]["tools"] is None
 
@@ -134,7 +134,7 @@ async def test_schema_mode_sends_one_tool() -> None:
             user_text="u",
             json_schema={"name": "respond", "schema": {"type": "object"}},
         ),
-        provider=provider,  # type: ignore[arg-type]
+        provider=provider, # type: ignore[arg-type]
     )
     tools = provider.captured_calls[0]["tools"]
     assert tools is not None

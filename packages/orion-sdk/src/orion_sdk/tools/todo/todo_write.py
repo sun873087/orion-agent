@@ -2,7 +2,7 @@
 
 對應 TS Claude Code TodoWrite。模型用這個工具自我規劃多步驟任務。
 
-Phase 1:in-memory(存 ctx),conversation 結束就消失。Phase 2 會持久化。
+:in-memory(存 ctx),conversation 結束就消失。會持久化。
 """
 
 from __future__ import annotations
@@ -70,13 +70,13 @@ class TodoWriteTool:
         lines = ["Updated todo list:"]
         symbol = {"pending": "○", "in_progress": "◐", "completed": "●"}
         for i, t in enumerate(ctx.todos, 1):
-            lines.append(f"  {symbol.get(t['status'], '?')} {i}. {t['content']}  [{t['status']}]")
+            lines.append(f" {symbol.get(t['status'], '?')} {i}. {t['content']} [{t['status']}]")
         yield TextEvent(text="\n".join(lines))
 
-    def is_concurrency_safe(self, input: TodoWriteInput) -> bool:  # noqa: ARG002
-        return False  # 寫 ctx.todos,順序重要
+    def is_concurrency_safe(self, input: TodoWriteInput) -> bool: # noqa: ARG002
+        return False # 寫 ctx.todos,順序重要
 
-    def is_read_only(self, input: TodoWriteInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: TodoWriteInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:

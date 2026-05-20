@@ -83,7 +83,7 @@ class GrepTool:
             "--line-number",
             "--no-heading",
             "--color", "never",
-            "--max-count", "20",  # 每檔最多 20 match
+            "--max-count", "20", # 每檔最多 20 match
         ]
         if not input.case_sensitive:
             argv.append("--ignore-case")
@@ -91,7 +91,7 @@ class GrepTool:
             argv.extend(["--glob", input.file_pattern])
         argv.extend(["--", input.pattern, str(search_path)])
 
-        # Phase 16:abort_aware_scope 讓 abort_event 中途 set 即 cancel subprocess
+        # abort_aware_scope 讓 abort_event 中途 set 即 cancel subprocess
         result = None
         try:
             async with abort_aware_scope(ctx.abort_event) as abort_scope:
@@ -101,7 +101,7 @@ class GrepTool:
                     stdout=-1,
                     stderr=-1,
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"ripgrep failed to run: {type(e).__name__}: {e}")
             return
 
@@ -149,7 +149,7 @@ class GrepTool:
         results: list[str] = []
         match_count = 0
         bytes_count = 0
-        # Phase 16:Python fallback 沒有 await 點;每處理 N 個檔案讓出一次,
+        # Python fallback 沒有 await 點;每處理 N 個檔案讓出一次,
         # 並檢查 abort_event 即時退出。
         for file_idx, path in enumerate(files):
             if file_idx % 32 == 0:
@@ -182,10 +182,10 @@ class GrepTool:
 
         yield TextEvent(text="".join(results))
 
-    def is_concurrency_safe(self, input: GrepInput) -> bool:  # noqa: ARG002
-        return True  # 純讀
+    def is_concurrency_safe(self, input: GrepInput) -> bool: # noqa: ARG002
+        return True # 純讀
 
-    def is_read_only(self, input: GrepInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: GrepInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

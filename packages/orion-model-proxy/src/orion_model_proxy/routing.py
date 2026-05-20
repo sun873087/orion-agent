@@ -1,4 +1,4 @@
-"""Phase 33-E — routing alias 解析。
+"""routing alias 解析。
 
 Client 送 model="auto-fast" → proxy 查 routing_aliases:
     1. user-specific(user_id=<X> + alias="auto-fast")

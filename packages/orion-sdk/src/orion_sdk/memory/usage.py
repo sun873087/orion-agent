@@ -1,4 +1,4 @@
-"""Memory Layer 3 — 使用率追蹤(Phase 31-G)。
+"""Memory Layer 3 — 使用率追蹤。
 
 Append-only event log + exponential decay score。
 
@@ -29,8 +29,8 @@ import structlog
 log = structlog.get_logger(__name__)
 
 _EVENTS_FILENAME = "_events.jsonl"
-_DEFAULT_HALF_LIFE_DAYS = 14.0  # score 半衰期:14 天前的 hit 權重 = 0.5
-_KEEP_EVENTS_DAYS = 90  # > 90 天 events 移到 _events.archive.jsonl
+_DEFAULT_HALF_LIFE_DAYS = 14.0 # score 半衰期:14 天前的 hit 權重 = 0.5
+_KEEP_EVENTS_DAYS = 90 # > 90 天 events 移到 _events.archive.jsonl
 
 
 def events_path(memory_dir: Path) -> Path:

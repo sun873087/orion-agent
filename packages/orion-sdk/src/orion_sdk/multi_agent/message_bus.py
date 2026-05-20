@@ -1,4 +1,4 @@
-"""In-process MessageBus — Phase 15。
+"""In-process MessageBus。
 
 對應 TS Claude Code `src/utils/swarm/inProcessRunner.ts` 的訊息傳遞層。
 

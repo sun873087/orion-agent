@@ -1,4 +1,4 @@
-"""Phase 8 HookRegistry — fire / fire_pre_tool_use / fire_user_prompt_submit。"""
+"""HookRegistry — fire / fire_pre_tool_use / fire_user_prompt_submit。"""
 
 from __future__ import annotations
 
@@ -128,4 +128,4 @@ async def test_unregister() -> None:
     assert reg.count("PreToolUse") == 1
     assert reg.unregister("PreToolUse", h) is True
     assert reg.count("PreToolUse") == 0
-    assert reg.unregister("PreToolUse", h) is False  # no-op
+    assert reg.unregister("PreToolUse", h) is False # no-op

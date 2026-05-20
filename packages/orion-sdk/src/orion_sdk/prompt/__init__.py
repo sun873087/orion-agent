@@ -1,6 +1,6 @@
 """System prompt 組裝層。
 
-對應 Phase 4 spec(`docs/phases/04-system-prompt.md`)。
+對應 spec(`docs/phases/04-system-prompt.md`)。
 
 設計:
 - 7 段**靜態** + 5 段**動態**

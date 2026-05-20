@@ -1,4 +1,4 @@
-"""Per-session cost tracker — Phase 9。對應 TS cost-tracker.ts。
+"""Per-session cost tracker。對應 TS cost-tracker.ts。
 
 每 session 一個 SessionCostTracker。每次 LLM API call 後 caller 呼 `record(...)`
 更新 model 累計。`/sessions/{id}/cost` REST endpoint 回 summary。

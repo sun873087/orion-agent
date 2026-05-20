@@ -1,4 +1,4 @@
-"""Plan mode 工具限制 + plan_mode_aware wrapper 測試。Phase 12。"""
+"""Plan mode 工具限制 + plan_mode_aware wrapper 測試。"""
 
 from __future__ import annotations
 
@@ -60,8 +60,8 @@ class _FakeTool:
 async def test_wrapper_passes_through_when_inactive() -> None:
     inner = always_allow
     wrapped = plan_mode_aware(inner)
-    ctx = AgentContext()  # plan_mode_state 為 None → 視同 INACTIVE
-    res = await wrapped(_FakeTool("Edit"), {}, ctx)  # type: ignore[arg-type]
+    ctx = AgentContext() # plan_mode_state 為 None → 視同 INACTIVE
+    res = await wrapped(_FakeTool("Edit"), {}, ctx) # type: ignore[arg-type]
     assert res.decision == PermissionDecision.ALLOW
 
 
@@ -72,11 +72,11 @@ async def test_wrapper_denies_write_in_active(tmp_path: Any) -> None:
     ctx = AgentContext()
     ctx.plan_mode_state = enter_plan_mode(PlanModeState(), plan_dir=tmp_path)
 
-    res_edit = await wrapped(_FakeTool("Edit"), {}, ctx)  # type: ignore[arg-type]
+    res_edit = await wrapped(_FakeTool("Edit"), {}, ctx) # type: ignore[arg-type]
     assert res_edit.decision == PermissionDecision.DENY
     assert "plan mode" in res_edit.reason.lower()
 
-    res_read = await wrapped(_FakeTool("Read"), {}, ctx)  # type: ignore[arg-type]
+    res_read = await wrapped(_FakeTool("Read"), {}, ctx) # type: ignore[arg-type]
     assert res_read.decision == PermissionDecision.ALLOW
 
 
@@ -89,7 +89,7 @@ async def test_wrapper_denies_all_in_awaiting(tmp_path: Any) -> None:
     ctx.plan_mode_state = s
 
     for name in ("Read", "Edit", "ExitPlanMode"):
-        res = await wrapped(_FakeTool(name), {}, ctx)  # type: ignore[arg-type]
+        res = await wrapped(_FakeTool(name), {}, ctx) # type: ignore[arg-type]
         assert res.decision == PermissionDecision.DENY
         assert "approval" in res.reason.lower()
 
@@ -106,6 +106,6 @@ async def test_wrapper_respects_inner_when_allowed(tmp_path: Any) -> None:
     ctx.plan_mode_state = enter_plan_mode(PlanModeState(), plan_dir=tmp_path)
 
     # Read 在白名單 → plan_mode 通過 → 但 inner deny
-    res = await wrapped(_FakeTool("Read"), {}, ctx)  # type: ignore[arg-type]
+    res = await wrapped(_FakeTool("Read"), {}, ctx) # type: ignore[arg-type]
     assert res.decision == PermissionDecision.DENY
     assert "inner deny" in res.reason

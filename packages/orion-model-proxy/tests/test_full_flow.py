@@ -1,4 +1,4 @@
-"""Phase X.5 — full e2e:create user → gen key → make request → log row →
+"""full e2e:create user → gen key → make request → log row →
 admin 看到 rollup → budget cap 觸發 402。"""
 
 from __future__ import annotations
@@ -120,6 +120,6 @@ async def test_complete_lifecycle(proxy_db, admin_token, monkeypatch) -> None:
         await c.post("/admin/ui/login", data={"token": admin_token})
         r = await c.get("/admin/ui/users")
         assert "e2e@x.com" in r.text
-        assert "⚠ over" in r.text  # banner 提示超 cap
+        assert "⚠ over" in r.text # banner 提示超 cap
 
     os.environ.pop("OPENAI_API_KEY", None)

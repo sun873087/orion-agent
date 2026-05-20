@@ -1,7 +1,7 @@
 """HookRegistry — 集中註冊 / 派發 hook callback。
 
-Phase 1:`register / dispatch / pre_tool_use / post_tool_use`(in-process callbacks)。
-Phase 8 擴充:
+:`register / dispatch / pre_tool_use / post_tool_use`(in-process callbacks)。
+擴充:
 - `fire(event)`:回傳 list[result],含 exception 不擋
 - `fire_pre_tool_use(event)`:聚合 abort / modified_input
 - `fire_user_prompt_submit(event)`:聚合 abort / additional_context
@@ -64,7 +64,7 @@ class HookRegistry:
     def count(self, event_type: str) -> int:
         return len(self._hooks.get(event_type, []))
 
-    # ─── Phase 1 API(向後相容)──────────────────────────────────────────
+    # ─── API(向後相容)──────────────────────────────────────────
 
     async def dispatch(self, event: HookEvent) -> bool:
         """派發 event 給所有註冊的 callback。
@@ -78,7 +78,7 @@ class HookRegistry:
         for cb in callbacks:
             try:
                 result = await cb(event)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 logger.warning(
                     "hook handler raised %s on %s: %s",
                     type(e).__name__,
@@ -102,7 +102,7 @@ class HookRegistry:
         """便利 wrapper(query_loop 用,回值忽略)。"""
         await self.dispatch(event)
 
-    # ─── Phase 8 API(新)─────────────────────────────────────────────────
+    # ─── API(新)─────────────────────────────────────────────────
 
     async def fire(self, event: HookEvent) -> list[Any]:
         """觸發所有 handler,回 list[result]。handler 例外不影響 caller。"""
@@ -111,7 +111,7 @@ class HookRegistry:
         for cb in callbacks:
             try:
                 out.append(await cb(event))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 logger.warning(
                     "hook handler raised %s on %s: %s",
                     type(e).__name__,

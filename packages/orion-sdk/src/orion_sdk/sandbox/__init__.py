@@ -1,9 +1,9 @@
-"""Sandbox 抽象層 — Phase 7。
+"""Sandbox 抽象層。
 
-Phase 1 工具(Bash / Write / Edit / Read)透過此抽象層執行,可選不同 backend:
-- **LocalBackend**(預設):無隔離,直接走 host(同 Phase 1-6 行為)
+工具(Bash / Write / Edit / Read)透過此抽象層執行,可選不同 backend:
+- **LocalBackend**(預設):無隔離,直接走 host(同-6 行為)
 - **DockerBackend**:per-session container,隔離 fs / pid / net
-- **K8sBackend**(Phase 7c):per-session K8s Pod,production-grade 隔離
+- **K8sBackend**:per-session K8s Pod,production-grade 隔離
 
 caller(Conversation / proxy_tools)只看 SandboxBackend Protocol,backend 可換。
 """

@@ -1,7 +1,7 @@
 """Special tools。
 
-- Phase 10:ToolSearch / SyntheticOutput / Sleep
-- Phase 12:EnterPlanMode / ExitPlanMode
+-:ToolSearch / SyntheticOutput / Sleep
+-:EnterPlanMode / ExitPlanMode
 """
 
 from __future__ import annotations

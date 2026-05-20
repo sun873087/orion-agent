@@ -1,4 +1,4 @@
-"""Phase 33-D — OpenTelemetry skeleton。
+"""OpenTelemetry skeleton。
 
 設計目標:不增加硬依賴(production 才 pip install opentelemetry-api),
 env 沒設 / 套件沒裝 → 全 no-op,proxy 照跑。
@@ -28,7 +28,7 @@ def _try_init() -> None:
         return
     _initialized = True
     if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        return  # 沒設,no-op
+        return # 沒設,no-op
     try:
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -58,7 +58,7 @@ def span(name: str, **attrs: Any) -> Iterator[None]:
         for k, v in attrs.items():
             try:
                 sp.set_attribute(k, v)
-            except Exception:  # noqa: BLE001
+            except Exception: # noqa: BLE001
                 pass
         yield
 

@@ -1,4 +1,4 @@
-"""File upload store — Phase 11。
+"""File upload store。
 
 取代 TS `@file` ref。前端用 multipart upload 把檔案存到 per-user upload dir,
 agent 用 `read_upload(upload_id)` 取內容,或將 upload_id 當成 user message attachment 引用。
@@ -6,14 +6,14 @@ agent 用 `read_upload(upload_id)` 取內容,或將 upload_id 當成 user messag
 設計:
 - Canonical per-user 目錄:`~/.orion/users/<user_id>/uploads/<upload_id>.<ext>`
   與 memory(`users/<user_id>/memory/`)同層,「per-user 跨 session 資料一律歸 users/」。
-- Legacy fallback:`~/.orion/uploads/<user_id>/<upload_id>.<ext>`(Phase 11 起初寫進這裡)
+- Legacy fallback:`~/.orion/uploads/<user_id>/<upload_id>.<ext>`(起初寫進這裡)
   寫入只走新路徑;讀 / 列 / 刪會 union 新+舊,保護既有本機資料,不強迫一次 migrate。
 - upload_id = uuid hex[:16](短足以識別,不會碰撞 in-session)
 - 大檔限制 10 MB(超過拒絕,避免 disk 爆)
 - read_upload 回 bytes;`read_upload_text` 回 str(UTF-8 decode 失敗 raise)
-- 過期清理留 Phase 11c(目前不自動清)
+- 過期清理留(目前不自動清)
 
-存儲根目錄可由 `ORION_HOME` 覆蓋(對應 Phase 10 ConfigTool 同 env)。
+存儲根目錄可由 `ORION_HOME` 覆蓋(對應 ConfigTool 同 env)。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-_DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_DEFAULT_MAX_BYTES = 10 * 1024 * 1024 # 10 MB
 _UPLOAD_ID_PATTERN = re.compile(r"^[a-f0-9]{8,32}$")
 
 
@@ -46,9 +46,9 @@ def _user_uploads_dir(user_id: str) -> Path:
 
 
 def _legacy_user_uploads_dir(user_id: str) -> Path:
-    """Legacy 舊路徑:`<base>/uploads/<user_id>/`。Phase 11 起初使用,僅 read fallback。
+    """Legacy 舊路徑:`<base>/uploads/<user_id>/`。起初使用,僅 read fallback。
 
-    Phase 19 之後 refactor 走新路徑(users/<user_id>/uploads/)以與 memory 對齊。
+    之後 refactor 走新路徑(users/<user_id>/uploads/)以與 memory 對齊。
     既有本機資料留在舊位置仍可讀,新寫一律新路徑。
     """
     return _orion_base() / "uploads" / user_id
@@ -171,7 +171,7 @@ def list_uploads(user_id: str) -> list[UploadRecord]:
             if not _UPLOAD_ID_PATTERN.match(stem):
                 continue
             if stem in seen:
-                continue  # 新路徑優先(_candidate_dirs 順序保證)
+                continue # 新路徑優先(_candidate_dirs 順序保證)
             try:
                 size = p.stat().st_size
             except OSError:

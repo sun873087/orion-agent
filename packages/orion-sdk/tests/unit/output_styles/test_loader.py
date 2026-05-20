@@ -1,4 +1,4 @@
-"""Output styles loader + /output-style command。Phase 13。"""
+"""Output styles loader + /output-style command。"""
 
 from __future__ import annotations
 

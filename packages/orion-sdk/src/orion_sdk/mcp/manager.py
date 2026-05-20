@@ -70,12 +70,12 @@ class McpManager:
                             client=client,
                         )
                         self._tools.append(wrapper)
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e: # noqa: BLE001
                         logger.warning(
                             "Failed to wrap tool %r from server %r: %s",
                             tool_def.get("name"), name, e,
                         )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 self._connection_errors[name] = f"{type(e).__name__}: {e}"
                 logger.warning(
                     "MCP server %r connection failed: %s — skipping", name, e,
@@ -91,7 +91,7 @@ class McpManager:
         if self._exit_stack is not None:
             try:
                 await self._exit_stack.aclose()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 logger.warning("McpManager cleanup raised: %s", e)
         self._exit_stack = None
         self._clients.clear()
@@ -111,7 +111,7 @@ class McpManager:
 
     @property
     def failed_servers(self) -> list[str]:
-        """Server names that are currently in error state(Phase 31-H supervisor 用)。"""
+        """Server names that are currently in error state(supervisor 用)。"""
         return list(self._connection_errors.keys())
 
     async def reconnect(self, name: str) -> bool:
@@ -146,14 +146,14 @@ class McpManager:
                         client=client,
                     )
                     self._tools.append(wrapper)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e: # noqa: BLE001
                     logger.warning(
                         "Failed to wrap tool %r from server %r: %s",
                         tool_def.get("name"), name, e,
                     )
             self._connection_errors.pop(name, None)
             return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             self._connection_errors[name] = f"{type(e).__name__}: {e}"
             return False
 

@@ -1,6 +1,6 @@
-"""ToolSearchTool — Phase 10。對應 TS ToolSearchTool。
+"""ToolSearchTool。對應 TS ToolSearchTool。
 
-deferred tool 機制:大型工具集(Phase 8 plugin / Phase 5 MCP)展開後可能 100+ 個,
+deferred tool 機制:大型工具集(plugin / MCP)展開後可能 100+ 個,
 全放 system prompt 會吃 cache budget。改 lazy:
 
 - Tool 有 `should_defer = True` 屬性 → 不放完整 schema 進 system,只列名稱
@@ -54,7 +54,7 @@ class ToolSearchTool:
     async def call(
         self,
         input: ToolSearchInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         q = input.query.strip()
         matched: list[Tool[Any]]
@@ -89,7 +89,7 @@ class ToolSearchTool:
         for t in matched:
             try:
                 schema = t.input_schema.model_json_schema()
-            except Exception:  # noqa: BLE001
+            except Exception: # noqa: BLE001
                 schema = {}
             entry = {
                 "name": t.name,
@@ -100,10 +100,10 @@ class ToolSearchTool:
         lines.append("</functions>")
         yield TextEvent(text="\n".join(lines))
 
-    def is_concurrency_safe(self, input: ToolSearchInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: ToolSearchInput) -> bool: # noqa: ARG002
         return True
 
-    def is_read_only(self, input: ToolSearchInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: ToolSearchInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

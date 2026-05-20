@@ -1,4 +1,4 @@
-"""Multi-agent 進階模式 — Phase 15。
+"""Multi-agent 進階模式。
 
 對應 TS Claude Code:
 - `src/coordinator/coordinatorMode.ts` → `coordinator.py`
@@ -6,11 +6,11 @@
 - `src/services/AgentSummary/agentSummary.ts` → `agent_summary.py`
 
 三 pattern:
-1. **Sub-agent**(Phase 1 / 9 已有):父 → 1 子,線性
-2. **Coordinator**(Phase 15):1 父 → N 並行 worker,聚合
-3. **Swarm**(Phase 15):N 對等 peer 互傳訊息
+1. **Sub-agent**(/ 9 已有):父 → 1 子,線性
+2. **Coordinator**:1 父 → N 並行 worker,聚合
+3. **Swarm**:N 對等 peer 互傳訊息
 
-本套 API 是 **Python 函式 / class 介面**;Phase 15 沒改 AgentTool input(避免破
+本套 API 是 **Python 函式 / class 介面** 沒改 AgentTool input(避免破
 壞既有 model contract)。把 multi-agent 暴露給模型(`subagent_type=coordinator/swarm`
 + `CoordinatorTool` / `SwarmTool`)留新 phase plan
 `docs/phases/plan/24-multiagent-tools.md`。

@@ -1,4 +1,4 @@
-"""Telemetry — Phase 9。
+"""Telemetry。
 
 - `cost_tracker.py`:per-session token / cost 累計
 - `pricing.py`:model 定價表

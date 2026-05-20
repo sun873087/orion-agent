@@ -3,7 +3,7 @@
 對應 spec § 5 extract_prompts.py。
 
 設計取捨:spec 提到 fork 子 agent + 限縮 tool 集合(Read / Grep / Glob / write-to-memory-dir)。
-Phase 3 簡化為**單次 LLM call**(非 tool loop)— 模型直接 emit 要寫的檔案內容,
+簡化為**單次 LLM call**(非 tool loop)— 模型直接 emit 要寫的檔案內容,
 caller 解析後寫檔。理由:
 - 避免再起一個 agent loop / sub-process,降低複雜度
 - 萃取本來就是「歸納」,不需要工具呼叫
@@ -43,7 +43,7 @@ You are a memory curator. Your job: review a conversation and decide whether
 anything is worth saving as long-term memory for the next conversation.
 
 Save sparingly. Most conversation turns are not worth memorizing. Only save:
-- **user**:  durable facts about the user (role, expertise, projects, env)
+- **user**: durable facts about the user (role, expertise, projects, env)
 - **feedback**: explicit user-given preferences / rules ("always do X", "never Y")
 - **project**: project context (deadlines, decisions, stakeholders) that won't
   be obvious from re-reading code
@@ -77,7 +77,7 @@ For a brand-new memory:
     name: short title (max 8 words)
     description: one-line summary (max 25 words)
     type: user|feedback|project|reference
-    expires_at: <YYYY-MM-DD>          # optional; omit for durable memories
+    expires_at: <YYYY-MM-DD> # optional; omit for durable memories
     ---
     <markdown body — Why and How to apply for feedback/project; just facts for user/reference>
     END

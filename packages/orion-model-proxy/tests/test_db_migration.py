@@ -1,4 +1,4 @@
-"""Phase 33-G — schema auto-migration:既有 DB 缺欄會自動 ALTER ADD。"""
+"""schema auto-migration:既有 DB 缺欄會自動 ALTER ADD。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_init_db_adds_missing_column_to_existing_table() -> None:
-    """模擬 Phase 32 DB(沒 rate_limit_rpm)→ Phase 33 init_db 自動加 column。"""
+    """模擬 DB(沒 rate_limit_rpm)→ init_db 自動加 column。"""
     with tempfile.TemporaryDirectory(prefix="proxy-mig-") as d:
         db_path = Path(d) / "old-schema.db"
 
@@ -91,7 +91,7 @@ async def test_init_db_idempotent_on_fresh_db() -> None:
 
             from orion_model_proxy.db import init_db
             await init_db()
-            await init_db()  # 第二次不該 ALTER TABLE 撞 duplicate column
+            await init_db() # 第二次不該 ALTER TABLE 撞 duplicate column
 
             if proxy_db_mod._engine is not None:
                 await proxy_db_mod._engine.dispose()

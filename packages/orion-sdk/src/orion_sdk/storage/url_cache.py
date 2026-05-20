@@ -1,4 +1,4 @@
-"""Phase 18:WebFetchTool URL cache(per-session in-memory)。
+"""WebFetchTool URL cache(per-session in-memory)。
 
 模型多輪 reasoning 常反覆 fetch 同 URL — 每次都打網既慢又燒 quota。
 本模組提供短 TTL in-memory cache(預設 5 分鐘),配 LRU 上限避免無界長。
@@ -99,5 +99,5 @@ def get_or_create_url_cache(ctx_obj: object) -> UrlCache:
         return existing
     cache = UrlCache()
     # ctx 是 dataclass,欄位已存在;直接 setattr 即可
-    setattr(ctx_obj, "url_cache", cache)  # noqa: B010
+    setattr(ctx_obj, "url_cache", cache) # noqa: B010
     return cache

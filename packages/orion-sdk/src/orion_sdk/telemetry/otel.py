@@ -1,4 +1,4 @@
-"""OpenTelemetry setup — Phase 9。
+"""OpenTelemetry setup。
 
 預設 **no-op** — 沒設 `OTEL_EXPORTER_OTLP_ENDPOINT` 不啟 exporter,
 trace / metrics 進 default no-op provider(`opentelemetry-api` 內建)。
@@ -82,7 +82,7 @@ def setup_telemetry(*, force: bool = False) -> bool:
         _initialized = True
         logger.info("OTel exporter enabled — endpoint=%s", endpoint)
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e: # noqa: BLE001
         logger.warning("OTel exporter setup failed (%s) — falling back to no-op", e)
         _initialized = True
         return False

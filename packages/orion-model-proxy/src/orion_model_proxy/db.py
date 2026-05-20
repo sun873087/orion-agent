@@ -71,7 +71,7 @@ async def session() -> AsyncIterator[AsyncSession]:
 async def init_db() -> None:
     """Idempotent create_all + 自動加缺少的 column(輕量 migration)。
 
-    `create_all` 只建新表,不會在既有表上加新 column — Phase 33 加了
+    `create_all` 只建新表,不會在既有表上加新 column 加了
     `users.rate_limit_rpm` / `users.organization_id` 之後,舊 DB 啟動會撞
     `no such column`。這裡用 SQLAlchemy Inspector 比對 expected vs actual,
     缺的 column ALTER TABLE ADD。比 alembic 輕,給 single-instance dev /
@@ -99,7 +99,7 @@ def _add_missing_columns(conn) -> None:
     inspector = inspect(conn)
     for table_name, table in Base.metadata.tables.items():
         if not inspector.has_table(table_name):
-            continue  # create_all 還沒建到(不該發生但保險)
+            continue # create_all 還沒建到(不該發生但保險)
         existing = {c["name"] for c in inspector.get_columns(table_name)}
         for col in table.columns:
             if col.name in existing:

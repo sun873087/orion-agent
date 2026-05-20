@@ -1,4 +1,4 @@
-"""Output style loader。Phase 13。對應 TS `outputStyles/loadOutputStylesDir.ts`。
+"""Output style loader。對應 TS `outputStyles/loadOutputStylesDir.ts`。
 
 Output style = markdown 檔 + YAML frontmatter:
   - frontmatter `name`(預設用檔名 stem)
@@ -9,7 +9,7 @@ Sources(後者覆蓋前者,last-wins):
   1. `$ORION_HOME/output-styles/`
   2. `<cwd>/.orion/output-styles/`
 
-設計上不 cache(每次 lookup 都重 walk dir);Phase 13 範圍 user 量 / 檔數都小,夠用。
+設計上不 cache(每次 lookup 都重 walk dir) 範圍 user 量 / 檔數都小,夠用。
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class OutputStyle:
 
     source_path: Path | None = None
     keep_coding_instructions: bool = True
-    """True → 加在預設 prompt 後;False → 替代預設(Phase 13 caller 預設皆 True)。"""
+    """True → 加在預設 prompt 後;False → 替代預設(caller 預設皆 True)。"""
 
 
 def _orion_home() -> Path:
@@ -75,7 +75,7 @@ def load_output_styles_dir(directory: Path) -> list[OutputStyle]:
             continue
         try:
             post = frontmatter.load(md_path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             logger.warning("failed to parse output style %s: %s", md_path, e)
             continue
 

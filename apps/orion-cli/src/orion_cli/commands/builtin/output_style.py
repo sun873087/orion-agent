@@ -1,12 +1,12 @@
-"""/output-style — 切換 Conversation 的 output style。Phase 13。
+"""/output-style — 切換 Conversation 的 output style。
 
 對應 TS Claude Code `src/commands/outputStyle/`。
 
 用法:
-    /output-style                 # 顯示當前 style 與可用清單
-    /output-style <name>          # 切換成 <name>(寫進 conversation.output_style)
-    /output-style none            # 清除選用 style
-    /output-style list            # 同無參數,只列可用清單
+    /output-style # 顯示當前 style 與可用清單
+    /output-style <name> # 切換成 <name>(寫進 conversation.output_style)
+    /output-style none # 清除選用 style
+    /output-style list # 同無參數,只列可用清單
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class OutputStyleCommand:
     async def execute(
         self,
         args: str,
-        ctx: Any,  # noqa: ARG002
+        ctx: Any, # noqa: ARG002
         conversation: Any,
     ) -> CommandResult:
         token = args.strip()

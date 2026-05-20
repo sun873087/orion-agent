@@ -1,4 +1,4 @@
-"""Phase 33-D — webhook emit + OTel skeleton no-op。"""
+"""webhook emit + OTel skeleton no-op。"""
 
 from __future__ import annotations
 
@@ -131,4 +131,4 @@ def test_otel_span_noop_when_env_unset() -> None:
 
     os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
     with span("test", user_id="u", action="x"):
-        pass  # 沒 raise 就 OK
+        pass # 沒 raise 就 OK

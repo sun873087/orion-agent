@@ -1,4 +1,4 @@
-"""Phase X.1 — Admin REST 端到端。"""
+"""Admin REST 端到端。"""
 
 from __future__ import annotations
 
@@ -154,7 +154,7 @@ async def test_proxy_route_auth_with_db_token(proxy_db, admin_token) -> None:
     upstream 會 503 因為沒 OPENAI_API_KEY env,但**不該** 401。
     """
     import os
-    os.environ.pop("OPENAI_API_KEY", None)  # 確保 503 而非 200
+    os.environ.pop("OPENAI_API_KEY", None) # 確保 503 而非 200
 
     async with _admin_client(admin_token) as c:
         r = await c.post("/admin/users", json={"email": "p@x.com"})

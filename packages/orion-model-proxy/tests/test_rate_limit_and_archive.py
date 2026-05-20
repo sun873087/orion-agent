@@ -1,4 +1,4 @@
-"""Phase 33-B — token bucket rate limit + usage_log monthly archival。"""
+"""token bucket rate limit + usage_log monthly archival。"""
 
 from __future__ import annotations
 
@@ -51,11 +51,11 @@ async def test_rate_limit_refill_over_time(proxy_db) -> None:
     assert await check_and_consume("refill", rpm) is False
     # 模擬時間流逝:直接修 bucket last_refill_ts
     async with rate_limit._lock:
-        rate_limit._buckets["refill"].last_refill_ts -= 2.0  # 2 秒前
+        rate_limit._buckets["refill"].last_refill_ts -= 2.0 # 2 秒前
     # 60 RPM × 2s = 2 tokens 可用
     assert await check_and_consume("refill", rpm) is True
     assert await check_and_consume("refill", rpm) is True
-    assert await check_and_consume("refill", rpm) is False  # 用完
+    assert await check_and_consume("refill", rpm) is False # 用完
 
 
 @pytest.mark.asyncio
@@ -130,7 +130,7 @@ async def test_archive_old_rows_into_monthly_rollup(proxy_db) -> None:
         stats = await archive_usage_log(s, cutoff_days=90)
 
     assert stats.rows_archived == 5
-    assert stats.rollup_rows_upserted == 1  # 5 row 聚合成 1
+    assert stats.rollup_rows_upserted == 1 # 5 row 聚合成 1
 
     async with factory() as s:
         # 舊 row 沒了
@@ -141,8 +141,8 @@ async def test_archive_old_rows_into_monthly_rollup(proxy_db) -> None:
     assert len(rollups) == 1
     r = rollups[0]
     assert r.user_id == "u-a"
-    assert r.total_input_tokens == 500  # 5 × 100
-    assert r.total_output_tokens == 250  # 5 × 50
+    assert r.total_input_tokens == 500 # 5 × 100
+    assert r.total_output_tokens == 250 # 5 × 50
     assert r.request_count == 5
     assert abs(r.total_cost_usd - 0.005) < 1e-9
 
@@ -173,4 +173,4 @@ async def test_archive_admin_endpoint(proxy_db, admin_token) -> None:
         r = await c.post("/admin/maintenance/archive?cutoff_days=90")
         assert r.status_code == 200
         data = r.json()
-        assert data["rows_archived"] == 0  # 空 DB
+        assert data["rows_archived"] == 0 # 空 DB

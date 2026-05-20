@@ -1,4 +1,4 @@
-"""orion-model-proxy — Phase 31-X。
+"""orion-model-proxy。
 
 HTTP service in front of orion-model。Hosts(CLI / Chat / Cowork)透過此 service
 連 provider,集中 key / cost / routing。

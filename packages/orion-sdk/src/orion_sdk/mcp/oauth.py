@@ -1,6 +1,6 @@
-"""MCP OAuth — Phase 25 web flow (Anthropic-style authorization code).
+"""MCP OAuth web flow (Anthropic-style authorization code).
 
-Phase 5 留了 stub raise NotImplementedError;Phase 25 接通到讓 Settings → Connections
+留了 stub raise NotImplementedError 接通到讓 Settings → Connections
 分頁可以走完一次完整 OAuth:
 
   user → Connect → window.open(authorize_url + state) → 第三方授權 → 回 callback URL
@@ -17,11 +17,11 @@ Phase 5 留了 stub raise NotImplementedError;Phase 25 接通到讓 Settings →
 
 - **state store in-memory**:OAuth state token 是 5-min TTL random uuid。多 worker
   / 重啟會掉,但 OAuth flow 本來就短(< 1 min),且重啟掉 state 比寫進 DB 簡單;
-  production 真要跨 worker 分享改 Redis 是後續 phase 的事。
+  production 真要跨 worker 分享改 Redis 是未來 的事。
 
-- **token 存 SecureStorage**:Phase 14 的 keychain / encrypted-file backend。Key
+- **token 存 SecureStorage**:的 keychain / encrypted-file backend。Key
   格式 `mcp:<server>:<user_id>`,值是 JSON `{access_token, refresh_token?, expires_at?, raw}`。
-  refresh 邏輯 deferred — Phase 25 範圍只到取得 token + 持久化。
+  refresh 邏輯 deferred 範圍只到取得 token + 持久化。
 
 - **`dev-mock` provider**:實作 `start_web_oauth_flow` 時若 server 是 dev-mock,
   authorize_url 直接打回 callback URL 帶 `code=dev-mock-code`,callback 不打外部
@@ -91,7 +91,7 @@ _BUILTIN_PROVIDERS: list[OAuthProvider] = [
     OAuthProvider(
         name="dev-mock",
         label="Dev Mock",
-        authorize_url="",  # 不打外部,callback 自行短路
+        authorize_url="", # 不打外部,callback 自行短路
         token_url="",
         scopes=[],
     ),
@@ -362,12 +362,12 @@ async def disconnect(server_name: str, user_id: str) -> None:
     await _backend().delete(_token_key(server_name, user_id))
 
 
-# ─── Phase 5 backwards compat ────────────────────────────────────────────────
+# ─── backwards compat ────────────────────────────────────────────────
 
 
-def start_local_oauth_flow(server_name: str, authorize_url: str) -> str:  # noqa: ARG001
+def start_local_oauth_flow(server_name: str, authorize_url: str) -> str: # noqa: ARG001
     """本機 callback 流程仍未實作 — CLI 仍走 stdio env 注入。"""
     raise NotImplementedError(
         f"Local OAuth callback for MCP server {server_name!r} not implemented "
-        "for CLI mode. Use the web Settings → Connections UI (Phase 25).",
+        "for CLI mode. Use the web Settings → Connections UI.",
     )

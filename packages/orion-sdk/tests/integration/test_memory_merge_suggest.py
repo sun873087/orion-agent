@@ -1,4 +1,4 @@
-"""Real-API integration:memory Layer 4 merge suggester (Phase 31-G)。
+"""Real-API integration:memory Layer 4 merge suggester。
 
 灌 3 個語意極相似的 feedback memory + 1 個無關 memory,跑
 run_merge_suggest_job,驗證:
@@ -69,7 +69,7 @@ async def test_clusters_similar_feedback_and_writes_suggestion(tmp_path: Path) -
         memory_dir=tmp_path,
         provider=provider,
         mtype=MemoryType.FEEDBACK,
-        similarity_threshold=0.6,  # 寬一點,確保 3 個 concise feedback 進同 cluster
+        similarity_threshold=0.6, # 寬一點,確保 3 個 concise feedback 進同 cluster
     )
 
     # 至少 1 個 cluster 被識別,且 LLM 同意合併

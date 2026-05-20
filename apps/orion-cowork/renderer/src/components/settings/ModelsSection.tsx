@@ -110,7 +110,7 @@ export function ModelsSection() {
   )
 }
 
-/** TTS 設定(Phase 31-T)— 預設 Web Speech API(免費、系統聲音),也可切 OpenAI cloud。 */
+/** TTS 設定— 預設 Web Speech API(免費、系統聲音),也可切 OpenAI cloud。 */
 function TtsPicker() {
   const provider = useSettingsStore((s) => s.ttsProvider)
   const setProvider = useSettingsStore((s) => s.setTtsProvider)
@@ -230,7 +230,7 @@ function TtsPicker() {
   )
 }
 
-/** 預設 budget cap(Phase 31-Q)— 新 session 累積成本超過自動 abort + 顯 banner。 */
+/** 預設 budget cap— 新 session 累積成本超過自動 abort + 顯 banner。 */
 function BudgetPicker() {
   const value = useSettingsStore((s) => s.defaultBudgetUsd)
   const setValue = useSettingsStore((s) => s.setDefaultBudgetUsd)
@@ -283,7 +283,7 @@ function BudgetPicker() {
   )
 }
 
-/** 同時 in-flight conversation 上限(Phase 31-M)— 避免一次跑 N 個 session 推爆 cost。 */
+/** 同時 in-flight conversation 上限— 避免一次跑 N 個 session 推爆 cost。 */
 function ConcurrentLimitPicker() {
   const max = useSettingsStore((s) => s.maxConcurrentSessions)
   const setMax = useSettingsStore((s) => s.setMaxConcurrentSessions)
@@ -410,8 +410,8 @@ function AutoCompactPicker() {
 }
 
 /** STT (speech-to-text) provider + model 選擇 — catalog 來自 orion-model
- *  經 sidecar stt.status RPC。本來放 General,移過來跟 chat model 同 section,
- *  因為兩者都是 "選 model"。 */
+ * 經 sidecar stt.status RPC。本來放 General,移過來跟 chat model 同 section,
+ * 因為兩者都是 "選 model"。 */
 function SttPicker() {
   const { t } = useTranslation()
   const provider = useSettingsStore((s) => s.sttProvider)

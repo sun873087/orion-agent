@@ -1,4 +1,4 @@
-"""SleepTool — Phase 10。對應 TS SleepTool。
+"""SleepTool。對應 TS SleepTool。
 
 autonomous agent 主動延遲下一輪用(例:輪詢狀態時不要 spin)。
 
@@ -54,7 +54,7 @@ class SleepTool:
         try:
             with anyio.move_on_after(seconds) as scope:
                 await ctx.abort_event.wait()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield ErrorEvent(message=f"sleep failed: {e}")
             return
 
@@ -68,10 +68,10 @@ class SleepTool:
                 ),
             )
 
-    def is_concurrency_safe(self, input: SleepInput) -> bool:  # noqa: ARG002
-        return True  # sleep 不影響別的 tool
+    def is_concurrency_safe(self, input: SleepInput) -> bool: # noqa: ARG002
+        return True # sleep 不影響別的 tool
 
-    def is_read_only(self, input: SleepInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: SleepInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

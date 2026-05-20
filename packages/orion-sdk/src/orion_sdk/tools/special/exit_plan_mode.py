@@ -1,4 +1,4 @@
-"""ExitPlanModeTool — 提交 plan,等 user 批准。Phase 12。
+"""ExitPlanModeTool — 提交 plan,等 user 批准。
 
 對應 TS Claude Code `src/tools/ExitPlanModeTool/`。
 
@@ -97,10 +97,10 @@ class ExitPlanModeTool:
             )
         )
 
-    def is_concurrency_safe(self, input: ExitPlanModeInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: ExitPlanModeInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: ExitPlanModeInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: ExitPlanModeInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:

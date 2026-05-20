@@ -326,7 +326,7 @@ export default {
   'schedule.error.payloadRequired': '请填写要执行的技能或 prompt 内容',
   'schedule.error.cronInvalid': 'Cron 表达式格式错误 — 需要 5 个字段(分 时 日 月 周)',
 
-  // Plan Mode(Phase 31-J)
+  // Plan Mode
   'plan.banner.active': 'Plan Mode 进行中 — 只允许 Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion',
   'plan.banner.awaiting': '计划已提交,等候你批准',
   'plan.modal.title': '审核计划',
@@ -407,7 +407,7 @@ export default {
   'mcp.field.envHint': '可选,以明文存储 — 别 commit 密钥',
   'mcp.field.url': 'URL',
   'mcp.field.headers': 'Headers(KEY=VALUE,每行一个)',
-  'settings.about.text': 'Orion Cowork · Phase 31。模型与外观偏好存于 localStorage。MCP 服务器配置于 ~/.orion/mcp.json。',
+  'settings.about.text': 'Orion Cowork ·。模型与外观偏好存于 localStorage。MCP 服务器配置于 ~/.orion/mcp.json。',
 
   'lang.zh-TW': '繁體中文',
   'lang.en': 'English',

@@ -6,8 +6,8 @@
 對外 API:
     list_tts_catalog() -> {"providers": [{ id, label, models, voices }, ...]}
     validate_tts(provider, model) -> bool
-    get_tts_pricing(provider, model) -> float | None    # USD per 1M chars
-    get_tts_voices(provider) -> list[dict]              # [{ id, label }, ...]
+    get_tts_pricing(provider, model) -> float | None # USD per 1M chars
+    get_tts_voices(provider) -> list[dict] # [{ id, label }, ...]
 
 Web Speech API(renderer 內建 speechSynthesis)是免費的 client-side 選項,
 **不在 catalog 內** — renderer 直接用,sidecar 不參與。catalog 只列 cloud
@@ -105,7 +105,7 @@ def _fetch_from_proxy() -> tuple[
     dict[str, list[TtsVoiceEntry]],
     dict[str, str],
 ] | None:
-    """Phase 31-X — ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 tts 段。"""
+    """ORION_MODEL_PROXY_URL 設了 → fetch /v1/catalog 拿 tts 段。"""
     proxy = os.environ.get("ORION_MODEL_PROXY_URL")
     if not proxy:
         return None
@@ -114,7 +114,7 @@ def _fetch_from_proxy() -> tuple[
         resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:  # noqa: BLE001
+    except Exception: # noqa: BLE001
         return None
     tts_section = data.get("tts") if isinstance(data, dict) else None
     if not isinstance(tts_section, dict):

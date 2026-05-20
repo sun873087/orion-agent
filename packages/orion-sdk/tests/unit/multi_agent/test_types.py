@@ -1,4 +1,4 @@
-"""Multi-agent types — Phase 15。"""
+"""Multi-agent types。"""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def test_task_assignment_default_id_unique() -> None:
 
 
 def test_task_assignment_extra_forbid() -> None:
-    with pytest.raises(Exception):  # noqa: B017 — pydantic ValidationError
-        TaskAssignment(description="x", what="?")  # type: ignore[call-arg]
+    with pytest.raises(Exception): # noqa: B017 — pydantic ValidationError
+        TaskAssignment(description="x", what="?") # type: ignore[call-arg]
 
 
 def test_worker_report_completed() -> None:

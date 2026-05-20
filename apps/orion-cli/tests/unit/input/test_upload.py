@@ -88,7 +88,7 @@ def test_no_uploads_dir_returns_empty() -> None:
     assert list_uploads("nonexistent-user") == []
 
 
-# ─── Phase 19 path migration:legacy fallback ─────────────────────────────────
+# ─── path migration:legacy fallback ─────────────────────────────────
 
 
 def test_save_writes_to_new_canonical_path(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ def test_save_writes_to_new_canonical_path(tmp_path: Path) -> None:
 
 
 def _write_legacy(orion_home: Path, user_id: str, upload_id: str, ext: str, data: bytes) -> Path:
-    """模擬 Phase 19 之前留下的舊位置檔。"""
+    """模擬 之前留下的舊位置檔。"""
     legacy_dir = orion_home / "uploads" / user_id
     legacy_dir.mkdir(parents=True, exist_ok=True)
     p = legacy_dir / f"{upload_id}{ext}"
@@ -141,7 +141,7 @@ def test_list_unions_new_and_legacy(tmp_path: Path) -> None:
 def test_list_dedup_prefers_new(tmp_path: Path) -> None:
     """同 upload_id 新舊路徑都有 → list 只列新路徑那筆(避免混淆)。"""
     orion_home = tmp_path / ".orion"
-    upload_id = "12345678" * 2  # 16 hex
+    upload_id = "12345678" * 2 # 16 hex
     _write_legacy(orion_home, "alice", upload_id, ".txt", b"old")
     # 直接寫一個同 id 到新路徑(模擬 hash 撞,雖然 uuid 實際不會碰但要鎖行為)
     new_dir = orion_home / "users" / "alice" / "uploads"

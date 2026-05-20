@@ -1,4 +1,4 @@
-"""Custom instructions(Web chat 模式)。Phase 13。"""
+"""Custom instructions(Web chat 模式)。"""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ async def test_truncates_to_limit(db: AsyncSession) -> None:
     await upsert_user_instructions(user_id="u1", instructions=big, db=db)
     inst = await get_custom_instructions(user_id="u1", session_id=None, db=db)
     assert inst.user_level is not None
-    assert len(inst.user_level) <= USER_INSTRUCTION_LIMIT_CHARS + 50  # +suffix
+    assert len(inst.user_level) <= USER_INSTRUCTION_LIMIT_CHARS + 50 # +suffix
     assert inst.user_level.endswith("...[truncated]")
 
 

@@ -3,7 +3,7 @@
 無狀態 generator:給定 provider + messages + tools + canUseTool + hooks,跑完直到
 模型不再 emit tool_use 或達到 max_turns。
 
-Provider-agnostic:接受任何 LLMProvider 實作(Phase 0 抽象)。
+Provider-agnostic:接受任何 LLMProvider 實作(抽象)。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from orion_sdk.core.tool_execution import (
     ToolResultUpdate,
     ToolUpdate,
 )
-from orion_sdk.core.tool_orchestration import run_tools  # noqa: F401 — 留作 fallback / 測試
+from orion_sdk.core.tool_orchestration import run_tools # noqa: F401 — 留作 fallback / 測試
 from orion_sdk.core.transitions import Terminal
 from orion_sdk.hooks.registry import HookRegistry
 from orion_model.events import (
@@ -57,11 +57,11 @@ class QueryParams:
     """query_loop 的輸入。"""
 
     provider: LLMProvider
-    """LLM provider — Phase 0 抽象,可為 Anthropic / OpenAI。"""
+    """LLM provider 抽象,可為 Anthropic / OpenAI。"""
 
     system_prompt: str | list[str]
-    """單字串(簡單模式)或 list[str](Phase 4 cache scope:Anthropic 自動把
-    last-1 element 標 cache_control)。Phase 0 LLMProvider.stream 已支援兩種。"""
+    """單字串(簡單模式)或 list[str](cache scope:Anthropic 自動把
+    last-1 element 標 cache_control)。LLMProvider.stream 已支援兩種。"""
     tools: list[Tool[Any]]
     can_use_tool: CanUseToolFn
     hooks: HookRegistry
@@ -155,7 +155,7 @@ async def _run_one_turn(
         3. yield AssistantTurnComplete(message 已 append 到 state_messages)
         4. drain executor — 按 add 順序 yield ToolProgressUpdate / ToolResultUpdate
 
-    Phase 16:整段包進 abort_aware_scope。ctx.abort_event 中途 set 會立即 cancel
+   :整段包進 abort_aware_scope。ctx.abort_event 中途 set 會立即 cancel
     provider.stream 的 httpx connection,本函式提前 return,讓 query_loop 下一輪
     觀察到 abort_event 並 emit Terminal(reason="aborted")。
     """
@@ -214,7 +214,7 @@ async def _run_one_turn(
                         cache_creation_tokens = ev.usage.cache_creation_tokens
                         reasoning_tokens = ev.usage.reasoning_tokens
 
-            # Phase 9:把 token usage 寫進 cost tracker + OTel counter
+            # 把 token usage 寫進 cost tracker + OTel counter
             record_usage(
                 session_id=str(ctx.session_id),
                 user_id=ctx.user_id,
@@ -292,12 +292,12 @@ async def query_loop(
 
         turn_count += 1
 
-        # ─── Phase 3: autoCompact(token 接近上限就摘要前段)──────────────
+        # ─── : autoCompact(token 接近上限就摘要前段)──────────────
         state_messages, _was_compacted = await auto_compact_if_needed(
             state_messages, provider=params.provider,
         )
 
-        # ─── Phase 2: 第 3 層 budget(進 API 前 aggregate)─────────────────
+        # ─── : 第 3 層 budget(進 API 前 aggregate)─────────────────
         if isinstance(ctx.replacement_state, ContentReplacementState):
             state_messages, _decisions = apply_tool_result_budget(
                 state_messages,
@@ -306,7 +306,7 @@ async def query_loop(
             )
 
         # ─── stream + executor + drain(全部在 _run_one_turn 裡)─────────────
-        # Phase 3:catch prompt-too-long → reactive compact + retry once
+        # catch prompt-too-long → reactive compact + retry once
         last_assistant_msg: NormalizedMessage | None = None
         result_blocks: list[Any] = []
         retried = False
@@ -327,8 +327,8 @@ async def query_loop(
                             result_blocks.extend(ev.message.content)
                     elif isinstance(ev, ToolProgressUpdate):
                         pass
-                break  # 成功跑完,離開 retry while
-            except Exception as e:  # noqa: BLE001
+                break # 成功跑完,離開 retry while
+            except Exception as e: # noqa: BLE001
                 if retried or not is_prompt_too_long_error(e):
                     raise
                 # 第一次撞到 prompt-too-long → reactive compact + retry once
@@ -341,7 +341,7 @@ async def query_loop(
                 retried = True
                 continue
 
-        # Phase 16:abort 中途 cancel 會讓 _run_one_turn 提前 return,
+        # abort 中途 cancel 會讓 _run_one_turn 提前 return,
         # 此時 last_assistant_msg 仍是 None。先檢查 abort_event 避免誤判 empty_response。
         if ctx.abort_event.is_set():
             transition = Terminal(reason="aborted")

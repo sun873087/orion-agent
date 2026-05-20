@@ -1,4 +1,4 @@
-"""Input pipeline 主協調 — Phase 11。對應 TS processUserInput.ts。
+"""Input pipeline 主協調。對應 TS processUserInput.ts。
 
 把 raw input(可能是純字串,或 dict 含 text + images / attachments)
 轉成事件序列,讓 Conversation.submit_raw_input 處理:
@@ -8,11 +8,11 @@
 - `CommandInjectEvent`:注入下次 system prompt(/memory 之類)
 - `ErrorEvent`:處理失敗(未知命令、無效 input 等)
 
-Phase 11 範圍 web-chat 精簡:
+範圍 web-chat 精簡:
 - ✅ slash 解析 → registry dispatch
 - ✅ image attachments(base64 → ContentBlock)
 - ✅ uploaded file attachments(透過 upload_id 引用)
-- ❌ `!shell` / `@file ref`(留 Phase 11c)
+- ❌ `!shell` / `@file ref`(留)
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ async def process_user_input(
             return
         try:
             result = await cmd.execute(args, ctx, conversation)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: # noqa: BLE001
             yield InputErrorEvent(
                 message=f"/{cmd_name} failed: {type(e).__name__}: {e}",
             )

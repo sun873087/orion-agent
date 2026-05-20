@@ -47,21 +47,21 @@ type Props = {
 const SUPPORTED_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
 /** Slash command 註冊表 — InputBox 偵測 / 開頭時顯示 autocomplete popover。
- *  之後加新指令在這 list 加一筆即可。 */
+ * 之後加新指令在這 list 加一筆即可。 */
 type SlashCommand = {
   name: string
   icon: LucideIcon
   /** 短副標題(popover 內每筆下方顯示)。 */
   subtitle: string
   /** 後面要接的 args 樣板提示,如 '[interval] <prompt>'。User 打完命令名按空格
-   *  / 還沒打空格時,以灰字 ghost-text 形式顯在游標後。 */
+   * / 還沒打空格時,以灰字 ghost-text 形式顯在游標後。 */
   argsHint?: string
   /** 'client'(預設)= InputBox 直接 dispatch;'skill' = 動態載入的 bundled / user
-   *  skill,不走 client-dispatch,送 LLM 由 Skill tool 載入。 */
+   * skill,不走 client-dispatch,送 LLM 由 Skill tool 載入。 */
   kind?: 'client' | 'skill'
 }
 /** 走 client-side dispatch 的 slash(從輸入框直接執行,不送 LLM)。
- *  /loop 不在這 — 它需要 LLM 看到原 prompt + 載 bundled `loop` skill 解析。 */
+ * /loop 不在這 — 它需要 LLM 看到原 prompt + 載 bundled `loop` skill 解析。 */
 const CLIENT_SLASH_NAMES = new Set([
   '/compact',
   '/add-files',
@@ -71,7 +71,7 @@ const CLIENT_SLASH_NAMES = new Set([
   '/plan',
 ])
 
-// Quick prompts(Phase 31-P)— empty state 顯,點 chip 自動填進 input。
+// Quick prompts— empty state 顯,點 chip 自動填進 input。
 // 涵蓋 explore / search / web / general 四類示範常用工具
 type QuickPrompt = {
   key: string
@@ -84,7 +84,7 @@ type QuickPrompt = {
 const QUICK_PROMPTS: QuickPrompt[] = [
   {
     key: 'explore',
-    icon: BookCheck,  // 暫用 BookCheck,後面換 Compass 更貼切
+    icon: BookCheck, // 暫用 BookCheck,後面換 Compass 更貼切
     labelKey: 'quickPrompt.explore.label',
     hintKey: 'quickPrompt.explore.hint',
     textKey: 'quickPrompt.explore.text',
@@ -165,12 +165,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
 const MAX_BYTES = 20 * 1024 * 1024 // 20 MB raw 上限(再大連 canvas 都吃不下)
 // Provider 限制(最嚴的是 Anthropic 5 MB base64);壓到 base64 < 4 MB 留 safety margin
 const TARGET_BASE64_BYTES = 4 * 1024 * 1024
-const COMPRESS_TRIGGER_BYTES = 1 * 1024 * 1024  // raw 超過 1MB 才走 canvas 壓縮
+const COMPRESS_TRIGGER_BYTES = 1 * 1024 * 1024 // raw 超過 1MB 才走 canvas 壓縮
 const COMPRESS_MAX_EDGE = 2048
 const COMPRESS_QUALITY = 0.85
 
-// Text-file drop(Phase 31-N)— 拖進來自動 inject 進 prompt
-const TEXT_FILE_MAX_BYTES = 500 * 1024  // 500 KB,太大會吃掉 LLM context budget
+// Text-file drop— 拖進來自動 inject 進 prompt
+const TEXT_FILE_MAX_BYTES = 500 * 1024 // 500 KB,太大會吃掉 LLM context budget
 const TEXT_EXTENSIONS = new Set([
   'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'env',
   'py', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
@@ -186,9 +186,9 @@ const TEXT_EXTENSIONS = new Set([
 type TextAttachment = {
   filename: string
   /** LLM 看到的最終 path:
-   *  - 拖 workspace 內檔 → 原 path
-   *  - 拖 workspace 外檔 → sidecar copy 後的新 path(<workspace>/.orion/uploads/...)
-   *  - File picker → 永遠是 uploads dir 內的 copy */
+   * - 拖 workspace 內檔 → 原 path
+   * - 拖 workspace 外檔 → sidecar copy 後的新 path(<workspace>/.orion/uploads/...)
+   * - File picker → 永遠是 uploads dir 內的 copy */
   path: string
   size: number
   /** sidecar 是否 copy 過(UI chip 顯不同顏色 / hover hint) */
@@ -210,7 +210,7 @@ function isLikelyTextFile(f: File): boolean {
   return false
 }
 
-// ─── @ mention detection(Phase 31-O)──────────────────────────────
+// ─── @ mention detection──────────────────────────────
 
 type MentionContext = {
   /** @file: 拖檔 / 路徑 引用,@skill: 載 skill */
@@ -224,8 +224,8 @@ type MentionContext = {
 }
 
 /** 從 cursor 往回掃 `@`,判斷現在是否在 mention 中。
- *  條件:`@` 在 string 開頭 或 前一字是 whitespace,從 `@` 到 cursor 之間
- *  沒 whitespace。 */
+ * 條件:`@` 在 string 開頭 或 前一字是 whitespace,從 `@` 到 cursor 之間
+ * 沒 whitespace。 */
 function detectMention(text: string, cursorPos: number): MentionContext | null {
   let i = cursorPos
   while (i > 0) {
@@ -292,7 +292,7 @@ export function InputBox({ onSend, onAbort }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
-  // @ mention popup state(Phase 31-O)
+  // @ mention popup state
   const [mention, setMention] = useState<MentionContext | null>(null)
   const [mentionIdx, setMentionIdx] = useState(0)
   const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ relPath: string; absPath: string; size: number }>>([])
@@ -354,7 +354,7 @@ export function InputBox({ onSend, onAbort }: Props) {
   const showSlash = slashMatches.length > 0
   const [slashIdx, setSlashIdx] = useState(0)
 
-  // @ mention(Phase 31-O)— lazy fetch workspace files 第一次打開時。
+  // @ mention— lazy fetch workspace files 第一次打開時。
   // Session 沒建也沒關係 — lazy create 一條(跟 drag-drop 同 pattern),
   // 才拿得到 workspace_dir 去 walk。
   useEffect(() => {
@@ -376,7 +376,7 @@ export function InputBox({ onSend, onAbort }: Props) {
         setWorkspaceFiles(r.files)
       } catch {
         // 忽略 — popup 顯空 state,user 仍可走 @skill: 或拖檔
-        workspaceFilesLoadedRef.current = false  // 容許下次再試
+        workspaceFilesLoadedRef.current = false // 容許下次再試
       }
     })()
   }, [mention])
@@ -504,7 +504,7 @@ export function InputBox({ onSend, onAbort }: Props) {
     (text.trim().length > 0 || attachments.length > 0 || textAttachments.length > 0)
 
   /** Slash command 分派 — 不送 prompt,直接執行對應動作。Tab 補字 + Enter
-   *  popover 選 + handleSubmit 精準匹配三個入口都走這。 */
+   * popover 選 + handleSubmit 精準匹配三個入口都走這。 */
   async function executeSlashCommand(name: string): Promise<void> {
     setText('')
     setAttachError(null)
@@ -604,9 +604,9 @@ export function InputBox({ onSend, onAbort }: Props) {
 
     // 文字檔 prefix:只列 path + size + workspace 狀態,**不** prescribe
     // 怎麼用。LLM 看 size 自己決定:
-    //   - KB 級小檔 → 直接 Read 進 context
-    //   - MB+ 大檔 → peek 結構後寫 Bash / Python / jq script 處理
-    //   - 100MB+ → 必走 streaming(整檔 Read 會炸 context)
+    // - KB 級小檔 → 直接 Read 進 context
+    // - MB+ 大檔 → peek 結構後寫 Bash / Python / jq script 處理
+    // - 100MB+ → 必走 streaming(整檔 Read 會炸 context)
     // 不寫死「Read 看」避免綁死 LLM workflow(thanks user feedback)
     let finalPrompt = payload
     const prefixParts: string[] = []
@@ -864,7 +864,7 @@ export function InputBox({ onSend, onAbort }: Props) {
           </div>
         )}
 
-        {/* Text-file drop chips(Phase 31-N)— 拖進來的 code / markdown 等
+        {/* Text-file drop chips— 拖進來的 code / markdown 等
             檔案。LLM 看到的是 path(in-workspace 原檔 / uploads dir copy),
             不 inline content。Hover 顯完整 path 跟 copy 狀態。 */}
         {textAttachments.length > 0 && (
@@ -910,7 +910,7 @@ export function InputBox({ onSend, onAbort }: Props) {
           <p className="mb-1 px-2 text-xs text-error">⚠ {attachError}</p>
         )}
 
-        {/* @ mention popup(Phase 31-O)— 在輸入框上方,跟 slash popover
+        {/* @ mention popup— 在輸入框上方,跟 slash popover
             互斥(text 開頭是 `/` 才開 slash;@ 不在開頭也能觸發) */}
         {showMention && (
           <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
@@ -1090,7 +1090,7 @@ export function InputBox({ onSend, onAbort }: Props) {
               }
               // Slash popover 開時,navigation keys 優先處理 — 不被 IME guard 擋
               // (IME 異常沒 fire compositionEnd 時 composingRef 可能 stuck=true,
-              //  ArrowDown/Up/Tab/Enter/Escape 一律穿透給 popover)
+              // ArrowDown/Up/Tab/Enter/Escape 一律穿透給 popover)
               if (showSlash && slashMatches.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault()
@@ -1697,7 +1697,7 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
 const MIC_MIME_CANDIDATES = [
   'audio/webm;codecs=opus',
   'audio/webm',
-  'audio/mp4',  // Safari / 部分 Chromium build
+  'audio/mp4', // Safari / 部分 Chromium build
 ]
 
 function pickMimeType(): string {

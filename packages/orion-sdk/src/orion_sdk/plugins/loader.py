@@ -1,4 +1,4 @@
-"""Plugin loader — Phase 8。
+"""Plugin loader。
 
 對應 TS plugins/builtinPlugins.ts + utils/plugins/pluginLoader.ts。
 
@@ -67,7 +67,7 @@ def discover_plugins(roots: list[Path]) -> list[PluginManifest]:
                     mcp_servers=dict(data.get("mcp_servers", {})),
                     source=manifest_path.parent,
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 logger.warning("failed to build PluginManifest from %s: %s", manifest_path, e)
                 continue
             found.append(m)
@@ -109,7 +109,7 @@ def load_all_plugins(
     """掃 + filter enabled + 註 hook + 收集 skill_dirs / mcp_servers。
 
     Caller 拿到 `skill_dirs` 後,建 SkillTool 時傳給 `load_all_skills(extra_dirs=...)`;
-    拿到 `mcp_servers` 後,自行 connect(Phase 5 McpManager)。
+    拿到 `mcp_servers` 後,自行 connect(McpManager)。
 
     Args:
         settings: settings.json 內容(讀 `enabledPlugins`)

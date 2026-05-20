@@ -1,4 +1,4 @@
-"""Phase 33-E — routing alias / prompt cache / failover / organizations / WS。"""
+"""routing alias / prompt cache / failover / organizations / WS。"""
 
 from __future__ import annotations
 
@@ -185,7 +185,7 @@ async def test_admin_organizations_crud(proxy_db, admin_token) -> None:
 
 
 def test_realtime_websocket_returns_not_implemented(proxy_db, admin_token) -> None:
-    """OpenAI Realtime WS endpoint registered but 503 — Phase E skeleton。"""
+    """OpenAI Realtime WS endpoint registered but 503 skeleton。"""
     from fastapi.testclient import TestClient
 
     app = create_app()

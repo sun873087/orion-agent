@@ -1,9 +1,9 @@
-"""Slash commands — Phase 11。
+"""Slash commands。
 
 `Command` Protocol + `CommandResult` + 全域 registry。
 內建 `/help` `/model`(其餘 spec 推薦由前端 UI 取代)。
 
-Plugin 可註冊新命令(Phase 8 plugin manifest 加 commands 欄位 — 留 Phase 11c)。
+Plugin 可註冊新命令(plugin manifest 加 commands 欄位 — 留)。
 """
 
 from __future__ import annotations

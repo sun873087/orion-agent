@@ -1,4 +1,4 @@
-"""Phase 19:file_history snapshot 上限與 mtime LRU prune。
+"""file_history snapshot 上限與 mtime LRU prune。
 
 - 150 個 snapshot → 預設上限 100 後只剩 100
 - 留下的是最新(mtime 高)那批
@@ -29,7 +29,7 @@ def _write_n_snapshots(n: int, tmp_path: Path, sid: object) -> None:
     for i in range(n):
         p = tmp_path / f"f{i:04d}.txt"
         p.write_text(f"version {i}", encoding="utf-8")
-        make_snapshot(sid, p)  # type: ignore[arg-type]
+        make_snapshot(sid, p) # type: ignore[arg-type]
         # 確保 mtime 嚴格遞增(避免同一秒多檔 mtime tie)
         time.sleep(0.001)
 
@@ -92,7 +92,7 @@ def test_env_invalid_falls_back(
 
     sp = session_paths(sid)
     snaps = list(sp.file_history_dir.glob("*.snap"))
-    assert len(snaps) == 100  # default
+    assert len(snaps) == 100 # default
 
 
 def test_env_zero_disables_prune(

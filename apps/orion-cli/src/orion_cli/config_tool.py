@@ -1,7 +1,7 @@
 """ConfigTool — CLI-only。對應 TS ConfigTool。
 
 讀寫 user-level settings(`~/.orion/settings.json`)。本工具讓 agent 在對話
-中查 / 改 user 設定。Phase 31-I 後從 orion-sdk 搬到 CLI host:
+中查 / 改 user 設定。後從 orion-sdk 搬到 CLI host:
 - Cowork:用 SQLite `cowork_prefs`,不該寫 settings.json
 - chat-api:多租戶,LLM 不該改 global config(安全)
 - CLI:settings.json 是它的家,LLM 改 OK
@@ -87,7 +87,7 @@ class ConfigTool:
     async def call(
         self,
         input: ConfigInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         settings = load_settings()
 
@@ -138,8 +138,8 @@ class ConfigTool:
 
         yield ErrorEvent(message=f"unknown action: {input.action!r}")
 
-    def is_concurrency_safe(self, input: ConfigInput) -> bool:  # noqa: ARG002
-        return False  # 寫檔不安全並發
+    def is_concurrency_safe(self, input: ConfigInput) -> bool: # noqa: ARG002
+        return False # 寫檔不安全並發
 
     def is_read_only(self, input: ConfigInput) -> bool:
         return input.action in ("get", "list")

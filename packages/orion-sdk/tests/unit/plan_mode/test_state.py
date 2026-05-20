@@ -1,4 +1,4 @@
-"""Plan mode state machine 測試。Phase 12。"""
+"""Plan mode state machine 測試。"""
 
 from __future__ import annotations
 
@@ -89,4 +89,4 @@ def test_state_is_frozen() -> None:
     """PlanModeState 是 frozen dataclass — 不可直接 mutate。"""
     s = PlanModeState()
     with pytest.raises((AttributeError, Exception)):
-        s.status = PlanModeStatus.ACTIVE  # type: ignore[misc]
+        s.status = PlanModeStatus.ACTIVE # type: ignore[misc]

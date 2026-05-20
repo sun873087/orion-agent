@@ -1,7 +1,7 @@
-"""BackgroundTaskRunner — Phase 10。
+"""BackgroundTaskRunner。
 
-shared in-memory task registry。Phase 10 範圍 single-instance(global registry);
-Phase 10c 改 SQLite-backed 跨 worker。
+shared in-memory task registry。範圍 single-instance(global registry);
+改 SQLite-backed 跨 worker。
 
 設計:
 - create(subject, description, command):記 TaskRecord(state=pending)
@@ -124,7 +124,7 @@ class BackgroundTaskRunner:
             except asyncio.CancelledError:
                 rec.state = "stopped"
                 raise
-            except Exception as e:  # noqa: BLE001
+            except Exception as e: # noqa: BLE001
                 rec.output.append(f"[runner error] {type(e).__name__}: {e}")
                 rec.state = "failed"
             finally:

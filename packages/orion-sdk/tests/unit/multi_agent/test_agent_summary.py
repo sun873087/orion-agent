@@ -1,4 +1,4 @@
-"""AgentSummary — Phase 15。"""
+"""AgentSummary。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ async def test_summary_from_text_messages() -> None:
         NormalizedMessage(role="assistant", content="OK done"),
     ]
     out = await generate_agent_summary(
-        msgs, provider=provider, agent_name="bot",  # type: ignore[arg-type]
+        msgs, provider=provider, agent_name="bot", # type: ignore[arg-type]
     )
     assert "Edited" in out
     assert "validation" in out
@@ -33,7 +33,7 @@ async def test_summary_from_text_messages() -> None:
 async def test_summary_empty_messages_returns_fallback() -> None:
     provider = MockProvider()
     out = await generate_agent_summary(
-        [], provider=provider, agent_name="bot",  # type: ignore[arg-type]
+        [], provider=provider, agent_name="bot", # type: ignore[arg-type]
     )
     assert "no messages" in out.lower() or "[bot" in out
 
@@ -52,7 +52,7 @@ async def test_summary_handles_tool_use_blocks() -> None:
         ),
     ]
     out = await generate_agent_summary(
-        msgs, provider=provider, agent_name="bot",  # type: ignore[arg-type]
+        msgs, provider=provider, agent_name="bot", # type: ignore[arg-type]
     )
     assert "Ran" in out
 
@@ -62,13 +62,13 @@ async def test_summary_provider_failure_returns_fallback() -> None:
     """provider raises → 回 fallback,不傳出 exception。"""
 
     class _BoomProvider(MockProvider):
-        async def stream(self, **kw):  # type: ignore[no-untyped-def,override]
+        async def stream(self, **kw): # type: ignore[no-untyped-def,override]
             raise RuntimeError("kaboom")
-            yield  # noqa  ─ unreachable but makes generator
+            yield # noqa ─ unreachable but makes generator
 
     msgs = [NormalizedMessage(role="user", content="hi")]
     out = await generate_agent_summary(
-        msgs, provider=_BoomProvider(), agent_name="bot",  # type: ignore[arg-type]
+        msgs, provider=_BoomProvider(), agent_name="bot", # type: ignore[arg-type]
     )
     assert "without summary" in out
 
@@ -80,7 +80,7 @@ async def test_summary_truncates_long_transcript() -> None:
     big = "x" * 20000
     msgs = [NormalizedMessage(role="user", content=big)]
     await generate_agent_summary(
-        msgs, provider=provider, agent_name="bot",  # type: ignore[arg-type]
+        msgs, provider=provider, agent_name="bot", # type: ignore[arg-type]
     )
     # MockProvider 收到的 user_text 應含 truncated marker
     sent = provider.captured_calls[0]["messages"][0].content

@@ -1,4 +1,4 @@
-"""Token estimation — Phase 11。對應 TS services/tokenEstimation.ts。
+"""Token estimation。對應 TS services/tokenEstimation.ts。
 
 兩階段策略:
 1. **rough**:`len(text) / 4`(快、粗,英文 ~ 1 char ≈ 0.25 token,CJK ~1 char ≈ 1 token)
@@ -6,9 +6,9 @@
    rough 接近 threshold 才呼,避免每次 API call。
 
 application:
-- Phase 3 memory selector — 估字串大小決定要不要進 retrieval
-- Phase 5 mcpValidation — MCP tool result 超 threshold 才需要 truncate
-- Phase 11 input — 大文字 attachment 估值
+- memory selector — 估字串大小決定要不要進 retrieval
+- mcpValidation — MCP tool result 超 threshold 才需要 truncate
+- input — 大文字 attachment 估值
 
 不依賴 Anthropic SDK(避免循環);caller 自己接 provider.count_tokens 之類。
 """
@@ -25,7 +25,7 @@ _DEFAULT_TWO_PHASE_FACTOR = 0.5
 """
 
 # CJK / 拉丁字符的字元寬度差異:CJK 約 1 char/token;拉丁約 4 char/token
-_CJK_THRESHOLD = 0x3000  # 大致 CJK / 全形開始
+_CJK_THRESHOLD = 0x3000 # 大致 CJK / 全形開始
 
 
 def rough_token_count(text: str) -> int:
@@ -108,6 +108,6 @@ async def estimate_with_two_phase(
         return rough, rough > threshold
     try:
         precise = await precise_counter(messages)
-    except Exception:  # noqa: BLE001 — counter 失敗 fallback rough
+    except Exception: # noqa: BLE001 — counter 失敗 fallback rough
         return rough, rough > threshold
     return precise, precise > threshold

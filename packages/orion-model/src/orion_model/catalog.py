@@ -52,7 +52,7 @@ class Pricing(TypedDict, total=False):
     input: float
     output: float
     cache_read: float
-    cache_creation: float  # optional — only Anthropic models set this
+    cache_creation: float # optional — only Anthropic models set this
 
 
 class ModelEntry(TypedDict):
@@ -82,7 +82,7 @@ def _parse_pricing(raw: object) -> Pricing | None:
         v = raw.get(key)
         if not isinstance(v, (int, float)):
             return None
-        out[key] = float(v)  # type: ignore[literal-required]
+        out[key] = float(v) # type: ignore[literal-required]
     cc = raw.get("cache_creation")
     if isinstance(cc, (int, float)):
         out["cache_creation"] = float(cc)
@@ -140,7 +140,7 @@ def _parse_config(data: object) -> tuple[dict[str, list[ModelEntry]], dict[str, 
 
 
 def _fetch_from_proxy() -> tuple[dict[str, list[ModelEntry]], dict[str, str]] | None:
-    """Phase 31-X — 若 ORION_MODEL_PROXY_URL 有設,從 proxy /v1/catalog 拿
+    """若 ORION_MODEL_PROXY_URL 有設,從 proxy /v1/catalog 拿
     chat 段。失敗(連不上 / schema 不對 / timeout)回 None,caller fallback
     到 packaged json 不擋 dev / CI。
 
@@ -154,7 +154,7 @@ def _fetch_from_proxy() -> tuple[dict[str, list[ModelEntry]], dict[str, str]] | 
         resp = httpx.get(f"{proxy.rstrip('/')}/v1/catalog", timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
-    except Exception as e:  # noqa: BLE001 - 任何錯都 fallback,不阻擋 host
+    except Exception as e: # noqa: BLE001 - 任何錯都 fallback,不阻擋 host
         _log.warning("orion-model-proxy catalog fetch failed (%s) — fallback to packaged", e)
         return None
     chat_section = data.get("chat") if isinstance(data, dict) else None
@@ -253,7 +253,7 @@ def get_supports_reasoning(provider: str, model: str) -> bool:
 def get_pricing(provider: str, model: str) -> Pricing | None:
     """Returns pricing dict (USD per 1M tokens) or None if unknown."""
     e = _entry(provider, model)
-    return dict(e["pricing"]) if e else None  # type: ignore[return-value]
+    return dict(e["pricing"]) if e else None # type: ignore[return-value]
 
 
 def find_pricing_by_model(model: str) -> Pricing | None:
@@ -265,7 +265,7 @@ def find_pricing_by_model(model: str) -> Pricing | None:
     for entries in _models().values():
         for e in entries:
             if e["id"] == model:
-                return dict(e["pricing"])  # type: ignore[return-value]
+                return dict(e["pricing"]) # type: ignore[return-value]
     return None
 
 

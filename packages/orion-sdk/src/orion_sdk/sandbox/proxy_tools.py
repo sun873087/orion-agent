@@ -1,8 +1,8 @@
-"""Sandbox-aware proxy tools — Phase 7。
+"""Sandbox-aware proxy tools。
 
 對應 spec § 5 proxy_tools.py。
 
-Phase 1 既有 BashTool / FileWriteTool / FileEditTool / FileReadTool **直接動 host**。
+既有 BashTool / FileWriteTool / FileEditTool / FileReadTool **直接動 host**。
 proxy_tools 提供「同 input schema、改透過 SandboxBackend 執行」的版本:
 - SandboxedBashTool
 - SandboxedFileWriteTool
@@ -43,7 +43,7 @@ class SandboxedBashTool:
     async def call(
         self,
         input: BashInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         try:
             result = await self._backend.exec(
@@ -65,10 +65,10 @@ class SandboxedBashTool:
         else:
             yield TextEvent(text=full)
 
-    def is_concurrency_safe(self, input: BashInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: BashInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: BashInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: BashInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:
@@ -89,7 +89,7 @@ class SandboxedFileReadTool:
     async def call(
         self,
         input: FileReadInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         try:
             data = await self._backend.read_file(input.path)
@@ -111,10 +111,10 @@ class SandboxedFileReadTool:
         )
         yield TextEvent(text=numbered or "(empty file)")
 
-    def is_concurrency_safe(self, input: FileReadInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileReadInput) -> bool: # noqa: ARG002
         return True
 
-    def is_read_only(self, input: FileReadInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileReadInput) -> bool: # noqa: ARG002
         return True
 
     def max_result_size_chars(self) -> int | float:
@@ -135,7 +135,7 @@ class SandboxedFileWriteTool:
     async def call(
         self,
         input: FileWriteInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         try:
             await self._backend.write_file(input.path, input.content.encode("utf-8"))
@@ -147,10 +147,10 @@ class SandboxedFileWriteTool:
             f"{len(input.content.splitlines())} lines)"
         )
 
-    def is_concurrency_safe(self, input: FileWriteInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileWriteInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: FileWriteInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileWriteInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:
@@ -171,7 +171,7 @@ class SandboxedFileEditTool:
     async def call(
         self,
         input: FileEditInput,
-        ctx: AgentContext,  # noqa: ARG002
+        ctx: AgentContext, # noqa: ARG002
     ) -> AsyncIterator[ToolEvent]:
         try:
             data = await self._backend.read_file(input.path)
@@ -217,10 +217,10 @@ class SandboxedFileEditTool:
             text=f"edited {input.path} — {replaced} occurrence(s) replaced"
         )
 
-    def is_concurrency_safe(self, input: FileEditInput) -> bool:  # noqa: ARG002
+    def is_concurrency_safe(self, input: FileEditInput) -> bool: # noqa: ARG002
         return False
 
-    def is_read_only(self, input: FileEditInput) -> bool:  # noqa: ARG002
+    def is_read_only(self, input: FileEditInput) -> bool: # noqa: ARG002
         return False
 
     def max_result_size_chars(self) -> int | float:

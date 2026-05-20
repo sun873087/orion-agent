@@ -151,7 +151,7 @@ export default {
 
   'input.placeholder.disabled': 'sidecar unavailable',
   'input.placeholder.busy': 'agent thinking — press Stop to abort',
-  'input.placeholder.normal': 'Send a message  (Enter to send · Shift+Enter for newline · paste / drop image to attach)',
+  'input.placeholder.normal': 'Send a message (Enter to send · Shift+Enter for newline · paste / drop image to attach)',
   'input.send': 'Send (Enter)',
   'input.sendDisabled': 'Type a message first',
   'input.stop': 'Stop (cancel current turn)',
@@ -325,7 +325,7 @@ export default {
   'schedule.error.payloadRequired': 'Pick a skill or write a prompt',
   'schedule.error.cronInvalid': 'Invalid cron expression — need 5 fields (min hour day month dow)',
 
-  // Plan Mode (Phase 31-J)
+  // Plan Mode
   'plan.banner.active': 'Plan Mode active — only Read / Grep / Glob / WebFetch / TodoWrite / AskUserQuestion are allowed',
   'plan.banner.awaiting': 'Plan submitted — awaiting your approval',
   'plan.modal.title': 'Review plan',
@@ -406,7 +406,7 @@ export default {
   'mcp.field.envHint': 'Optional. Stored as plain text — do not commit secrets',
   'mcp.field.url': 'URL',
   'mcp.field.headers': 'Headers (KEY=VALUE, one per line)',
-  'settings.about.text': 'Orion Cowork · Phase 31. Model + theme persist to localStorage. MCP servers live in ~/.orion/mcp.json.',
+  'settings.about.text': 'Orion Cowork ·. Model + theme persist to localStorage. MCP servers live in ~/.orion/mcp.json.',
 
   'lang.zh-TW': '繁體中文',
   'lang.en': 'English',

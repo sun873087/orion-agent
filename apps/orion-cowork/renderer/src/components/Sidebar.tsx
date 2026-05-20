@@ -197,9 +197,9 @@ export function Sidebar() {
   )
 }
 
-/** 多選模式 toolbar(Phase 31-U)— 入口 + 全選 / 取消 / 批次刪 toolbar。
- *  visibleSessions 是當前 sidebar 看得到的 session(已過 project filter)— 全選
- *  只選這些,不會誤選別 project 的。 */
+/** 多選模式 toolbar— 入口 + 全選 / 取消 / 批次刪 toolbar。
+ * visibleSessions 是當前 sidebar 看得到的 session(已過 project filter)— 全選
+ * 只選這些,不會誤選別 project 的。 */
 function SelectionToolbar({ visibleSessions }: { visibleSessions: SessionSummary[] }) {
   const { t } = useTranslation()
   const mode = useAgentStore((s) => s.sidebarSelectionMode)
@@ -345,7 +345,7 @@ function buildSessionTree(
   const out: SessionTreeNode[] = []
   const visited = new Set<string>()
   function walk(s: SessionSummary, depth: number): void {
-    if (visited.has(s.session_id)) return  // 防止 cyclic ref
+    if (visited.has(s.session_id)) return // 防止 cyclic ref
     visited.add(s.session_id)
     const kids = childrenMap.get(s.session_id) ?? []
     const isCollapsed = collapsed.has(s.session_id)
@@ -507,9 +507,9 @@ function SessionRow({
   starred: boolean
   scheduledBy: { schedule_id: string; schedule_name: string } | null
   active: boolean
-  /** Fork tree 深度;0 = root,>0 = 縮排顯為 child(Phase 31-S)。 */
+  /** Fork tree 深度;0 = root,>0 = 縮排顯為 child。 */
   depth: number
-  /** 有 fork 子節點 → 顯 chevron toggle 讓 user 摺/展(Phase 31-S 改)。 */
+  /** 有 fork 子節點 → 顯 chevron toggle 讓 user 摺/展(改)。 */
   hasChildren: boolean
   /** 當前是否被摺起;chevron 方向跟 children 是否在 tree flatten 中由此控。 */
   collapsed: boolean
@@ -528,7 +528,7 @@ function SessionRow({
   const refreshSidebar = useAgentStore((s) => s.setSessions)
   // 是否這 session 還在跑(背景 streaming)— sidebar 顯轉圈圈,user 看得到
   const isRunning = useAgentStore((s) => s.busyBySession[sessionId] ?? false)
-  // 多選模式狀態(Phase 31-U):mode on 時 row 顯 checkbox 取代 icon,點 row toggle 選取
+  // 多選模式狀態:mode on 時 row 顯 checkbox 取代 icon,點 row toggle 選取
   const selectionMode = useAgentStore((s) => s.sidebarSelectionMode)
   const selected = useAgentStore((s) => s.selectedSessionIds.includes(sessionId))
   const toggleSelected = useAgentStore((s) => s.toggleSessionSelected)

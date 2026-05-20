@@ -1,6 +1,6 @@
 """Storage 層 — 持久化:tool result、file history、transcript、resume。
 
-Phase 2 範圍:
+範圍:
 - 三層 tool result(in-memory < 100KB → disk persisted → budget-aggregated)
 - ContentReplacementState(frozen / mustReapply / fresh 三類)
 - File history(寫前快照)
