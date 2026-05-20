@@ -554,8 +554,10 @@ class Handlers:
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
         }
-        # 走 proxy 時 client 不必有直接 key — proxy 那台才有真 key,UI 不該嗆
-        # 「API 金鑰未設」。proxy 那邊缺 key 的話 request 時會 503,不在這裡擋。
+        # 走 proxy 時 client 不必有直接 key — UI 仍標 configured,但同時 flag
+        # via_proxy=True 讓 UI 顯⚠「未驗證」徽章,提示「我們沒真的 ping proxy
+        # 確認 token 合法 / upstream 可達」— proxy 那邊缺 key / token 不合法都
+        # 等真實 send 時才會回 403/503,不在這裡擋。
         via_proxy = bool(os.environ.get("ORION_MODEL_PROXY_URL"))
         # list_catalog() 回 {"providers": [{"id", "label", "models": [...]}, ...]}
         providers = catalog.get("providers", [])
@@ -570,6 +572,7 @@ class Handlers:
                     p["dynamic"] = True
                 elif pid in env_map and via_proxy:
                     p["api_key_configured"] = True
+                    p["via_proxy"] = True
                 else:
                     env_name = env_map.get(pid)
                     p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
@@ -1167,6 +1170,7 @@ class Handlers:
                 pid = p.get("id", "")
                 if pid == "openai" and openai_via_proxy:
                     p["api_key_configured"] = True
+                    p["via_proxy"] = True
                 else:
                     env_name = env_map.get(pid)
                     p["api_key_configured"] = bool(env_name and os.environ.get(env_name))

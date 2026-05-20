@@ -115,11 +115,13 @@ dev-web:
 dev-cowork:
 	npm run dev -w @orion/cowork
 
-# Phase 31-X — Model proxy server。env vars(全可選):
-#   ORION_MODEL_PROXY_HOST  listen host(default 127.0.0.1;對外服 0.0.0.0)
-#   ORION_MODEL_PROXY_PORT  listen port(default 9090)
-#   ORION_MODEL_PROXY_KEY   Bearer token,沒設 = 不認證(本機 dev)
+# Phase 31-X / 32 — Model proxy server(multi-tenant)。env vars:
+#   ORION_MODEL_PROXY_HOST       listen host(default 127.0.0.1;對外服 0.0.0.0)
+#   ORION_MODEL_PROXY_PORT       listen port(default 9090)
+#   ORION_MODEL_PROXY_ADMIN_KEY  admin Bearer 給 /admin/* + /admin/ui
+#   ORION_PROXY_DB_URL           DSN(default SQLite at packages/.../data/proxy.db)
 #   ANTHROPIC_API_KEY / OPENAI_API_KEY / OLLAMA_HOST  上游 provider keys
+# User Bearer 由 admin 透過 /admin/ui 為每位 user 生成,client 端設 ORION_MODEL_PROXY_KEY=<token>
 # Host 端切過去:export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
 dev-model-proxy:
 	uv run --package orion-model-proxy orion-model-proxy

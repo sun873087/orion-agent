@@ -1374,6 +1374,7 @@ function ModelPill() {
             label: p.label,
             models: p.models,
             api_key_configured: p.api_key_configured,
+            via_proxy: p.via_proxy,
             dynamic: p.dynamic,
           })),
         ),
@@ -1469,6 +1470,11 @@ function ModelPill() {
                       {!isOllama && !p.api_key_configured && (
                         <span className="text-warning">
                           {t('settings.model.apiKeyMissing')}
+                        </span>
+                      )}
+                      {!isOllama && p.api_key_configured && p.via_proxy && (
+                        <span className="text-warning" title={t('settings.model.viaProxyHint')}>
+                          ⚠ {t('settings.model.viaProxy')}
                         </span>
                       )}
                     </div>

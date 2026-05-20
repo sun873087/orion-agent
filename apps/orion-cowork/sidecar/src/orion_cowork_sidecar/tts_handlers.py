@@ -199,14 +199,20 @@ async def tts_status(params: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:  
     for p in catalog.get("providers", []) or []:
         pid = p.get("id") if isinstance(p, dict) else None
         has_key = False
+        via_proxy = False
         if pid == "openai":
-            has_key = openai_via_proxy or bool(os.environ.get("OPENAI_API_KEY"))
+            if openai_via_proxy:
+                has_key = True
+                via_proxy = True
+            else:
+                has_key = bool(os.environ.get("OPENAI_API_KEY"))
         providers_meta.append({
             "id": pid,
             "label": p.get("label") if isinstance(p, dict) else pid,
             "models": p.get("models") if isinstance(p, dict) else [],
             "voices": p.get("voices") if isinstance(p, dict) else [],
             "api_key_configured": has_key,
+            "via_proxy": via_proxy,
         })
     yield {
         "event": "tts_status",

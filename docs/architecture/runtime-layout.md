@@ -298,7 +298,7 @@ load_all_skills(
 | Env | 意義 |
 |---|---|
 | `ORION_MODEL_PROXY_URL` | Proxy base URL(e.g. `http://127.0.0.1:9090`)— 設了就走 proxy |
-| `ORION_MODEL_PROXY_KEY` | Bearer token,跟 proxy server 那邊 `ORION_MODEL_PROXY_KEY` 一致 |
+| `ORION_MODEL_PROXY_KEY` | User Bearer token(`sk-orion-<env>-...`)— 由 admin 在 proxy `/admin/ui` 生成後給 client |
 
 Host 怎麼 dispatch:`orion_model.provider.get_provider()`:
 
@@ -312,10 +312,15 @@ Host 怎麼 dispatch:`orion_model.provider.get_provider()`:
 |---|---|---|
 | `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host(對外服務改 `0.0.0.0`) |
 | `ORION_MODEL_PROXY_PORT` | `9090` | listen port |
-| `ORION_MODEL_PROXY_KEY` | (unset) | 需要的 Bearer token;unset = 不認證(本機 dev) |
+| `ORION_MODEL_PROXY_ADMIN_KEY` | (unset) | admin Bearer 給 `/admin/*` + `/admin/ui`;沒設 admin 端 503 |
+| `ORION_PROXY_DB_URL` | SQLite at `packages/orion-model-proxy/data/proxy.db` | DSN(prod 推薦 `postgresql+asyncpg://...`)|
 | `ANTHROPIC_API_KEY` | — | 上游 provider key,從 host 移到這 |
 | `OPENAI_API_KEY` | — | 同上 |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama daemon 位置 |
+
+Phase 31-X 用過的 single-tenant `ORION_MODEL_PROXY_KEY` server-side env 已在
+Phase 32 移除 — 改成 admin 透過 `/admin/ui` 為每位 user 生成獨立 token。同名
+env 在 **client** 端還是 carry 「該 client 用哪個 user token」。
 
 ### 部署形態
 

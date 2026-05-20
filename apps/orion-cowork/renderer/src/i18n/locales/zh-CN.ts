@@ -377,6 +377,8 @@ export default {
   'settings.model.failed': '无法加载列表,请确认 sidecar 已启动。',
   'settings.model.apiKeySet': 'API 密钥已设置',
   'settings.model.apiKeyMissing': '尚未设 API 密钥 — 请在 .env 中设置',
+  'settings.model.viaProxy': '走 Proxy(未验证)',
+  'settings.model.viaProxyHint': '此 provider 通过 ORION_MODEL_PROXY_URL 走 proxy — UI 没实际 ping proxy / 验 token,真实 send 才会知道是否 work(可能 401/403/502)。',
   'settings.model.ollamaOffline': '未连线',
   'settings.model.ollamaUnreachable': 'Ollama 没在运行 — 终端执行 `ollama serve`',
   'settings.model.ollamaEmpty': '尚未 pull 任何 model — 终端执行 `ollama pull llama3.1:8b` 等',

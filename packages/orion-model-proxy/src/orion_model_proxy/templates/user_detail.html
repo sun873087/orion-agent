@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ user.email }} — orion-model-proxy{% endblock %}
+{% block content %}
+<p><a href="/admin/ui/users">← Back to users</a></p>
+<h2>{{ user.email }}</h2>
+<p>
+  <span class="tag">{{ user.id }}</span>
+  {% if user.display_name %}— {{ user.display_name }}{% endif %}
+</p>
+
+{% if new_token %}
+<article class="token-flash">
+  <h4>🎉 New API key — save now, this is the only time it's shown</h4>
+  <code>{{ new_token }}</code>
+  <p><small>Set client-side as <code>ORION_MODEL_PROXY_KEY</code>.</small></p>
+</article>
+{% endif %}
+
+<h3>Budget</h3>
+<form method="post" action="/admin/ui/users/{{ user.id }}/budget">
+  <label>Monthly cap (USD) — empty to remove cap
+    <input type="text" name="budget_usd"
+           value="{% if user.budget_usd is not none %}{{ user.budget_usd }}{% endif %}">
+  </label>
+  <button type="submit">Save</button>
+</form>
+<p>
+  Current month spend: <strong>${{ "%.4f"|format(total_cost) }}</strong>
+  {% if user.budget_usd is not none %}
+    / ${{ "%.4f"|format(user.budget_usd) }}
+    {% if total_cost >= user.budget_usd %}
+      <span class="danger">⚠ over cap — new requests 402</span>
+    {% endif %}
+  {% endif %}
+</p>
+
+<h3>API keys</h3>
+<details>
+  <summary role="button" class="secondary">+ Generate new key</summary>
+  <form method="post" action="/admin/ui/users/{{ user.id }}/keys">
+    <label>Label <input type="text" name="label" placeholder="e.g. laptop / CI"></label>
+    <label>Env tag
+      <select name="env">
+        <option value="prod">prod</option>
+        <option value="dev">dev</option>
+        <option value="test">test</option>
+      </select>
+    </label>
+    <button type="submit">Generate</button>
+  </form>
+</details>
+
+<table class="compact">
+  <thead>
+    <tr>
+      <th>Prefix</th>
+      <th>Label</th>
+      <th>Created</th>
+      <th>Last used</th>
+      <th>Status</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for k in keys %}
+    <tr>
+      <td><code>{{ k.token_prefix }}…</code></td>
+      <td>{{ k.label or "—" }}</td>
+      <td>{{ k.created_at }}</td>
+      <td>{{ k.last_used_at or "—" }}</td>
+      <td>
+        {% if k.revoked_at %}
+          <span class="danger">revoked</span>
+        {% else %}
+          <span class="ok">active</span>
+        {% endif %}
+      </td>
+      <td class="actions">
+        {% if not k.revoked_at %}
+        <form method="post" action="/admin/ui/keys/{{ k.id }}/revoke"
+              onsubmit="return confirm('Revoke this key?')">
+          <button class="contrast outline" type="submit">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not keys %}
+    <tr><td colspan="6"><em>No keys yet.</em></td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<h3>Usage (this month)</h3>
+{% if usage %}
+<table class="compact">
+  <thead>
+    <tr><th>Model</th><th>Cost</th><th>Request count</th></tr>
+  </thead>
+  <tbody>
+    {% for u in usage %}
+    <tr>
+      <td><code>{{ u.model }}</code></td>
+      <td>${{ "%.6f"|format(u.cost) }}</td>
+      <td>{{ u.count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p><em>No usage this month.</em></p>
+{% endif %}
+{% endblock %}

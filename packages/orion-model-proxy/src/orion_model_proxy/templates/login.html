@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Login — orion-model-proxy</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { max-width: 480px; margin: 4rem auto; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h2>orion-model-proxy admin</h2>
+  {% if request.query_params.get("err") == "invalid" %}
+  <article class="danger">Invalid token. Try again.</article>
+  {% endif %}
+  <form method="post" action="/admin/ui/login">
+    <label>Admin token
+      <input type="password" name="token" required autofocus
+             placeholder="ORION_MODEL_PROXY_ADMIN_KEY">
+    </label>
+    <button type="submit">Login</button>
+  </form>
+</body>
+</html>

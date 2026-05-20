@@ -376,6 +376,8 @@ export default {
   'settings.model.failed': 'Failed to load catalog. Check sidecar is running.',
   'settings.model.apiKeySet': 'API key set',
   'settings.model.apiKeyMissing': 'no API key — set in .env',
+  'settings.model.viaProxy': 'via Proxy (unverified)',
+  'settings.model.viaProxyHint': 'Routed through ORION_MODEL_PROXY_URL. The UI did not actually ping the proxy or validate the token — real send may still 401/403/502.',
   'settings.model.ollamaOffline': 'offline',
   'settings.model.ollamaUnreachable': 'Ollama is not running — run `ollama serve` in a terminal',
   'settings.model.ollamaEmpty': 'no models pulled yet — run e.g. `ollama pull llama3.1:8b`',

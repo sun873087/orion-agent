@@ -28,3 +28,6 @@ Thumbs.db
 *.env
 
 orion.db
+
+# Phase 32 model-proxy:預設 SQLite at packages/orion-model-proxy/data/proxy.db
+packages/orion-model-proxy/data/

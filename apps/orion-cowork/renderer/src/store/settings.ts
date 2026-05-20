@@ -48,6 +48,9 @@ export type Provider = {
   label: string
   models: ModelEntry[]
   api_key_configured: boolean
+  /** True = 走 proxy(沒實際 ping 過 / 沒驗證 token / upstream 可能 down)。
+   *  UI 顯⚠ 黃徽章而非綠 ✓,提示「optimistic configured」。 */
+  via_proxy?: boolean
   /** 動態 provider — models 是空 catalog,要 caller 跑 RPC(如 ollama.list_models)拿 */
   dynamic?: boolean
 }

@@ -946,6 +946,7 @@ export type SttProviderEntry = {
   label: string
   models: SttModel[]
   api_key_configured: boolean
+  via_proxy?: boolean
 }
 
 export type SttCatalog = {
@@ -964,6 +965,7 @@ export async function getSttStatus(): Promise<SttCatalog> {
           label: p.label,
           models: Array.isArray(p.models) ? p.models : [],
           api_key_configured: !!p.api_key_configured,
+          via_proxy: !!p.via_proxy,
         })),
       }
     }
@@ -1113,6 +1115,8 @@ export type ModelCatalog = {
       pricing?: Record<string, number>
     }>
     api_key_configured: boolean
+    /** True = optimistic configured(走 proxy,沒驗證 token/upstream)。 */
+    via_proxy?: boolean
     /** Ollama 之類動態 provider — 不靠 catalog,要 caller 跑 ollama.list_models 拿 model list */
     dynamic?: boolean
   }>

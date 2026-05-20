@@ -62,8 +62,9 @@ class OpenAIProvider:
                 # 端塞 placeholder 騙過 SDK。proxy reverse 那層用真實
                 # OPENAI_API_KEY 覆寫 Authorization header。
                 #
-                # ORION_MODEL_PROXY_KEY(proxy 端開了 Bearer auth 時)用
-                # default_headers 蓋掉 api_key 自動生成的 Authorization。
+                # Phase 32 proxy 永遠要求 user token Bearer auth。
+                # client 端讀 ORION_MODEL_PROXY_KEY(admin 給的 `sk-orion-...`)
+                # → default_headers 蓋掉 SDK 從 api_key 自動生的 Authorization。
                 extra_headers: dict[str, str] = {}
                 proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
                 if proxy_key:

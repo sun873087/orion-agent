@@ -61,11 +61,11 @@
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
-# 可選:proxy 自己的 auth token
-export ORION_MODEL_PROXY_KEY=$(uuidgen)
+# Admin Bearer(Phase 32 後必設,否則 admin endpoints 全 503)
+export ORION_MODEL_PROXY_ADMIN_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 make dev-model-proxy
-# [orion-model-proxy] listening on http://127.0.0.1:9090
+# [orion-model-proxy] listening on http://127.0.0.1:9090  (admin endpoints: enabled)
 ```
 
 可選 env vars:
@@ -74,7 +74,8 @@ make dev-model-proxy
 |---|---|---|
 | `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host(對外服改 `0.0.0.0`)|
 | `ORION_MODEL_PROXY_PORT` | `9090` | listen port |
-| `ORION_MODEL_PROXY_KEY` | — | Bearer token;沒設 = 不認證(本機 dev)|
+| `ORION_MODEL_PROXY_ADMIN_KEY` | — | admin Bearer 給 `/admin/*` + `/admin/ui` |
+| `ORION_PROXY_DB_URL` | SQLite at `packages/orion-model-proxy/data/proxy.db` | DSN |
 
 ### 2. 自家 host 切過去
 
@@ -144,28 +145,54 @@ curl http://proxy.local:9090/openai/v1/chat/completions \
 
 **Catch-all 設計**:OpenAI / Anthropic 未來新加任何 endpoint(image / video / files / fine-tuning / vector store / batch ...) **proxy 不必改 code 自動支援**。
 
-## Auth
+## Auth(Phase 32 起 multi-tenant only)
 
-兩條互不影響:
+Phase 31-X 的單 `ORION_MODEL_PROXY_KEY` env mode 已**移除**。現在所有 client 走
+DB-issued per-user token,server 端只需 admin token + 上游 keys。
 
-1. **Proxy 自家 auth**(可選):`ORION_MODEL_PROXY_KEY` env 設了 → request 帶
-   `Authorization: Bearer <same>` 才放行。**這層 client 端必須匹配**。
-2. **Upstream provider auth**(必要):`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env
-   設在 proxy 那台機。Proxy 收到 request 後**覆寫**對應 header(OpenAI `Authorization`,
-   Anthropic `x-api-key`)為真 key。**client 端傳什麼都被覆蓋**。
+三層 token:
+
+| Token | 設在哪 | 用途 |
+|---|---|---|
+| `ORION_MODEL_PROXY_ADMIN_KEY` | proxy server env | 進 `/admin/*` REST + `/admin/ui` |
+| User API key(`sk-orion-<env>-<random>`)| proxy DB(`api_keys.token_hash`)| client 走 `/openai/*` `/anthropic/*` 帶這個當 Bearer |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | proxy server env | proxy 對上游用真實 key |
 
 ```
-client:  Authorization: Bearer client-token
+client:  Authorization: Bearer sk-orion-prod-xxx
          x-api-key: anything
               ↓
-proxy:  ① 比對 client token 是否 = ORION_MODEL_PROXY_KEY(若有設)
-        ② 把 Authorization / x-api-key 覆寫成 server env 內真 key
-        ③ forward 到 upstream
+proxy:  ① sha256(token) DB lookup → user_id + budget_usd
+        ② running_cost[user] >= budget_usd → 402(hard cap)
+        ③ Authorization / x-api-key 覆寫為 server env 真 key
+        ④ forward 到 upstream
+        ⑤ tee response → parse usage → 寫 usage_log + incr running cost
 ```
+
+### 怎麼幫 user 生 token
+
+兩條路:
+- **Web UI**:`http://127.0.0.1:9090/admin/ui/` → login(admin token)→ New user
+  → Generate API key → 明文 token **只在生成時顯示一次**
+- **REST**:
+  ```bash
+  curl -X POST http://127.0.0.1:9090/admin/users \
+    -H "Authorization: Bearer $ORION_MODEL_PROXY_ADMIN_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"email": "alice@example.com", "budget_usd": 50.0}'
+  # → {"id": "...", ...}
+
+  curl -X POST http://127.0.0.1:9090/admin/users/<uid>/keys \
+    -H "Authorization: Bearer $ORION_MODEL_PROXY_ADMIN_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"label": "laptop", "env": "prod"}'
+  # → {"token": "sk-orion-prod-...", ...}    ← 把這個給 client
+  ```
 
 ### Client 端怎麼傳 Bearer
 
-`ORION_MODEL_PROXY_KEY` 同名 env 在 client 端設了就會自動帶上:
+`ORION_MODEL_PROXY_KEY` env 在 client 端設了就會自動帶上(env 名沒變,但內容
+從「shared secret」改成「個人 user token」):
 
 - **Anthropic SDK**(只送 `x-api-key`,沒這個 fix 會直接 401):
   `orion_model.anthropic_provider` init 時把 token 塞 `default_headers={"Authorization": f"Bearer ..."}`

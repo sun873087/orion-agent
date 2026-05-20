@@ -376,6 +376,8 @@ export default {
   'settings.model.failed': 'カタログを読み込めません。sidecar が起動しているか確認してください。',
   'settings.model.apiKeySet': 'API キー設定済み',
   'settings.model.apiKeyMissing': 'API キー未設定 — .env で設定してください',
+  'settings.model.viaProxy': 'Proxy 経由(未検証)',
+  'settings.model.viaProxyHint': 'ORION_MODEL_PROXY_URL を経由するルーティング。UI は実際に proxy へ ping したりトークン検証はしていません — 実際の送信で 401/403/502 になる可能性あり。',
   'settings.model.ollamaOffline': '未接続',
   'settings.model.ollamaUnreachable': 'Ollama が起動していません — ターミナルで `ollama serve` を実行',
   'settings.model.ollamaEmpty': 'pull 済みの model なし — `ollama pull llama3.1:8b` 等を実行',

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}orion-model-proxy{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+    .danger { color: #c0392b; }
+    .ok { color: #27ae60; }
+    .tag { background: #eee; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 0.85em; }
+    .token-flash { background: #fff3cd; border: 1px solid #ffeaa7; padding: 1rem; border-radius: 6px; }
+    .token-flash code { word-break: break-all; }
+    nav { margin-bottom: 1.5rem; }
+    table.compact td, table.compact th { padding: 0.4rem 0.6rem; }
+    .actions form { display: inline-block; margin: 0; }
+  </style>
+</head>
+<body>
+  <nav>
+    <ul>
+      <li><strong>orion-model-proxy admin</strong></li>
+    </ul>
+    <ul>
+      <li><a href="/admin/ui/users">Users</a></li>
+      <li>
+        <form method="post" action="/admin/ui/logout" style="display:inline">
+          <button class="contrast outline" type="submit">Logout</button>
+        </form>
+      </li>
+    </ul>
+  </nav>
+  {% block content %}{% endblock %}
+</body>
+</html>

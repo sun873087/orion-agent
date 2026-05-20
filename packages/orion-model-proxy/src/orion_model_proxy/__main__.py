@@ -6,10 +6,14 @@
     python -m orion_model_proxy
 
 環境變數:
-    ORION_MODEL_PROXY_HOST   listen host(default 127.0.0.1 — 改 0.0.0.0 對外)
-    ORION_MODEL_PROXY_PORT   listen port(default 9090)
-    ORION_MODEL_PROXY_KEY    Bearer token,沒設 = 不認證
+    ORION_MODEL_PROXY_HOST       listen host(default 127.0.0.1 — 改 0.0.0.0 對外)
+    ORION_MODEL_PROXY_PORT       listen port(default 9090)
+    ORION_MODEL_PROXY_ADMIN_KEY  admin Bearer(/admin REST + /admin/ui),沒設 admin 全 503
+    ORION_PROXY_DB_URL           SQLAlchemy DSN(default SQLite at packages/orion-model-proxy/data/)
     ANTHROPIC_API_KEY / OPENAI_API_KEY / OLLAMA_HOST  上游 provider keys
+
+User Bearer 由 admin 透過 /admin/ui 或 /admin/users/{id}/keys REST 為每位 user
+個別產生(`sk-orion-<env>-<random>`),不再有單 token mode。
 """
 
 from __future__ import annotations
@@ -35,9 +39,10 @@ def main() -> None:
     host = os.environ.get("ORION_MODEL_PROXY_HOST", "127.0.0.1")
     port = int(os.environ.get("ORION_MODEL_PROXY_PORT", "9090"))
 
+    admin_set = bool(os.environ.get("ORION_MODEL_PROXY_ADMIN_KEY"))
     print(
         f"[orion-model-proxy] listening on http://{host}:{port}"
-        + ("(auth required)" if os.environ.get("ORION_MODEL_PROXY_KEY") else "(no auth)"),
+        + ("  (admin endpoints: enabled)" if admin_set else "  (admin endpoints: 503 — set ORION_MODEL_PROXY_ADMIN_KEY)"),
         file=sys.stderr,
         flush=True,
     )

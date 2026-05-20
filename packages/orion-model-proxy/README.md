@@ -1,22 +1,32 @@
 # orion-model-proxy
 
-HTTP proxy server in front of `orion-model`。CLI / Chat / Cowork 透過此 proxy 連
-provider(集中 key / cost / routing / cache)。Wire format 走 Orion native
-NormalizedMessage,**不是** OpenAI-compat。
+HTTP transparent reverse proxy 包 OpenAI / Anthropic + multi-tenant auth +
+per-user 計費。CLI / Chat / Cowork / 任何外部 SDK 都能透過 `base_url` 指過來。
 
 ## Quick start
 
 ```bash
-# 跑 proxy(預設 :9090)
+# 1. Proxy 啟動(預設 :9090)
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
-# 可選:proxy 自己的 auth key(host 端要設一樣的 ORION_MODEL_PROXY_KEY)
-export ORION_MODEL_PROXY_KEY=$(uuidgen)
+export ORION_MODEL_PROXY_ADMIN_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 uv run --package orion-model-proxy orion-model-proxy
 
-# Host 端切過去走 proxy
+# 2. Admin 建 user + 生 token(Web UI 或 REST)
+#    瀏覽器開:http://127.0.0.1:9090/admin/ui/
+#    Login → New user → Generate API key → 複製明文 token(只顯示一次)
+
+# 3. Host 端切過去 — client 設拿到的 token
 export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
-export ORION_MODEL_PROXY_KEY=...  # 跟 proxy 一致
+export ORION_MODEL_PROXY_KEY=sk-orion-prod-...
 ```
 
-詳見 [`docs/features/model-proxy.md`](../../docs/features/model-proxy.md)。
+## Phase
+
+- **Phase 31-X**:transparent reverse proxy MVP(/openai/{path} + /anthropic/{path})
+- **Phase 32**:multi-tenant + DB(users / api_keys / usage_log)+ Admin Web UI +
+  hard budget enforcement(超 cap 402)
+
+詳見:
+- [`docs/features/model-proxy.md`](../../docs/features/model-proxy.md)
+- [`docs/roadmap/plans/32-model-proxy-multi-tenant.md`](../../docs/roadmap/plans/32-model-proxy-multi-tenant.md)

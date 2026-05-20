@@ -101,9 +101,10 @@ class AnthropicProvider:
                 # 真 key,host 端塞 placeholder 騙過 SDK。proxy reverse 那層
                 # 會用真實 ANTHROPIC_API_KEY 覆寫 x-api-key header。
                 #
-                # 若 proxy 端設了 ORION_MODEL_PROXY_KEY(要求 Bearer auth),
-                # client 也讀同名 env 並透過 default_headers 塞 Authorization
-                # — Anthropic SDK 本來只送 x-api-key,沒這條會直接撞 401。
+                # Phase 32 proxy 永遠要求 user token Bearer auth。client 讀
+                # ORION_MODEL_PROXY_KEY(admin 給的 `sk-orion-...`)塞進
+                # default_headers Authorization — Anthropic SDK 本來只送
+                # x-api-key,沒這條會直接 401。
                 extra_headers: dict[str, str] = {}
                 proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
                 if proxy_key:

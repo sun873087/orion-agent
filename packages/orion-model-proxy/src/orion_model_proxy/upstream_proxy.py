@@ -17,12 +17,16 @@ Anthropic wire format 的東西)指 `base_url` 過來,proxy 換掉 auth header
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from typing import Iterable
 
 import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
+
+_log = logging.getLogger(__name__)
 
 
 # Hop-by-hop headers — 不該透傳給 client(RFC 7230 §6.1)。
@@ -67,9 +71,11 @@ async def reverse_proxy(
     upstream_base: str,
     auth_header: str,
     auth_value: str,
+    provider: str,
 ) -> StreamingResponse:
     """Transparent reverse proxy:把 req 完整 forward 給 upstream,response
-    streaming 透回。
+    streaming 透回。Phase X.2 加 tee:邊轉發邊累積 response bytes,結束時 parse
+    usage → fire-and-forget log。
 
     Args:
         req: FastAPI Request
@@ -77,6 +83,7 @@ async def reverse_proxy(
         upstream_base: e.g. "https://api.openai.com"
         auth_header: client 端傳什麼都被覆蓋,e.g. "Authorization"
         auth_value: proxy 端用的真實 token,e.g. "Bearer sk-..."
+        provider: "openai" / "anthropic" — 給 usage_parser 分派
     """
     target_url = f"{upstream_base.rstrip('/')}/{path.lstrip('/')}"
     body = await req.body()
@@ -84,9 +91,6 @@ async def reverse_proxy(
     headers[auth_header] = auth_value
     params = dict(req.query_params)
 
-    # 打開 long-lived client + send streaming — 必須在 generator 外 send
-    # 才拿得到 status_code / headers 給 StreamingResponse,但 client 生命週期
-    # 要在 generator 結束才能 close。用 finally 處理。
     client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0))
     try:
         request = client.build_request(
@@ -101,23 +105,76 @@ async def reverse_proxy(
         await client.aclose()
         raise HTTPException(status_code=502, detail=f"upstream connection failed: {e}") from e
 
+    # Tee 用 — 累積 response bytes,stream 結束後 parse + log。
+    collected: list[bytes] = []
+
     async def _passthrough():
         try:
-            # aiter_bytes():httpx 自動 gzip/deflate decompress,
-            # 跟 _filter_response_headers 拿掉 content-encoding 對齊。
-            # aiter_raw() 會回壓縮過的 bytes,client 看 header 沒 encoding 就崩。
             async for chunk in upstream_resp.aiter_bytes():
                 if chunk:
+                    collected.append(chunk)
                     yield chunk
         finally:
             await upstream_resp.aclose()
             await client.aclose()
+            # Tee 結束 → 背景 parse + log,不阻塞 client。
+            asyncio.create_task(
+                _track_usage(
+                    req=req,
+                    path=path,
+                    method=req.method,
+                    request_body=body,
+                    response_body=b"".join(collected),
+                    content_type=upstream_resp.headers.get("content-type") or "",
+                    provider=provider,
+                )
+            )
 
     return StreamingResponse(
         _passthrough(),
         status_code=upstream_resp.status_code,
         headers=_filter_response_headers(upstream_resp.headers),
         media_type=upstream_resp.headers.get("content-type"),
+    )
+
+
+async def _track_usage(
+    *,
+    req: Request,
+    path: str,
+    method: str,
+    request_body: bytes,
+    response_body: bytes,
+    content_type: str,
+    provider: str,
+) -> None:
+    """Tee parser + DB log。失敗 swallow。"""
+    from orion_model_proxy.usage_logger import log_usage
+    from orion_model_proxy.usage_parser import parse_usage
+
+    principal = getattr(req.state, "principal", None)
+    if principal is None:
+        return
+    endpoint_full = f"/{provider}/{path.lstrip('/')}"
+    event = parse_usage(
+        provider=provider,
+        path=path,
+        method=method,
+        request_body=request_body,
+        response_body=response_body,
+        content_type=content_type,
+        endpoint_full=endpoint_full,
+    )
+    if event is None:
+        return
+    client_id = req.headers.get("x-orion-client")
+    request_id = req.headers.get("x-orion-request-id")
+    await log_usage(
+        user_id=principal.user_id,
+        api_key_id=principal.api_key_id,
+        event=event,
+        client_id=client_id,
+        request_id=request_id,
     )
 
 
@@ -139,6 +196,7 @@ async def openai_reverse_proxy(req: Request, path: str) -> StreamingResponse:
         upstream_base="https://api.openai.com",
         auth_header="Authorization",
         auth_value=f"Bearer {key}",
+        provider="openai",
     )
 
 
@@ -151,6 +209,7 @@ async def anthropic_reverse_proxy(req: Request, path: str) -> StreamingResponse:
         upstream_base="https://api.anthropic.com",
         auth_header="x-api-key",
         auth_value=key,
+        provider="anthropic",
     )
 
 

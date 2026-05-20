@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Users — orion-model-proxy{% endblock %}
+{% block content %}
+<h2>Users</h2>
+
+{% if request.query_params.get("err") == "duplicate" %}
+<article class="danger">Email already exists.</article>
+{% endif %}
+
+<details>
+  <summary role="button" class="secondary">+ New user</summary>
+  <form method="post" action="/admin/ui/users">
+    <label>Email <input type="email" name="email" required></label>
+    <label>Display name <input type="text" name="display_name"></label>
+    <label>Budget (USD, optional)
+      <input type="text" name="budget_usd" placeholder="e.g. 10.00">
+    </label>
+    <button type="submit">Create</button>
+  </form>
+</details>
+
+<table class="compact">
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Display name</th>
+      <th>Budget</th>
+      <th>This month</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><a href="/admin/ui/users/{{ u.id }}">{{ u.email }}</a></td>
+      <td>{{ u.display_name or "—" }}</td>
+      <td>
+        {% if u.budget_usd is none %}
+          <span class="tag">no cap</span>
+        {% else %}
+          ${{ "%.4f"|format(u.budget_usd) }}
+        {% endif %}
+      </td>
+      <td>
+        ${{ "%.4f"|format(u.monthly_cost) }}
+        {% if u.budget_usd is not none and u.monthly_cost >= u.budget_usd %}
+        <span class="danger">⚠ over</span>
+        {% endif %}
+      </td>
+      <td class="actions">
+        <a href="/admin/ui/users/{{ u.id }}" role="button" class="outline">Open</a>
+        <form method="post" action="/admin/ui/users/{{ u.id }}/delete"
+              onsubmit="return confirm('Delete {{ u.email }}? This removes all keys + usage log.')">
+          <button class="contrast outline" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not users %}
+    <tr><td colspan="5"><em>No users yet.</em></td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endblock %}

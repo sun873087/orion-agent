@@ -32,6 +32,7 @@ export function ModelsSection() {
             label: p.label,
             models: p.models,
             api_key_configured: p.api_key_configured,
+            via_proxy: p.via_proxy,
           })),
         ),
       )
@@ -53,7 +54,14 @@ export function ModelsSection() {
         <div key={p.id} className="rounded-lg border border-bg-hover bg-bg-panel">
           <div className="flex items-center justify-between border-b border-bg-hover px-3 py-2">
             <span className="text-sm font-medium">{p.label}</span>
-            {p.api_key_configured ? (
+            {p.api_key_configured && p.via_proxy ? (
+              <span
+                className="flex items-center gap-1 text-xs text-warning"
+                title={t('settings.model.viaProxyHint')}
+              >
+                <AlertCircle size={12} /> {t('settings.model.viaProxy')}
+              </span>
+            ) : p.api_key_configured ? (
               <span className="flex items-center gap-1 text-xs text-success">
                 <Check size={12} /> {t('settings.model.apiKeySet')}
               </span>
