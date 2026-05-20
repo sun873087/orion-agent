@@ -3,54 +3,68 @@
 中斷的對話可以從先前 session 繼續(reload 訊息歷史 + replacement state)。
 
 **實作位置**:
-- `packages/orion-sdk/src/orion_sdk/recovery/` — recovery 機制
-- `packages/orion-sdk/src/orion_sdk/storage/resume.py` — 從 transcript 重建 Conversation
+- `packages/orion-sdk/src/orion_sdk/recovery/`
+- `packages/orion-sdk/src/orion_sdk/storage/resume.py`
 
-## Caller API
+## 場景
 
-```python
-from uuid import UUID
-from orion_sdk.core.conversation import Conversation
+- Crash 後重啟:DB 內 session 還在,把 last user msg 之後 incomplete 的 assistant 接著跑
+- 手動 resume:`orion run --resume <session_id>`(CLI)/ Cowork 切回舊 session
+- Plan mode AWAITING_APPROVAL:重啟後仍在等待狀態,UI 自動 re-emit notification
 
-conv = await Conversation.resume(
-    session_id=UUID("..."),
-    provider=llm,
-    tools=tools,
-)
-# state_messages 自動從 ~/.orion/sessions/<id>/transcript.jsonl 重建
+## 流程
+
+```
+session_id 拿到
+    ▼
+storage.load_session(engine, sid)
+    ├─ Messages 從 DB(messages 表)依 message_index 排序拉出
+    ├─ Plan state 從 cowork_session_ext 載入(若有)
+    ├─ Budget state 從 cowork_session_ext 載入
+    │
+    ▼
+build Conversation(messages=loaded, ...)
+    ├─ 不重 inject system(用 saved 版本)— 避免 cache miss
+    │
+    ▼
+若 last message 是 user 且 incomplete:
+    auto-continue(call .send("")— 沒新 prompt 只接續舊的)
 ```
 
-或 CLI:`orion run --resume <session-id> "繼續..."`
+## Persist 時機
 
-## Transcript 格式
+- **每 tool_result append 後** — fire-and-forget DB write,失敗 swallow(不擋 LLM)
+- **Turn 結束** — final messages 寫進
+- **Plan mode 狀態變化** — 寫 cowork_session_ext
+- **Budget 累積** — 同上
 
-每個 turn 一個 JSONL row,寫到 `~/.orion/sessions/<id>/transcript.jsonl`。內容含:
+## Cowork session_ext 擴充欄
 
-- user / assistant / tool messages(完整 NormalizedMessage)
-- usage 統計
-- tool result(>100KB 寫 sidecar 檔 + 留 placeholder,見 [compaction.md](./compaction.md))
-- replacement_state(被 compact 替換掉的舊訊息的 metadata)
+`cowork_session_ext` 表(SDK 共用 `sessions` + Cowork 額外):
 
-## Recovery 步驟
+```
+session_id (FK)
+workspace_dir
+project_id
+plan_mode_status / plan_id / plan_file_path / plan_content
+budget_usd_cap / budget_exceeded
+auto_compact_enabled / auto_compact_threshold
+...
+```
 
-1. 讀 `transcript.jsonl` 全部 row
-2. 解析每筆 → push 進 state_messages
-3. 大 tool result 從 `tool-results/<id>.json` 還原
-4. 重建 `replacement_state`(haven't compacted things)
-5. caller 拿到 ready-to-go `Conversation`,call `send()` 就接著前面跑
+## 限制 / 已知問題
 
-## Crash recovery
+- **Persist race**:若 host 在 LLM message append 跟 tool_result append 之間 crash,DB 內 partial 狀態 — re-load 可能撞 LLM 重複 tool_use。`resume.py` 內有 dedup 邏輯但不 100%。
+- **Plan mode 跨重啟 OK,但 Approve 後 prod_task 中斷**:user 按 Approve 後 sidecar 把 follow-up 注入 + 跑 next turn,中間 crash → next turn 沒跑,但 plan state 已 idle。
+- **CLI JSONL 沒 dedup**:CLI append-only JSONL,重新 send 同 prompt 會新增條目。
 
-`ConversationRecovery` 監聽 `Conversation.send()` 過程,異常時把進行中 state flush 到 disk。下次 `resume` 時可從 mid-turn 接回。詳見 `recovery/__init__.py`。
+## 未來方向
 
-## 限制
+- **Distributed lock for resume**:同 session_id 兩 instance 同時 resume → race。要 advisory lock。
+- **Resume 對 multi-agent**:Coordinator 子 agent 中斷 — 是 main 一起 resume 還是子 agent 獨立?設計沒定。
 
-- transcript 只有 append:對話越長 resume 越慢(線性 read)
-- 大 transcript 沒有 streaming load(會吃 memory)
-- 跨機器 resume 不可用:transcript 在 ~/.orion/,不是 portable URL
-- Phase 7 Postgres mode 解這個:transcript 進 DB,跨機器可讀
+## 看完繼續
 
-## 相關
-
-- [compaction.md](./compaction.md) — 被 compact 的 message 怎麼 resume
-- [storage.md](./storage.md) — Session 持久化結構
+- [storage.md](./storage.md) — session DB schema
+- [agent-loop.md](./agent-loop.md) — Conversation 怎麼從 saved messages 建
+- [cowork.md](./cowork.md) — Cowork resume UX

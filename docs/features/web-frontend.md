@@ -2,100 +2,69 @@
 
 `apps/orion-chat/web/` — Vite + React + TypeScript 客戶端,連 `orion-chat-api` 跑對話。
 
-**npm name**:`@orion/chat-web`
+**實作位置**:`apps/orion-chat/web/src/`
 
-## 跑
+## Stack
 
-```bash
-npm run dev -w @orion/chat-web    # vite :5173,proxy /auth /sessions /chat 等 → :8000
+- Vite + React 18(strict mode)
+- TypeScript strict(沒 any 偷渡;`unknown` 進 narrow)
+- Zustand state
+- Tailwind utility CSS
+- WebSocket 跑對話流(reconnect on visibility regain)
+
+## 主要組件
+
 ```
-
-或從 root:`make dev-web`。需要 chat-api 同時跑(`make dev-api`)。
-
-## 結構
-
-```
-apps/orion-chat/web/src/
-├── api/
-│   ├── client.ts      apiFetch / apiUpload(REST wrapper)
-│   └── auth.ts        token 存取(localStorage)
+web/src/
+├── App.tsx                  Routes + auth gate
+├── api/                     fetch wrapper + WS client + auth token persist
 ├── components/
-│   ├── ChatView.tsx   主對話畫面
-│   ├── MessageList.tsx + MessageBubble.tsx
-│   ├── InputBox.tsx
-│   ├── Login.tsx
-│   ├── Sidebar / SessionList / ModelPicker / ...
-│   ├── ConnectionsPanel.tsx (MCP)
-│   ├── SettingsPanel.tsx / MemoryPanel.tsx / CustomInstructionsPanel.tsx
-│   └── AskUserQuestionDialog.tsx
-├── hooks/
-│   ├── useSessions.ts
-│   ├── useModelCatalog.ts
+│   ├── Sidebar.tsx          Session list / 切換 / search
+│   ├── ChatMain.tsx         Message list + input
+│   ├── MessageBubble.tsx    Markdown + tool_use card + thinking
+│   ├── Settings.tsx         User profile + connections + models
 │   └── ...
-├── lib/                ws client、訊息序列化
-├── types/
-│   ├── api.gen.ts                  ← 自動生成(從 chat-api openapi)
-│   ├── ws-client-events.gen.ts     ← 自動生成
-│   ├── ws-server-events.gen.ts     ← 自動生成
-│   └── events.ts                   ← 手寫(legacy,逐步替換)
-└── App.tsx
+└── store/
+    ├── auth.ts              JWT + refresh
+    ├── chat.ts              messages / busy / error
+    └── settings.ts          model / provider / theme
 ```
 
-## 型別契約 pipeline
+## Auth flow
 
-從 chat-api 自動生成 TS types:
-
-```bash
-make gen-types
-# = npm run gen:openapi + gen:ws-schema + gen:ts-types
+```
+1. App load → 看 localStorage token
+2. Token 過期 → call /auth/refresh
+3. 都失敗 → redirect /login
+4. Login → store token + redirect intended page
 ```
 
-| Step | 來源 | 產出 |
-|---|---|---|
-| `gen:openapi` | `chat-api/app.openapi()` | `apps/orion-chat/shared/openapi.json` |
-| `gen:ws-schema` | pydantic `ClientEvent` / `ServerEvent` | `shared/ws-{client,server}-events.schema.json` |
-| `gen:ts-types` | openapi-typescript + json2ts | `web/src/types/*.gen.ts` |
+## Streaming
 
-**寫 web code 時**用生成的 types,不要手寫對應 chat-api 的 schema。chat-api 改了 → 重 generate → TypeScript 編譯期抓到 mismatch。
+WS receive `{event: "text_delta", data: {text}}` → store.appendDelta → React re-render
+component。OS notification 在 background tab 時推。
 
-詳見 [`../guides/update-types.md`](../guides/update-types.md)。
+## 設計取捨
 
-## State 管理
+- **Strict TS**:沒 any 偷渡,UI bug 早抓
+- **Zustand 不 Redux**:N 個 store(auth / chat / settings),boilerplate 少
+- **Tailwind 不 CSS Module**:utility-first,less context switch
 
-`zustand` store(`store/`)管 session 列表、當前 session、訊息列表。WebSocket events 進來 → reducer 更新 store → React 重 render。
+## 限制 / 已知問題
 
-## WebSocket 連線
+- **No offline mode**:沒 service worker,wifi 斷線 = 用不了
+- **No virtual scroll**:對話 1000+ messages 會 lag(整 DOM render)
+- **OAuth callback 路由限制**:跟 chat-api callback URL 對應的固定路由
 
-```typescript
-const ws = new WebSocket(`/chat/stream/${sessionId}?token=${jwt}`)
-ws.onmessage = (ev) => {
-  const event: ServerEvent = JSON.parse(ev.data)
-  handle(event)  // 按 type discriminator dispatch
-}
-```
+## 未來方向
 
-`vite.config.ts` proxy 把 `/chat/stream/*` 轉到 `ws://localhost:8000`,**proxy `agent: false`** 禁用 connection pool 避免 stale socket(注釋有詳述原因)。
+- **Virtual scrolling**:react-window for message list
+- **Offline draft**:user 寫一半斷網,reload 自動回來
+- **PWA installable**:行動裝置 「加進主畫面」
+- **i18n**:目前只 en,加 zh / ja / ...
+- **Dark mode 持久化**(已部分有,但跨 setting 一致性差)
 
-## Auth
+## 看完繼續
 
-- `Login.tsx` POST `/auth/login` → 拿 JWT 存 `localStorage`
-- 後續 REST 帶 `Authorization: Bearer <token>` header
-- WS 連線網址帶 `?token=<jwt>`(瀏覽器 WebSocket API 不支援 custom header)
-
-## Tailwind + Dark theme
-
-Tailwind utility CSS,主題色透過 CSS variables。有 dark mode toggle。
-
-## 限制 / 未實作
-
-- 沒有 i18n
-- 沒有 offline mode
-- 大檔上傳沒有分段
-- 沒有訊息搜尋
-- session 列表沒 pagination(假設使用者 session 不會破百)
-
-## 相關
-
-- [chat-api.md](./chat-api.md) — 後端協定
-- [`../guides/update-types.md`](../guides/update-types.md) — 型別契約 pipeline
-- [`../guides/manual-testing.md`](../guides/manual-testing.md) — 手動測試流程
+- [chat-api.md](./chat-api.md) — API server 端
+- [cowork.md](./cowork.md) — 桌機 app 對比

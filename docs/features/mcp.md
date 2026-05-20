@@ -1,95 +1,113 @@
 # MCP integration
 
-orion-sdk 是 [Model Context Protocol](https://modelcontextprotocol.io) client — 連外部 MCP server,把 server 提供的 tools 動態 wrap 成 SDK `Tool` 介面塞進 agent。
+orion-sdk 是 [Model Context Protocol](https://modelcontextprotocol.io) client — 連外部
+MCP server,把 server 提供的 tools 動態 wrap 成 SDK `Tool` 介面塞進 agent。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/mcp/`
 
-## 配置
-
-`mcp.json` 兩個位置(先 user 後 project,後者覆蓋):
-
-- `~/.orion/mcp.json` — 全使用者共用 server
-- `<cwd>/.orion/mcp.json` — per-project
-
-格式範例:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
-    },
-    "github": {
-      "transport": "sse",
-      "url": "https://api.example.com/mcp",
-      "oauth": {"client_id": "..."}
-    }
-  }
-}
-```
-
-CLI 額外可 `--mcp-config <path>` 指定第三個位置,優先級最高。
-
-## 支援的 4 種 transport
+## 4 種 transport
 
 | Transport | 用途 |
 |---|---|
-| `stdio` | spawn 本機 process,stdin/stdout 通訊(常見) |
-| `http` | streamable HTTP |
-| `sse` | Server-Sent Events |
-| `websocket` | WS bi-directional |
+| **stdio** | 跑 subprocess,經 stdin/stdout JSON-RPC(MCP 預設)|
+| **SSE** | HTTP Server-Sent Events(MCP 過渡用)|
+| **streamable HTTP** | MCP 新標準(替代 SSE)|
+| **WebSocket** | 雙向 stream(較少用,但有 server 用)|
 
-## 流程
+OAuth 支援:transport 是 SSE / streamable / WS 時可走 OAuth 流程(MCP 2025-06 spec)— 認證 cache 存 keychain。
 
-1. `McpManager` 啟動 → 讀 `mcp.json` → 用 `async with` 並行 connect 所有 servers
-2. 每個 server 回報自己有哪些 tools / resources / prompts
-3. SDK 把每個 server tool wrap 成 `Tool` instance,name 帶 server prefix:`<server>:<tool>`(避免衝突)
-4. agent run 時 wrap 後的 tool 跟內建工具混在 `Conversation.tools` 一起
-5. Tool 被呼叫 → 透過 transport 送 request 到 server → result 包成 `ToolResultMessage` yield
+## 設定
 
-`McpManager.connection_errors` 紀錄失敗的 server(不影響其他 server 正常工作)。
-
-## OAuth(SSE / HTTP transport)
-
-- Client 連 server 時若收到 401 + WWW-Authenticate → 觸發 OAuth flow
-- 開瀏覽器到 server 的 authorize URL,callback 回本機 listener port
-- Token 用 `keyring` 存 OS keychain(macOS Keychain / Windows Credential Manager / Linux secret service)
-- WebUI 模式:OAuth 走 server-side flow(`apps/orion-chat/api/routes/oauth.py`)
-
-## 為何 wrap 成 `Tool` 而非另立分類
-
-設計選擇:agent 不該知道工具來源是 builtin、MCP server、還是 plugin。Tool Protocol 統一,permission policy、sandbox、event 流都一視同仁。
-
-## 設定 server 範例
-
-詳見 [mcp.json schema 範例](https://modelcontextprotocol.io/quickstart)。常見:
+`~/.orion/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "git": {
-      "transport": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-git"]
-    },
-    "puppeteer": {
-      "transport": "stdio",
+    "github": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." }
+    },
+    "linear": {
+      "type": "streamable",
+      "url": "https://mcp.linear.app/sse",
+      "headers": { "Authorization": "Bearer ${LINEAR_TOKEN}" }
+    },
+    "fs-custom": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "my_mcp_server"],
+      "cwd": "/path/to/server"
     }
   }
 }
 ```
 
-## 限制
+`${ENV_VAR}` 自動展開。
 
-- Server 啟動失敗只 log,不 retry(可重啟程序)
-- Stdio server 死掉沒自動重啟 — 後續 phase 加 supervisor
-- Tool name 衝突走 prefix,但 LLM 看到的工具列表多了會 burn tokens
+## Tool 命名
 
-## 相關
+MCP server 註冊到 SDK 後,tool name 帶 prefix:`mcp__<server>__<tool>`。例:
 
-- [tools.md](./tools.md) — Tool Protocol
-- [`../architecture/design-decisions.md`](../architecture/design-decisions.md) — 為何用 MCP 而非自訂 plugin protocol
+- `mcp__github__create_pull_request`
+- `mcp__linear__create_issue`
+
+LLM 看到的是這個帶 prefix 的 name,工具是 MCP server 提供的 schema。
+
+## Lifecycle
+
+```
+SDK start
+    ▼
+MCP manager 連所有 servers(parallel)
+    ├─ stdio:spawn subprocess
+    ├─ SSE/HTTP/WS:open connection + handshake
+    │
+    ▼
+List tools(每 server `tools/list`)→ wrap into SDK Tool spec
+    ▼
+Inject tool list 進 system prompt(LLM 看到 mcp__<server>__<tool>)
+    ▼
+LLM call mcp__... → SDK route 到對應 server → relay arg → server response → relay back
+
+SDK shutdown
+    ▼
+Close all server connections
+```
+
+## OAuth flow
+
+對 SSE / streamable / WS server,首次連用 OAuth 2.1 + PKCE:
+
+1. SDK 收 server `WWW-Authenticate: Bearer` challenge
+2. Open browser → user 認證 → callback to local port
+3. Token 存 keychain(`mcp:<server>` key)
+4. 後續 request 帶 access_token
+
+`mcp.json` 不放 OAuth token,只放 server URL。
+
+## 設計取捨
+
+- **Per-server lifecycle**:一個 server 掛掉不影響其他(parallel connect + per-server retry)
+- **Tool prefix `mcp__<server>__`**:user 可以一眼分 SDK builtin 跟 MCP 外掛
+- **Schema 信任 server**:MCP server 給的 JSON Schema 直接 forward 給 LLM,不重 validate(否則跨 server 維護累)
+
+## 限制 / 已知問題
+
+- **stdio subprocess 多 → 啟動慢**:cold start 5 個 server 約 3-5s
+- **MCP server crash 不自動 restart**:目前 retry 一次,fail 後該 server 的 tools 全 dropped
+- **No tool versioning**:server 升級改 schema,跨 session transcript replay 會 fail
+
+## 未來方向
+
+- **Tool sampling**:LLM 想 server 跑時才連(lazy),不必 startup 全連
+- **MCP server marketplace**:Cowork Settings 內瀏覽 / 一鍵安裝 official servers
+- **Multi-server tool conflict**:兩 server 提供同名 tool → 目前 last-wins,要 explicit conflict resolution
+- **Supervisor resume**:server crash 自動 spawn + recover state
+
+## 看完繼續
+
+- [`../architecture/runtime-layout.md`](../architecture/runtime-layout.md) — `~/.orion/mcp.json` 位置
+- [tools.md](./tools.md) — Tool 介面(MCP tools wrap into 同介面)
+- [skills.md](./skills.md) — Skill / MCP 都擴 agent 能力,差別?

@@ -1,227 +1,126 @@
 # Tools
 
-agent 能呼叫的「能做事的東西」。Tools 是 stateless 的 `Protocol`,SDK 帶 30+ 內建工具,使用者也能寫自訂 tool 註冊進去。
+Agent 能呼叫的「能做事的東西」。30+ 內建 + 自訂 Tool 介面。
 
-**實作位置**:`packages/orion-sdk/src/orion_sdk/tools/`(內建)+ `core/tool.py`(`Tool` Protocol 定義)。
+**實作位置**:`packages/orion-sdk/src/orion_sdk/tools/`
 
-## Tool Protocol
+## Builtin 全清單(by category)
 
-```python
-from typing import Protocol, AsyncIterator
-from orion_sdk.core.tool import Tool, ToolEvent, ToolInput
+### File system
+- **Read** — 讀檔(支援 image / PDF / large file slicing)
+- **Write** — 寫檔(snapshot 舊內容到 file-history 給 undo)
+- **Edit** — Old-string → new-string,失敗強制 Read 先
+- **MultiEdit** — 一次多個 edit 同檔
+- **Glob** — 模式比對 list 檔
+- **Grep** — ripgrep 包裝(content / paths only / count)
 
-class MyTool(Tool[MyToolInput]):
-    name: str = "MyTool"
-    description: str = "Does something"
-    input_schema: type[MyToolInput] = MyToolInput
-
-    async def run(
-        self, input: MyToolInput, ctx: AgentContext
-    ) -> AsyncIterator[ToolEvent]:
-        yield ProgressEvent(data={"stage": "starting"})
-        # ... 做事 ...
-        yield TextEvent(text="done")
-```
-
-`ToolEvent` union:
-
-- `TextEvent` — 中繼純文字輸出(會被收集進 final result)
-- `ProgressEvent` — 可結構化的進度 update
-- `ErrorEvent` — 錯誤(會被包成 ToolResultMessage with is_error=True)
-- `ImageEvent` — 多模態回傳圖片
-
-## 內建工具集
-
-`build_default_tool_set(asker)` 註冊以下(共 30+):
-
-### 檔案
-
-| 工具 | 用途 |
-|---|---|
-| `Read` | 讀檔(支援 line range、image、PDF、Jupyter notebook) |
-| `Write` | 寫新檔(refuse 覆蓋既有) |
-| `Edit` | 字串替換(必須 unique;支援 replace_all) |
-| `NotebookEdit` | Jupyter cell 編輯 |
-
-### 搜尋
-
-| 工具 | 用途 |
-|---|---|
-| `Grep` | ripgrep wrapper |
-| `Glob` | 檔案 pattern 列舉 |
-
-### Shell / 系統
-
-| 工具 | 用途 |
-|---|---|
-| `Bash` | 跑 shell 命令(可選 background mode) |
+### Shell
+- **Bash** — 跑 shell command(local / Docker sandbox 由 ExecutorPolicy 切)
+- **BashOutput** — 拉背景 process 的 stdout/stderr
 
 ### Web
+- **WebFetch** — 抓 URL → markdown(per-session in-memory TTL cache,預設 5 min)
+- **WebSearch** — 走 SerpAPI(Google search results)
 
-| 工具 | 用途 |
-|---|---|
-| `WebFetch` | 抓 URL → markdown(可選 cache) |
-| `WebSearch` | 搜尋引擎 |
+### Skill / Memory
+- **Skill** — load skill bundle inject 進 system
+- **MemoryWrite** — 寫一條 markdown memory
+- **MemoryRead** — recall by name / type
 
-### Agent 編排
+### MCP-related
+- **McpListServers** — 列出已連 MCP server
+- 動態:每個 MCP server 的 tools 自動接上(`mcp__<server>__<tool>` 命名)
 
-| 工具 | 用途 |
-|---|---|
-| `Agent` | spawn sub-agent 跑獨立 query |
-| `Skill` | 套用 markdown skill bundle |
-| `EnterPlanMode` / `ExitPlanMode` | Plan mode 切換 |
-| `EnterWorktree` / `ExitWorktree` | git worktree 隔離 |
-| `AskUserQuestion` | 對 user 提問(needs asker callable) |
+### Multi-agent
+- **AgentTool** / **SubAgentCreate** — spawn sub-agent 跑 sub-task
+- **AgentSend** — peer 模式跨 agent 訊息
 
-### Task 追蹤
+### Workflow
+- **TodoWrite** — 維護 task list(stateful、UI 顯)
+- **AskUserQuestion** — pause 對話問 user(1-4 options,multi/single select)
+- **PostMessage** — 給 user 推 OS notification
+- **PushNotification** — 跨機推
 
-`TaskCreate` / `TaskList` / `TaskGet` / `TaskUpdate` / `TaskStop` / `TaskOutput`(in-conversation 任務看板)
+### Plan mode 專用
+- **ExitPlanMode** — 提計畫 → 進審核狀態(由 plan-mode wrapper 自動 enforce 唯讀)
 
-### Schedule
+### Cowork desktop 專屬
+- **OpenPath** / **OpenUrl** — 開 file Finder / 開瀏覽器
+- **ScheduleCreate** / **LoopCreate** / **CronCreate** — 排程 / 重複任務
 
-兩組,**目標不同**:
+### 其他
+- **NotebookEdit** — `.ipynb` cell 編輯
+- **Plan** — 規劃 mode 切換
 
-| 工具 | 跑什麼 | host | 位置 |
-|---|---|---|---|
-| `CronCreate` / `CronList` / `CronDelete` | shell command(in-process apscheduler) | **CLI only** | `apps/orion-cli/src/orion_cli/cron_tools/` |
-| `ScheduleCreate` / `ScheduleList` / `ScheduleDelete` | 開**新對話 session** 跑 LLM(prompt 或 skill) | **Cowork only**(host 透過 `schedule_callbacks` 注入) | `packages/orion-sdk/src/orion_sdk/tools/schedule/`(spec 共用) |
-| `LoopCreate` | 在**當前對話內**定期 re-fire 一段 prompt(context 累積) | **Cowork only**(透過 `schedule_callbacks.loop_create` 注入,綁 `AgentContext.session_id`) | 同上 |
-
-**Schedule / Loop**:SDK 定 spec、host 注 callback:
+## 自訂 Tool
 
 ```python
-build_default_tool_set(
-    schedule_callbacks={
-        "create": async_fn,
-        "list":   async_fn,
-        "delete": async_fn,
-        "loop_create": async_fn,   # 可選;沒給就 LoopCreate 不註冊
-    },
-)
+from orion_sdk.tools.tool_def import ToolDefinition
+from orion_sdk.tools.types import ToolInput, ToolResult
+
+class MyTool(ToolDefinition):
+    name = "MyTool"
+    description = "Does X"
+    input_schema = {"type": "object", "properties": {...}}
+
+    async def execute(
+        self, params: dict, ctx: AgentContext
+    ) -> ToolResult:
+        # ... 做事 ...
+        return ToolResult(text="done", is_error=False)
 ```
 
-沒給 `schedule_callbacks` 的 host(CLI / chat-api)這四個 tool **完全不註冊**,LLM 看不見 schema。Cowork 對應的 sidecar handler 在
-`apps/orion-cowork/sidecar/src/orion_cowork_sidecar/handlers.py:_build_schedule_callbacks()`。
+Tools 是 **Protocol**(typing.Protocol)— 不必繼承,duck type 就 work。
 
-**Cron**:Phase 31-H 後從 SDK 搬到 CLI host(SDK 不再背 `apscheduler` dep)。CLI `__main__.py` 透過 `extra_tools=build_cron_tools()` 注入,Cowork / chat-api 不註冊。
+## ExecutorPolicy(`streaming.py`)
 
-### Cowork 預設 disabled 的工具
+每個 tool 宣告自己是 CONCURRENT 還是 SEQUENTIAL:
 
-Cowork chat UI 場景下幾乎用不到、或讓 LLM 自呼會放大成本的工具,sidecar 首次啟動時透過 `_seed_default_disabled_tools()` 一次性 seed 進 `cowork_prefs.disabled_tools`。Marker `host_default_disabled_seeded`(CSV of applied versions)防重複 seed,user 在 Settings UI 開關都被尊重。
+```python
+class ToolDefinition:
+    name: str
+    description: str
+    executor_policy: ExecutorPolicy = ExecutorPolicy.CONCURRENT
+```
 
-| Version | 工具 | 原因 |
-|---|---|---|
-| **v1** | `Agent` | spawn sub-agent 容易放大 token cost(每個 sub-agent 獨立 conv loop)|
-| **v2** | `Sleep`、`Browser*`(10 個) | Sleep:autonomous CLI 用,chat 場景無意義。Browser:會跳新 Chrome window,user 該顯式啟用 |
+- **CONCURRENT** — 同一輪 N 個 tool_use 全部 asyncio.gather 平行跑(預設)
+- **SEQUENTIAL** — 一個一個跑(state-modifying tool 用,e.g. TodoWrite)
 
-User 要開:Settings → 工具 → 找對應 group 勾選 → 立刻下次 send 生效。
+## 註冊
 
-### Agent(Cowork host-injected,需 user 啟用)
-
-`Agent` 工具讓 LLM **spawn 子 agent** 處理 self-contained 子任務(平行探索、隔離 context、用大量 tool call 不想污染主對話)。Sub-agent 用 parent 同一個 LLMProvider 但獨立 `AgentContext`(sub_agent_depth+1),跑完只回 final assistant text 給 parent。
-
-- 位置:`packages/orion-sdk/src/orion_sdk/tools/agent/agent_tool.py`
-- Cowork 透過 `extra_tools=[AgentTool(provider=llm, child_tools=tools)]` 在 `_build_conversation` 注入(disabled_set 內含 "Agent" 時不註冊)
-- Sub-agent 最大 turn 數 10(parent 30),`sub_agent_depth >= 1` 守住不能再 nest
-- Phase 15 加的 `orion_sdk/multi_agent/`(Coordinator / Swarm / MessageBus)是 **programmatic Python API**,跟這個 LLM-facing 工具是兩條獨立路線
-
-### Browser(Cowork-only)
-
-| 工具 | 用途 |
-|---|---|
-| `BrowserNavigate` / `BrowserBack` / `BrowserForward` | URL 跳轉、上一頁 / 下一頁 |
-| `BrowserClick` / `BrowserType` / `BrowserScroll` | 元素互動 |
-| `BrowserScreenshot` / `BrowserReadPage` | 抓畫面 / 文字 |
-| `BrowserWaitFor` / `BrowserClose` | 等元素出現 / 關 session |
-
-Phase 31-H 後從 SDK 搬到 Cowork sidecar(`apps/orion-cowork/sidecar/src/orion_cowork_sidecar/browser_tools/`),SDK 不再背 `playwright` dep。Cowork sidecar `_build_conversation` 偵測 `is_browser_available()`(playwright + system Chrome 同時可用)後,透過 `extra_tools=build_browser_tools()` 注入。CLI / chat-api 不註冊。
-
-詳見 [`cowork.md`](./cowork.md) §桌面 OS 整合。
-
-### Config(CLI-only)
-
-`Config` 讀 / 寫 `~/.orion/settings.json`。Phase 31-I 後從 orion-sdk 整個搬到
-CLI host(`apps/orion-cli/src/orion_cli/config_tool.py`),orion-sdk 不再 ship
-這個 LLM-facing tool:
-- **Cowork**:用 SQLite `cowork_prefs` 表存偏好,不讀 settings.json
-- **chat-api**:多租戶,LLM 不該改 global config(安全考量)
-- **CLI**:settings.json 是它的家,LLM 改 OK
-
-SDK 內其他模組(`permissions/persistence.py`、`migrations/framework.py`)讀寫
-settings.json 走 `orion_sdk.settings.{settings_path, load_settings, save_settings}`
-helper(純函式,跟 LLM 無關,不註冊為 tool)。
-
-### 雜項
-
-- `Sleep`(SDK 預設;autonomous CLI flow 用)
-- `ToolSearch`(SDK 預設,deferred tool 載入)
-- `SyntheticOutput`(SDK class 但**不**默認註冊;structured-output library tool — caller 動態建 `SyntheticOutputTool(schema=user_schema)` 進 `extra_tools`)
-
-## 啟用 / 停用
-
-預設全開。停用方式:不要傳進 `Conversation(tools=...)` 即可。例:
+`build_default_tool_set(...)` 接收 callback 注入 host-specific 邏輯:
 
 ```python
 from orion_sdk.tools.builtin_set import build_default_tool_set
-all_tools = build_default_tool_set(asker=None)
-safe_tools = [t for t in all_tools if t.name not in {"Bash", "Write", "Edit"}]
-conv = Conversation(provider=llm, tools=safe_tools)
+
+tools = build_default_tool_set(
+    workspace_dir=Path("/some/workspace"),
+    permission_policy=policy,
+    blob_store=blob_store,
+    ask_user_question=cowork_asker,        # host 注入
+    schedule_create=cowork_scheduler.create,
+    loop_create=cowork_scheduler.loop_create,
+    ...
+)
 ```
 
-## Permission
+Host 不提供 callback 的 tool 自動不註冊(避免 schedule/loop 在 CLI 環境出現)。
 
-每個 tool 執行前過 `Conversation.can_use_tool` callable(預設 `always_allow`)。可改成 ask-user(WS / GUI) 或 DSL rule:
+## 設計取捨
 
-```python
-from orion_sdk.permissions.policies import ask_via_callback
+- **Tool 即 spec,執行 by host**:SDK 定義 ToolDefinition(name / schema / description / executor_policy),具體執行邏輯由 host 注入 callback。同名 tool 在不同 host 行為不同(`ScheduleCreate` 在 CLI 寫 cron file,Cowork 寫 SQLite)。
+- **Permission policy 介入時機**:在 `StreamingExecutor.execute()` 內呼 tool 前 — `always_allow` 直接過,`ask` 走 `AskUserQuestion`-like flow,DSL 比 path / tool name 條件。
+- **Plan mode wrapper 自動掛**:`enter_plan_mode()` 之後 SDK 自動把所有非唯讀 tool 拒絕,LLM 只能 Read/Grep/Glob/WebFetch/AskUserQuestion 等;不必 host 介入。
 
-conv = Conversation(provider=llm, tools=tools, can_use_tool=ask_via_callback(my_asker))
-```
+## 限制 / 已知問題
 
-詳見 [permissions.md](./permissions.md)(待寫)。
+- **Tool 沒 versioning**:同名 tool 跨版本 schema 改 → 舊 transcript 重 replay 可能 fail。要 backward compat 自己保證。
+- **Cowork desktop 專屬 tool 不能在 CLI 用**:`OpenPath` 需要本機桌機環境,CLI / chat-api 不註冊。
+- **MCP 動態 tools 跨 session 變化**:user 加 / 移 MCP server,tool list 會變,LLM 可能拿舊 cached system prompt 看不到新 tool — 走 cache invalidation 解。
 
-## Sandbox
+## 看完繼續
 
-工具預設直接動 host。`Sandbox` backend(Docker / local)接管後,工具透過 sandbox proxy 跑命令。詳見 [sandbox.md](./sandbox.md)(待寫)。
-
-## MCP 工具
-
-MCP server 連上後,server 提供的 tools 動態 wrap 成 `Tool` 介面塞進 agent。詳見 [mcp.md](./mcp.md)。
-
-## 寫自訂 tool
-
-1. 定義 `pydantic.BaseModel` 描述 input
-2. 寫 class 實作 `Tool` Protocol
-3. 在 caller spawn `Conversation` 前 append 進 tools list
-
-例(完整可跑):
-
-```python
-from pydantic import BaseModel
-from orion_sdk.core.tool import Tool, TextEvent
-
-class MyToolInput(BaseModel):
-    name: str
-
-class GreetTool:
-    name = "Greet"
-    description = "say hi"
-    input_schema = MyToolInput
-
-    async def run(self, input: MyToolInput, ctx):
-        yield TextEvent(text=f"hi {input.name}")
-
-conv = Conversation(provider=llm, tools=[GreetTool(), *builtin_tools])
-```
-
-## 限制
-
-- 同 conversation 內 tool name 不可重複(MCP server 衝突會 prefix `<server>:<tool>`)
-- 沒有 timeout 預設值 — 慢工具要自己用 `asyncio.timeout`
-- Tool 輸出超過 ~100KB 自動 spill 到 disk(`storage/large_result.py`)— caller 看不到差別
-
-## 相關
-
-- [agent-loop.md](./agent-loop.md) — 工具何時被呼叫
-- [sandbox.md](./sandbox.md) — Sandbox 隔離
-- [mcp.md](./mcp.md) — MCP tool 動態註冊
+- [agent-loop.md](./agent-loop.md) — tool execution 在 loop 哪一段
+- [permissions.md](./permissions.md) — tool 怎麼被擋
+- [mcp.md](./mcp.md) — MCP 動態 tool 註冊
+- [multi-agent.md](./multi-agent.md) — AgentTool / SubAgentCreate

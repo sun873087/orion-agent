@@ -2,177 +2,149 @@
 
 重要的設計取捨,**和它們的理由**。要動以下任一條前,先讀本文。
 
----
+## 1. 不用 LangChain / LlamaIndex / 任何 agent framework
 
-## 1. 不用 agent framework
+直接用 `anthropic` + `openai` 的薄 SDK + 自寫 agent loop。
 
-**選擇**:`orion-sdk` 直接用 `anthropic` + `openai` 兩個薄 HTTP wrapper SDK。**不**用 Claude Agent SDK / OpenAI Agents SDK / LangChain / LiteLLM / 其他第三方 framework。
+**理由**:第三方 framework 通常為 generic chatbot 設計,把 tool-call schema、prompt
+template、token 計算包成黑盒。orion 對「stream 怎麼分 chunk / cache 怎麼下、tool
+parallel 怎麼跑、permission policy 怎麼介入」都要可控,任何一層黑盒都得跳;與其
+跟 framework 鬥,不如薄 SDK 自寫。
 
-**理由**:
+## 2. 3 個 app 不共用 sessions DB
 
-- Agent loop 邏輯本身不複雜,核心 `core/query_loop.py` 不到 300 行。Framework 帶來的是抽象成本(每個 framework 自己的 message / event / tool 抽象)而非實質減少程式。
-- Tool 並行、permission、streaming、tool result 持久化、memory、compact、recovery 這些**真正的複雜度**,framework 通常處理得很表面;改起來要對抗 framework,不如自己寫。
-- 多 provider 支援:用 framework 等於同時跟 framework 跟 provider 兩邊吵架。自己寫 `NormalizedEvent` 抽象一次到位,且能控制每個 wire-format 細節。
+- Cowork:`~/.orion/sessions/cowork.db`(SQLite,SDK 共用表 + `cowork_*` 擴充表)
+- CLI:`~/.orion/sessions/<uuid>/transcript.jsonl`(per-session JSONL dir)
+- chat-api:同 CLI 預設 / production 走 Postgres
 
-**代價**:每個 LLM provider 行為差異(reasoning blocks、prompt caching、tool use parallelism)要自己處理 — 已封裝在 `packages/orion-model/translation/{anthropic,openai}.py`。
+**理由**:Cowork 對 query latency 敏感(本機 UI 30+ session 切換要 instant),要 random
+access + 索引 — SQLite 合適。CLI 是 one-shot 跟 manual review 為主,append-only JSONL
+最簡單。chat-api 跑 SaaS 規模需 PostgreSQL。三家對 DB 要求完全不同,強行統一 = 都
+不滿意。
 
----
+**共用的**:skills / memory / mcp.json / blobs / users — 一個 host 裝 skill 另一 host
+看得到,跨 host 一致性 > 各自隔離。
 
-## 2. `orion-model` 跟 `orion-sdk` 分兩個 package
+## 3. Cowork 不走 chat-api,走 stdio JSON-RPC 連 sidecar
 
-**選擇**:LLM 抽象(`orion-model`)獨立成 package,**不**塞進 `orion-sdk`。
+Cowork 是 Electron + Python sidecar。Electron main process spawn Python sidecar,雙方
+用 stdin/stdout 跑 JSON-RPC。
 
-**理由**:
+**理由**:本機單機不需要 HTTP + JWT + CORS。stdio 比 socket 安全(沒 port 暴露),
+JSON-RPC 比 REST 適合 streaming(scheduler.fired 之類 notification 隨時推),延遲低。
+要把 Cowork 改 SaaS-mode 直接走 chat-api,sidecar 直接刪。
 
-- `orion-model` 邊界清楚 — 只認 LLM,不認 agent loop / tools / memory。**沒有反向依賴**(grep 過,`packages/orion-model/src/` 內所有 import 都只指自己)。
-- 可單獨用 — 想做 prompt 測試、benchmark、純 chatbot,引一個 600 LOC 級的 package 就夠,不用拖 sqlalchemy / docker / mcp 進來。
-- 強制紀律 — `orion-sdk` 內任何模組想 call LLM 都得透過 `orion-model.provider`,不能繞道 `import anthropic`,違規由 import-linter 擋下。
+## 4. Tool 註冊由 host 控,SDK 只定義 spec
 
----
+SDK `tools/builtin_set.py` 的 `build_default_tool_set(...)` 接收一堆 callback —
+`ScheduleCreate` / `LoopCreate` / `ask_user_question` 等執行邏輯由 host 注入。
 
-## 3. Cowork 不走 chat-api,直接用 SDK
+**理由**:同一個 tool name(例如 `ScheduleCreate`)在 CLI 是 cron tab 寫入,在 Cowork 是
+寫進 SQLite 的 `cowork_schedules` 表,在 chat-api 是發 webhook。tool 的「**意義**」由 SDK 定,
+「**怎麼做**」由 host 注入。
 
-**選擇**:`apps/orion-cowork/sidecar` 是獨立 Python 進程,直接 `import orion_sdk` 跑 agent loop,**不**透過 `orion-chat-api`。Electron main 用 stdio JSON-RPC 跟 sidecar 通訊。
+## 5. Proxy 是 transparent reverse,不解碼 wire format
 
-**理由**:
+`/openai/{path:path}` + `/anthropic/{path:path}` catch-all,byte-for-byte 透傳。**不**做 Orion-native
+`/v1/messages` 中間層。
 
-- Cowork 是**本機單機 app** — 單一使用者、單一機器、本機檔案完整存取。
-- chat-api 為「跨網路 / 多使用者」設計,有 JWT auth、CORS、多 session 管理、HTTP overhead、token rate limit、CSRF 防護。Cowork 一個都不需要。
-- 讓 Cowork 走 chat-api = 自己打開 HTTP server、發 token 給自己、再連回來 — 沒有意義。
-- 對稱性:CLI / chat-api / cowork-sidecar 三個是**平行的 SDK consumer**,各自用 SDK,各自選自己的傳輸協定(stdin、HTTP/WS、stdio JSON-RPC)。
+**理由**:中間層 = 雙倍 wire(Orion-native ↔ provider native),維護成本高且容易跟 provider
+新 endpoint 脫鉤。透傳的代價是「proxy 不知道 wire 內容」— 但這個成本用 tee 解(forward
+不改 + 邊解析邊送 client)就解掉了。額外好處:**外部 SDK**(LangChain / aider / Cursor)
+可以直接設 `base_url` 用我們的 proxy,不必改 wire。
 
-**代價**:Cowork 跟 chat/web 沒有共用協定,renderer 完全獨立寫(這是刻意,見下一條)。
+## 6. Per-app `.env`,不共用 root `.env`
 
----
+CLI / chat-api / cowork / proxy 各自有 `.env`(分別在 `apps/orion-cli/.env`、
+`apps/orion-chat/.env`、`apps/orion-cowork/.env`、`packages/orion-model-proxy/.env`),
+四份各自獨立。
 
-## 4. Cowork renderer 完全獨立重寫,不複用 chat/web 元件
+**理由**:每個 app role 完全不同 — chat-api 需要 JWT/DB/OAuth,CLI 不用;proxy 需要
+admin token + upstream key,client 都不用。共用 root 看 130 行 env 撈 5 行相關,新人會哭。
+每個 app 的 `.env.example` 只列該 role 該管的 var,role boundary 清楚。
 
-**選擇**:`apps/orion-cowork/renderer/` 用 React 但不 import 任何 `apps/orion-chat/web/` 元件。
+## 7. Memory ranker 預設 heuristic(bag-of-words),不用 LLM
 
-**理由**:
+`memory/ranker.py` 預設 keyword overlap,可選 `ORION_MEMORY_RANKER=llm` 切 Haiku 評分。
 
-- chat/web 是「服務型 chat UI」(session 列表、登入、訊息泡泡),Cowork 是「桌機 app UI」(可能多視窗、托盤、檔案 drag、本機通知整合)— 設計 paradigm 不同。
-- 一旦共用,兩邊行為被綁,Cowork 想做桌機 native 體驗時被 chat/web 拖。
-- 共用元件等於再加一個 npm workspace member (`@orion/chat-ui-shared` 之類),養兩份 dep。
+**理由**:LLM ranker 每輪多打一次模型,$ / 延遲都不可忽視。Bag-of-words 對 100 條
+memory 內準確度夠用,延遲 <1ms。LLM ranker 留給「memory 數量爆炸 / 主題重疊嚴重」
+的進階場景。
 
-**代價**:小團隊有 chat/web 跟 cowork 兩份 React UI 要維護。可接受 — UI 是「本來就會變」的層,共用元件的價值低於想像。
+## 8. Anthropic prompt cache 預設 1h TTL(static + session),5m(messages)
 
----
+`cache_config.py` 定的。
 
-## 5. 不做完整 TS port of agent runtime
+**理由**:Anthropic 計費 5m write 1.25× / 1h write 2× / read 永遠 0.1×。Static system
+prompt 跟 session-stable block 跨多輪 idle gap 重複用,1h TTL 攤平寫成本;message
+history 每輪都重寫最新斷點,5m 足夠。
 
-**選擇**:SDK 只有 Python 版,**不**做 TypeScript port。Cowork 用 Python sidecar(而非純 TS agent)。
+## 9. Cowork session 內含「per-conversation budget cap」+ proxy 內含「per-user budget cap」
 
-**理由**:
-
-- 完整 TS port = 重寫 30+ 工具、core 狀態機、sandbox、memory、compact、storage、migrations。**雙倍維護成本**,每加 feature 寫兩次,Python / TS 行為差一點就是 bug。
-- 對照 Anthropic 自己:Claude.ai(web)跟 Claude Code(desktop)沒共用 agent runtime — 它們是獨立 codebase,Claude Code 從第一天就是 TS,沒有 port 問題。
-- TS 「client SDK」(只 call chat-api 的 typed wrapper)有價值,但那叫 OpenAPI client,不叫 agent SDK。
-
-**代價**:Cowork 必須打包 Python runtime(production 用 PyInstaller),binary 較肥。Phase E PoC 階段用 `uv run` 開發,production 打包另開 phase。
-
----
-
-## 6. Monorepo + workspaces,不拆獨立 repo
-
-**選擇**:uv workspace + npm workspaces,全部在一個 git repo。
-
-**理由**:
-
-- 本機 editable install — 改 SDK 馬上所有 app 吃到,不用 publish 周轉
-- 單一 lock file(`uv.lock` / `package-lock.json`)— 不會跨 repo 漂移
-- CI 簡單 — 一個 `uv sync` + 一個 `npm install` 把整個 workspace 裝好
-- 想要分離 — 直接把資料夾切出去就好(用 `git subtree split`)
-
-**代價**:repo size 變大、CI matrix 要會跑「只在某 package 變動時跑該 package 的 tests」(尚未實作,目前 CI 跑全套)。
-
----
-
-## 7. Tool / OTel 命名空間故意保留 `orion_agent.*` 前綴
-
-**選擇**:OpenTelemetry span 名稱 `orion_agent.turn` / `orion_agent.tool` / `orion_agent.tokens.*` 在 Phase 30 import path 改名後**故意不動**。
-
-**理由**:這些是觀測平台的 namespace,既有 dashboard / alert 都掛在這些名字上。改它們等於要同步改觀測 stack,本來只是 import refactor 變成 cross-team 工程。
-
-**代價**:Python import path 是 `orion_sdk.*`、OTel namespace 是 `orion_agent.*`,新人看到會疑惑。**用 grep / 本文解釋**:Python 程式碼 = `orion_sdk`,觀測 = `orion_agent`。
-
----
-
-## 8. Migrations 屬於 `orion-sdk`,不屬於 `orion-chat-api`
-
-**選擇**:alembic migrations 放 `packages/orion-sdk/migrations/`,由 SDK 提供 `upgrade()` API。chat-api 啟動時呼叫。
+兩層獨立。
 
 **理由**:
+- **Per-session**(Cowork)= user 想知道「這條對話花多少」+ 自我約束
+- **Per-user**(proxy)= admin 給整月預算 + 強制 enforcement
 
-- DB schema 屬於 SDK(`storage/db/models.py` 定義),migrations 跟著它走。
-- 多個 SDK consumer(chat-api、Cowork 本機 SQLite、未來其他 app)可能用同一份 schema — schema migration 不該歸特定 app。
-- Cowork sidecar 想存對話歷史時,直接呼叫 SDK 的 upgrade 函式,跟 chat-api 用同一份 schema。
+互相不取代:user 可以開 10 條 session 各 $5,proxy 端 admin 總體 $30 上限;兩端各自
+擋,可疊加。
 
-**代價**:`packages/orion-sdk` 多了 `alembic.ini` + `migrations/`,看起來不像「純 library」。可接受。
+## 10. Skill / Memory / MCP 跨 host 共用 `~/.orion/`,不分 Cowork / CLI / chat-api
 
----
+`~/.orion/skills/` / `~/.orion/users/<u>/memory/` / `~/.orion/mcp.json` 三家共用。
 
-## 9. Tests 分散到對應 package,共用 fixtures 透過 `pytest_plugins`
+**理由**:user 心智模型是「我有一份 memory + 一批 skill,不管在 CLI / Cowork / web
+都該看到同樣的」。session 各自隔離(對話歷史不互通),但 knowledge 是 user 屬性,
+不是 host 屬性。
 
-**選擇**:每個 package 自己的 `tests/` 目錄(orion-model 46、orion-sdk 704、orion-cli 55、orion-chat-api 102、orion-cowork-sidecar 7),共用 fixtures 抽到 `orion_sdk._testing` 模組,各 conftest 用 `pytest_plugins = ["orion_sdk._testing"]` 拉進來。
+## 11. Storage 三層 budget(per-message / per-session / per-user)
 
-**理由**:
+SDK `storage/budget.py`。Per-message 限單條 token,per-session 限對話總 token,
+per-user 限全 user 月度成本。
 
-- 測試歸屬清楚 — 改 chat-api routes 不該跑 SDK 全套 700 tests
-- 各 package 可獨立發 PyPI — orion-model 真要分離,它有自己的 tests
-- 共用 fixtures 不靠 sys.path hack,用 pytest 原生 plugin 機制
-- 對照業界(sqlalchemy.testing、numpy.testing)— 把 testing helpers 放 production wheel 內,private 雙底線開頭,是業界慣例
+**理由**:單一 cap 不夠 — 一條超長訊息可能燒掉整個月預算。三層才能精準擋。
 
-**代價**:`orion_sdk._testing` 進 production wheel(用 `pytest` 作 fixture,但 lazy import,production runtime 不會被觸發)。可接受。
+## 12. Proxy schema 自動 migration(create_all + 補 column),不用 alembic
 
----
+`db.init_db()` 跑 `create_all` 後再用 inspector 補缺欄。
 
-## 10. WS protocol + REST 兩者並存
+**理由**:alembic 是「production multi-instance 多人同時改 schema」的場景;orion proxy
+通常單實例自架,alembic overkill。輕量 inspector + `ALTER TABLE ADD COLUMN` 應付加
+column 場景。真要 drop / rename column 再上 alembic。
 
-**選擇**:`orion-chat-api` 同時提供 REST endpoints(auth / sessions / settings / memories CRUD)跟 WebSocket(`/chat/stream/<sid>`),不只有 WS。
+## 13. Streaming 一律 SSE 透傳,不 buffer
 
-**理由**:
+Proxy 對 OpenAI Chat / Anthropic Messages 都走 `aiter_bytes()` 邊收邊 forward,不等
+完整 response。
 
-- 對話本身需要 streaming 跟雙向(WS 合適)
-- 但 session 管理、設定、auth 是 request/response(REST 合適,可被任何 HTTP client 用)
-- 第三方整合(自動化、行動 app)用 REST 比 WS 容易
-- Frontend 一律用 REST 拿初始狀態 + WS 開長連線推 events
+**理由**:LLM 體驗最重要的事就是「user 馬上看到字出來」。Buffer = UX 死。代價是
+parser 要邊收邊累加 token usage(用 SSE 末 chunk / `message_delta` 解)— 多一點
+複雜度,值得。
 
-**代價**:兩套協定要同步維護。已用自動生成型別 mitigated(`shared/openapi.json` + `shared/ws-*.schema.json`)。
+## 14. Cowork sidecar 沒 chat-api 那一層 → 沒 multi-user / 沒 JWT
 
----
+`cowork-local` 永遠是 user_id,單機單帳號。
 
-## 11. Model proxy 用 transparent reverse,wire format 跟 SDK 共用
+**理由**:Cowork 是「個人桌機 app」定位 — 多 user 場景是 chat-api 的事。要 Cowork
+multi-user 直接接 chat-api 反而簡單,不必扛兩套 auth。
 
-**情境**:3 個 host(CLI / chat-api / cowork sidecar)各自直連 Anthropic / OpenAI,各 `.env` 一份 API key、各算 cost。外部工具(LangChain / Cursor / aider / 用 SDK 寫的 script)也想共用 key,但被擋在自家邊界外。
+## 15. WebFetch 有 per-session in-memory cache,WebSearch 沒
 
-**選擇**:獨立 package `packages/orion-model-proxy`(FastAPI service),只做 **transparent reverse proxy**:
-- `POST /openai/{path}` → 透傳 `https://api.openai.com/{path}`,只覆寫 `Authorization` 換 proxy 真 key
-- `POST /anthropic/{path}` → 同 `https://api.anthropic.com/{path}`,改寫 `x-api-key`
-- **不解析 body / 不翻譯 wire** — gzip 自動 decompress、SSE / NDJSON streaming 直接透傳
+`tools/web/fetch.py` 內 5 分鐘 TTL cache。`web/search.py` 沒。
 
-Host 端 `orion_model.{AnthropicProvider,OpenAIProvider}` `__init__` 偵測 `ORION_MODEL_PROXY_URL` env,**把 SDK 的 `base_url` 指向 proxy**;Ollama 本機 daemon 不走 proxy。
+**理由**:同 session 內反覆 fetch 同 URL 很常見(model 翻多次同份 docs);同 query 連 search
+不常見(model 通常 query 不同 keyword)。Cache 加錯地方=記憶體浪費。
 
-**為什麼放棄之前的 Orion-native `/v1/messages` 中間層**(Phase 31-X 早期短暫存在):
-- SDK 本來就會講 OpenAI / Anthropic 原生 wire,proxy 不必加翻譯層
-- 自家 host 跟外部 SDK / 工具走**同一條 wire**,跟外部生態自然互通
-- 砍掉自家 wire 後,proxy 程式碼**縮一半**(從解 NormalizedMessage 變成 byte-for-byte 透傳)
-- Phase 31-X.4 把 `HttpProxyProvider` + `/v1/messages` + `/v1/audio/*` + `audio.proxy_client` 全砍
+## 16. SDK 給的 tool description 是英文,不是本地化
 
-**為什麼用 env-gate 而不強制全 proxy**:
-- 既有 host code **零行不動**,只動 env;rollback 拿掉 env 立刻退回直連
-- 單機 dev / CI 跑 e2e 不用先起 proxy daemon
-- Proxy 掛了 host 不會卡死(unset env 立刻退回直連)
+LLM 看的 description 不轉 i18n,只有 user-facing UI(Cowork)做 i18n。
 
-**代價**:
-- Proxy 是 SPOF(緩解:env unset 立刻 fallback direct)
-- 多一跳網路延遲(localhost <1 ms,跨網路看實際 RTT)
-- Phase A MVP 只做 reverse + auth;cost tracking / routing / cache / failover 分階段加(留 phasing 在 [`../features/model-proxy.md`](../features/model-proxy.md))
-
----
+**理由**:LLM 在英文 prompt 表現最好(model 訓練語料偏英)。Localized tool description
+浪費 token + 偶爾誤導 model。User UI 是另一回事,該本地化。
 
 ## 看完繼續
 
-- [packages.md](./packages.md) — 各 package 具體做什麼
-- [runtime-layout.md](./runtime-layout.md) — config / data 在哪
-- [`../features/`](../features/) — 各 feature 的設計細節
+- [README.md](./README.md) — 拓樸總覽
+- [packages.md](./packages.md) — 每 package 細節
+- [`../roadmap/README.md`](../roadmap/README.md) — 未來方向(會有新 decision)

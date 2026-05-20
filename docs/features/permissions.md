@@ -4,64 +4,69 @@ Tool 執行前的允許 / 拒絕決策。預設 `always_allow`(信任 LLM),produ
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/permissions/`
 
-## Policy types
+## 3 種 mode
 
-### `always_allow`(預設)
-
-```python
-from orion_sdk.permissions.policies import always_allow
-conv = Conversation(provider=llm, tools=tools, can_use_tool=always_allow)
-```
-
-CLI / dev / trusted 場景。
-
-### `ask_via_callback`(互動)
-
-```python
-from orion_sdk.permissions.policies import ask_via_callback
-
-async def my_asker(tool_name: str, tool_input: dict) -> bool:
-    # CLI:input("Allow? y/n: ")
-    # WS:ws.send(permission_ask) ... await ws.receive()
-    return True
-
-conv = Conversation(provider=llm, tools=tools, can_use_tool=ask_via_callback(my_asker))
-```
-
-### `DSL rule`(產線)
-
-```python
-from orion_sdk.permissions.dsl import compile_policy
-
-policy = compile_policy([
-    "allow Read(path=/home/me/projects/*)",
-    "deny Bash(command=rm*)",
-    "ask Bash",
-])
-conv = Conversation(provider=llm, tools=tools, can_use_tool=policy)
-```
-
-語法支援 glob、tool input field match、`allow` / `deny` / `ask`。
-
-## CLI / chat-api / cowork 預設
-
-| 環境 | 預設 policy |
+| Mode | 行為 |
 |---|---|
-| CLI(`orion run`) | `always_allow` |
-| chat-api WebSocket | `ask_via_websocket`(透過 WS 跟 client 雙向) |
-| Cowork sidecar(目前 Phase E) | `always_allow`(後續加 UI dialog) |
+| **always_allow** | 全放行 — dev / single-user 信任 LLM 的場景 |
+| **ask** | 每次 tool call 問 user(via `tool_approval_request` event)— Cowork 預設 |
+| **dsl** | YAML / JSON 規則(per tool + path glob + arg pattern)— enterprise |
 
-## 為何不放在 tool 本身
+## Mode 切換
 
-設計考量:permission 是 caller-side concern。同一個 `Bash` tool,CLI 信任 user,WS 要 ask front-end,production 要 deny destructive command。policy 跟 tool 解耦,改 policy 不動 tool code。
+Per-session 在 ctx 設:
 
-## 限制
+```python
+from orion_sdk.permissions.policy import (
+    AlwaysAllowPolicy, AskPolicy, DslPolicy,
+)
 
-- DSL rule 沒有 regex(只 glob)
-- Ask 沒有 timeout — 卡住 conversation
-- Policy 不能 stack(只接受一個 callable;要 stack 自己組合)
+ctx.permission_policy = AlwaysAllowPolicy()
+# or AskPolicy(asker=cowork_ask_callback)
+# or DslPolicy(rules_file="~/.orion/permissions.json")
+```
 
-## 相關
+## DSL 範例
 
-- [tools.md](./tools.md) — Tool Protocol
-- [chat-api.md](./chat-api.md) §Permission flow over WS — WS 端如何接 ask
+```yaml
+- tool: Bash
+  match: { command: "^rm -rf" }
+  decision: deny
+  reason: "Bulk delete blocked by policy"
+- tool: Write
+  match: { file_path: "^/etc/" }
+  decision: deny
+- tool: WebFetch
+  match: { url: "internal.company.com" }
+  decision: allow
+- default: ask
+```
+
+## 介入時機
+
+`StreamingExecutor.execute()` 內,每個 tool_call 跑前 call `policy.decide(tool_name, input, ctx)`:
+- `allow` — 直接跑
+- `deny` — emit ToolResult(is_error=True, text="permission denied: ...")
+- `ask` — emit ToolApprovalRequest event,host 收後彈 UI;reply 寫回 ctx future
+
+## Plan mode 自動 wrap
+
+`enter_plan_mode()` 後,SDK 自動把所有非唯讀 tool 改 deny(只 Read/Grep/Glob/WebFetch/
+AskUserQuestion 等放行)。host 不必動 policy。
+
+## 限制 / 已知問題
+
+- **DSL 語法還沒完整定**:目前只 path glob + simple match,沒 condition expression(AND/OR/NOT)
+- **跨 session policy reload**:改 `permissions.json` 要重啟 host
+- **Sub-agent permission 繼承**:`AgentTool` spawn 子 agent 時 policy 是繼承還是 reset 沒明確設計
+
+## 未來方向
+
+- **DSL 完整**:rego-like / OPA-light expression
+- **Per-MCP-server policy**:某些 MCP server 整批不信任(allowlist 才放行)
+- **Audit trail**:每筆 decision 留 log(目前只 deny 時 emit event)
+
+## 看完繼續
+
+- [agent-loop.md](./agent-loop.md) — Permission 在 loop 哪一段介入
+- [tools.md](./tools.md) — 各 tool 的 input shape(寫 DSL 時要對)

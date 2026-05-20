@@ -1,82 +1,106 @@
 # Run tests
 
-5 個 package 各自有獨立 test suite。914 tests 全綠是基線。
+6 個 workspace member 各自有獨立 test suite。1100+ tests 全綠是基線。
 
-## 一鍵跑全部
+## All at once
 
 ```bash
 make test
+# 跑 6 個 package 的 unit + (skip integration tests that need real API)
 ```
 
-平行跑:`make test` 內部是 5 個 `cd <pkg> && uv run pytest -q` 順序執行(總時間 ~60 秒)。
+預期輸出大致:
 
-## 跑單個 package
+```
+=== orion-model        ===  77 passed
+=== orion-sdk          === 741 passed (+2 skipped)
+=== orion-cli          ===  68 passed
+=== orion-chat-api     === 102 passed (+8 deselected)
+=== orion-cowork-sidecar === 51 passed (+2 skipped)
+=== orion-model-proxy  ===  75 passed
+```
+
+## Per package
 
 ```bash
-make test-model       # orion-model (46 tests, ~1s)
-make test-sdk         # orion-sdk (704 tests + 4 skip, ~45s)
-make test-cli         # orion-cli (55 tests, ~1s)
-make test-chat-api    # orion-chat-api (102 tests, ~30s)
-make test-sidecar     # orion-cowork-sidecar (7 tests, ~3s)
+make test-model        # orion-model
+make test-sdk          # orion-sdk
+make test-cli          # orion-cli
+make test-chat-api     # orion-chat-api
+make test-sidecar      # orion-cowork-sidecar
+make test-proxy        # orion-model-proxy
 ```
 
-## 跑單個檔案 / 函式
+或直接 uv:
 
 ```bash
-cd packages/orion-sdk
-uv run pytest tests/unit/core/test_query_loop_multi_turn.py -v
-uv run pytest tests/unit/core/test_query_loop_multi_turn.py::test_basic_send -v
-uv run pytest -k "memory and not extract"  # 用 keyword filter
+uv run --directory packages/orion-model pytest -x -q
+uv run --directory apps/orion-cowork/sidecar pytest -x -q
 ```
 
-## 跑 integration tests(需要 API key)
-
-預設 skip(`@pytest.mark.integration`):
+## TypeScript typecheck
 
 ```bash
-cd packages/orion-sdk
-uv run pytest -m integration tests/integration/
+cd apps/orion-cowork && pnpm typecheck
+# 跑 renderer + electron 兩個 tsconfig
 ```
-
-確認 `.env` 有 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。會打真 API,有成本。
-
-## E2e tests
-
-**尚未實作**。設計骨架見:
-
-- `apps/orion-chat/tests/e2e/README.md` — Server + WS + Auth 完整 stack
-- `apps/orion-cowork/tests/e2e/README.md` — Headless Electron
-
-兩個都需要先解決 CI 環境(Postgres testcontainer + xvfb)。
-
-## Coverage
 
 ```bash
-cd packages/orion-sdk
-uv run pytest --cov=orion_sdk --cov-report=html
-open htmlcov/index.html
+cd apps/orion-chat/web && pnpm typecheck
 ```
 
-## Lint / Typecheck
+## E2E(需要 real API key)
 
 ```bash
-make lint        # uv run ruff check .
-make typecheck   # uv run mypy packages apps
+# Cowork vision e2e — 預設 skip,有 key 才跑
+OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
+  uv run --directory apps/orion-cowork/sidecar pytest tests/test_vision_e2e.py
 ```
 
-## Test fixture 機制
+```bash
+# CLI integration
+OPENAI_API_KEY=sk-... \
+  uv run --directory apps/orion-cli pytest tests/integration/
+```
 
-各 package 的 `tests/conftest.py` 用 `pytest_plugins = ["orion_sdk._testing"]` 拉共用 fixtures(`isolate_sessions_dir` autouse、`tmp_ctx`、`mock_provider` 等)。
+## Pre-push
 
-`orion_sdk._testing` 是 SDK wheel 內的 private module(雙底線開頭),由 sqlalchemy.testing / numpy.testing 同款 pattern。
+```bash
+make lint typecheck test
+```
 
-`orion-model` 不依賴 SDK,自己的 `conftest.py` 是空的(只 `load_dotenv()`)。
+## Debugging tests
+
+```bash
+# -s:不抓 stdout
+# --pdb:fail 進 pdb
+# -k:by name
+uv run --directory packages/orion-model-proxy pytest -x -s --pdb -k "test_audit"
+```
+
+## 加新 test
+
+```
+packages/<pkg>/tests/
+├── conftest.py                  shared fixture(如 tmp DB)
+├── test_<feature>.py            module-level tests
+└── integration/                 e2e tests(預設 skip 除非設 env)
+```
+
+慣例:
+- 一 test 一個 assertion(可多個但聚焦)
+- `pytest-asyncio` auto mode — `async def test_...` 直接寫
+- Fixture 用 `pytest_asyncio.fixture` 給 async setup
+- 避免共享 state(每 test 獨立 tmp dir / tmp DB)
 
 ## CI
 
-(尚未設定 GitHub Actions / CI server。Phase 30+ 後補。)
+GitHub Actions(`.github/workflows/`)在 PR / push 跑全部:lint + typecheck + test。
+6 個 package 平行跑 matrix。
 
-## 相關
+## 測試紀律
 
-- [`../architecture/design-decisions.md`](../architecture/design-decisions.md) §9 — 為何 tests 分散到 package
-- [troubleshooting.md](./troubleshooting.md)
+- 不 mock SDK 內部 LLM call,改 mock provider 介面層
+- DB test 用 SQLite tmp(`tempfile.mkdtemp`),避免污染
+- Integration test 用 env 守門(`@pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"))`),沒 key 自動 skip
+- 失敗的 test **不要** disable / xfail 跳過 — 修 bug 或砍 test

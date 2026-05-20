@@ -1,6 +1,6 @@
 # Setup
 
-從 0 跑通本機 5 個 package。預計 15-30 分鐘。
+從 0 跑通本機 6 個 workspace member。預計 15-30 分鐘。
 
 ## 需求
 
@@ -9,11 +9,10 @@
 | Python | ≥ 3.11 | system / pyenv |
 | [uv](https://github.com/astral-sh/uv) | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Node | ≥ 20.19 | system / nvm |
-| npm | ≥ 10 | 跟 Node |
+| pnpm | ≥ 10 | `npm i -g pnpm` |
 | git | any | system |
 
 可選:
-
 - Docker(`make dev-api` 用 docker-compose 起 Postgres,或 `--sandbox docker`)
 - Anthropic / OpenAI API key(沒 key 只能跑 ping / 結構驗證,跑不了真對話)
 
@@ -30,16 +29,16 @@ cp apps/orion-cowork/.env.example   apps/orion-cowork/.env    # Cowork 桌機
 cp packages/orion-model-proxy/.env.example packages/orion-model-proxy/.env  # Proxy
 # 填 ANTHROPIC_API_KEY / OPENAI_API_KEY,或設 ORION_MODEL_PROXY_URL 走 proxy
 
-make install          # uv sync + npm install
+make install          # uv sync + pnpm install
 ```
 
-## 驗證 5 個 package 都裝好
+## 驗證 — 全 test 綠
 
 ```bash
 make test
 ```
 
-預期 5 行 pass 訊息,914 tests 全綠。
+預期 6 行 pass 訊息(orion-model / orion-sdk / orion-cli / orion-chat-api / orion-cowork sidecar / orion-model-proxy)1100+ tests 全綠。
 
 ## 跑各個 app
 
@@ -73,11 +72,26 @@ make dev-web
 make dev-cowork
 ```
 
-Electron 開窗,renderer 載 vite dev server(:5174),sidecar 由 main process 啟動。
+Electron 開窗,renderer 載 Vite dev server(:5174),sidecar 由 main process 啟動。
 
-**Phase E PoC** 階段,UI 簡陋,但 streaming text + tool call 應該都跑得起來。
+### 4. Model Proxy(集中計費)
 
-### 4. 直接戳 sidecar(無 Electron)
+```bash
+# 第一次:bootstrap(生 admin token + 寫 .env + 指引)
+make proxy-bootstrap
+
+# 填 proxy `.env` 內的 ANTHROPIC_API_KEY / OPENAI_API_KEY,然後:
+make dev-model-proxy
+# → http://127.0.0.1:9090(admin endpoints: enabled)
+
+# Admin UI:http://127.0.0.1:9090/admin/ui/
+#   Login(貼 admin token)→ New user → Generate API key → 把明文 token 貼回
+#   apps/orion-cowork/.env(或其他 client)的 ORION_MODEL_PROXY_KEY
+```
+
+詳細:[`../features/model-proxy.md`](../features/model-proxy.md)
+
+### 5. 直接戳 sidecar(無 Electron)
 
 ```bash
 echo '{"id":"1","method":"ping"}' | \
@@ -86,13 +100,4 @@ echo '{"id":"1","method":"ping"}' | \
 # → {"id": "1", "event": "pong", "final": true}
 ```
 
-## 常見問題
-
-跑不通看 [`troubleshooting.md`](./troubleshooting.md)。
-
-## 下一步
-
-- 對 architecture 沒概念 → [`../architecture/README.md`](../architecture/README.md)
-- 想看某 feature → [`../features/README.md`](../features/README.md)
-- 想改 code → [`run-tests.md`](./run-tests.md) 跟 [`manual-testing.md`](./manual-testing.md)
-- 想 build Cowork 成 `.dmg` 給人裝 → [`build.md`](./build.md)
+## 卡關 → [troubleshooting.md](./troubleshooting.md)

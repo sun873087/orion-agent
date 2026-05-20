@@ -1,55 +1,68 @@
-# Conversation compaction
+# Compaction
 
-對話訊息累積到一定 size 時,把舊內容濃縮(summarize / drop)以維持 context window 內。三種策略並存。
+對話訊息累積到 context window 上限附近時,把舊內容濃縮,避免 truncate / OOM。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/compact/`
 
-## 三種策略
+## 3 種觸發
 
-| 策略 | 觸發 | 行為 |
+| 觸發 | 時機 | 用 model |
 |---|---|---|
-| `auto` | 訊息累積到 `Conversation.auto_compact_threshold`(預設 80% context window) | 用獨立 LLM call 把舊訊息 summarize 成濃縮版,替換掉原訊息 |
-| `reactive` | 收到 provider error `max_tokens` / `context_length_exceeded` | 反應式重試:壓縮後 retry 同 turn |
-| `tombstone` | 工具結果 > 100KB | 把巨大 tool result 替換成 placeholder("(omitted X bytes — see tool_results/...)"),保留 metadata |
+| **Auto(token-based)** | 對話 token 達 max_context × `auto_compact_threshold`(預設 0.8) | `compact_summary_provider`(預設便宜 — Haiku / gpt-5-mini)|
+| **Reactive** | LLM call 失敗 `context_length_exceeded` → 自動 compact 後重試 | 同上 |
+| **Manual** | host 主動呼 `Conversation.compact()`(Cowork `/compact` slash) | 同上 |
 
-三者**可並存**。Auto compact 觸發時不會壞 reactive,反之亦然。
+## 流程
 
-## Strategies(實際壓縮方法)
+```
+trigger compact
+    ▼
+取最舊 N% messages(預設 50%)
+    ▼
+build summary prompt:
+    "Summarize this conversation in 200 words, keeping critical decisions / file paths / tool results."
+    ▼
+compact_summary_provider.stream(...) → summary text
+    ▼
+replace 最舊 N% messages 為 1 條 system message:"Previous discussion summary: <summary>"
+    ▼
+emit CompactComplete event(before / after token count + summary text)
+```
 
-`strategies.py` 定義:
-
-- `TruncateStrategy` — 純截斷舊訊息(快但失真大)
-- `SummaryStrategy` — LLM call 摘要(慢但保留語意)
-
-預設 `SummaryStrategy`,可在 `Conversation` 建構時換。
-
-## 行為控制
+## 控制 env / params
 
 ```python
 conv = Conversation(
-    provider=llm,
-    tools=tools,
+    provider=primary,
+    compact_summary_provider=cheap_provider,  # None = 用 same primary
     auto_compact_enabled=True,
-    auto_compact_threshold=0.8,  # 80% context window
+    auto_compact_threshold=0.8,               # 0..1
+    ...
 )
 ```
 
-關閉:`auto_compact_enabled=False`。Reactive 跟 tombstone 跟 SDK 內部錯誤處理綁,無 flag 控制。
+env:`ORION_AUTO_COMPACT_THRESHOLD=0.85`
 
-## Tombstone 細節
+## 設計取捨
 
-工具結果 > `STORE_INLINE_LIMIT`(預設 100KB)→ 寫 `~/.orion/sessions/<sid>/tool-results/<id>.json`,訊息只留 metadata 跟 path。resume 時 caller 可從檔還原。
+- **Summary 不刪 tool_result**:重要的 file content / 搜尋結果留著,只 summarize 對話 text。Workaround:user 在 summary prompt 內 hint「list file paths verbatim」。
+- **Cheap model 預設**:壓縮是輕任務,Haiku 4.5 / gpt-5-mini 夠用,省主對話模型成本。
+- **保留最近 N 輪**:summarize 最舊 50%,最近 50% 不動 — 對話 continuity 重要。
 
-詳見 `storage/replacement_state.py` 跟 `compact/tombstone.py`。
+## 限制 / 已知問題
 
-## 限制
+- **Summarize 可能漏關鍵**:LLM summary 不一定精準,丟訊息後 model 可能再問 user 重複資訊
+- **不 reversible**:compact 後原 message dropped(只有 summary text),要回看走 transcript 持久化
+- **Project chat 的 file context**:project-bound message 內常有 `@<file>` reference,summarize 可能漏
 
-- Auto compact 是 lossy — 連續多次後品質會降。建議:長對話開新 session
-- Reactive compact 失敗會 propagate error → caller 應 catch + 開新 session
-- Summary strategy 用同一個 provider,可能撞 rate limit
+## 未來方向
 
-## 相關
+- **Selective compact**:保留所有 tool_result(只 summarize 對話)+ 給 user toggle
+- **Tiered compact**:三層 — 最近 30 條 verbatim / 中 50 條 short summary / 最舊全 full summary
+- **Compact reversal**:把 dropped messages 存進 cold storage(blob),user 可以 retrieve
 
-- [memory.md](./memory.md) — 跨 session 的長期記憶(不同於對話內 compaction)
-- [storage.md](./storage.md) — 大結果三層 budget
-- [agent-loop.md](./agent-loop.md) — compact 何時被觸發
+## 看完繼續
+
+- [agent-loop.md](./agent-loop.md) — compact 在 loop 開頭 trigger
+- [memory.md](./memory.md) — compact 跟 memory 是兩件事(memory 是跨 session 的長期事實)
+- [prompt-caching.md](./prompt-caching.md) — compact 後 cache breakpoint 重設

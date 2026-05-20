@@ -1,24 +1,31 @@
 # Features
 
-各 feature 的**設計與運作**(非實作日誌)。每份回答「X 是什麼、怎麼運作、有什麼設計取捨」。
+各 feature 的**現況與運作**(非實作日誌)。每份回答「X 是什麼、怎麼運作、有什麼設計
+取捨、目前的限制」。
 
 實作位置都標在文件開頭(`packages/orion-sdk/src/orion_sdk/X/` 等),想看 code 直接跳。
 
-## 核心(agent loop 心臟)
+## 核心 — agent loop 心臟
 
 | Feature | 一句話 | 主要模組 |
 |---|---|---|
 | [agent-loop.md](./agent-loop.md) | Conversation + QueryLoop + StreamingExecutor 怎麼跑 | `core/` |
 | [tools.md](./tools.md) | 30+ 內建工具集 + 自訂 Tool 介面 | `tools/` |
 | [streaming.md](./streaming.md) | LLM 事件流 → user-facing event 的轉換 | `core/`、`orion_model/events.py` |
-| [models.md](./models.md) | 3 個 LLM provider(Anthropic / OpenAI / Ollama)設定 + 行為 | `orion-model/` |
+| [models.md](./models.md) | Anthropic / OpenAI / Ollama provider 行為 | `orion-model/` |
 | [permissions.md](./permissions.md) | Permission policy(always_allow / ask / DSL) | `permissions/` |
+
+## Model Proxy(集中計費 / 限速 / 多 user)
+
+| Feature | 一句話 | 主要模組 |
+|---|---|---|
+| [model-proxy.md](./model-proxy.md) | Transparent reverse + multi-tenant + 計費 + admin UI | `orion-model-proxy/` |
 
 ## 記憶與壓縮
 
 | Feature | 一句話 | 主要模組 |
 |---|---|---|
-| [memory.md](./memory.md) | per-user / per-project 長期 memory + 四層防膨脹 | `memory/` |
+| [memory.md](./memory.md) | Per-user / per-project 長期 memory + 四層防膨脹 | `memory/` |
 | [compaction.md](./compaction.md) | 對話太長自動 / 反應式壓縮 | `compact/` |
 | [prompt-caching.md](./prompt-caching.md) | Anthropic / OpenAI prompt cache 決策 | `prompt/`、`orion_model/cache_config.py` |
 | [recovery.md](./recovery.md) | 中斷重啟、resume | `recovery/`、`storage/resume.py` |
@@ -64,3 +71,4 @@
 3. **API surface / 行為** — caller 看到什麼
 4. **設計取捨** — 為何這樣不那樣(連結 `../architecture/design-decisions.md` 對應條目)
 5. **限制 / 已知問題** — 老實寫,別蓋掉
+6. **未來方向**(可選)— 知道要往哪走再寫

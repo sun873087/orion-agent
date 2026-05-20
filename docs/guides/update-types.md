@@ -1,82 +1,86 @@
-# Update type contract(chat-api ↔ web / cowork-renderer)
+# Update type contracts
 
-chat-api 改了 routes / WS event schema 後,web frontend 的 TS types 要重新生成,不然編譯期就會撞 mismatch。
+跨 Python / TS 邊界改 schema 時的同步流程。
 
-## 一鍵生成
+## 哪些 boundary 要 sync?
 
-```bash
-make gen-types
+### 1. chat-api ↔ web frontend
+
+```
+apps/orion-chat/api/routes/*.py         ← Python (Pydantic)
+        ↕  REST + WS JSON
+apps/orion-chat/web/src/api/*.ts        ← TS types
 ```
 
-內部三步驟:
+改 chat-api 的 routes / WS event schema 後,web frontend 的 TS types 要更新。
 
-| Step | 來源 | 產出 |
-|---|---|---|
-| `gen:openapi` | `chat-api/app.openapi()` | `apps/orion-chat/shared/openapi.json` |
-| `gen:ws-schema` | pydantic `ClientEvent` / `ServerEvent` | `shared/ws-{client,server}-events.schema.json` |
-| `gen:ts-types` | openapi-typescript + json2ts | `apps/orion-chat/web/src/types/api.gen.ts` + `ws-*-events.gen.ts` |
+**目前作法**:手動同步。看 Pydantic model → 寫對應 `type Foo = {...}` 在 web/src/api/。
 
-## 何時要跑
+**未來**:用 `pydantic2ts` / `datamodel-code-generator` 自動產出。
 
-| 改了 | 影響 |
-|---|---|
-| `chat-api/routes/*.py` 加 / 改端點 | `openapi.json` + `api.gen.ts` |
-| `chat-api/event_schema.py` 加 / 改 WS event | `ws-*.schema.json` + `ws-*-events.gen.ts` |
-| pydantic model 的 `Field(...)` 描述 / 預設值 | 兩者都會變 |
-| 純內部 helper(不出現在 schema) | 不用跑 |
+### 2. Cowork sidecar ↔ renderer
 
-不確定就跑一次 `make gen-types` + `git diff` 看有沒有 .gen.ts 變動。
-
-## 使用生成的 types
-
-```typescript
-// apps/orion-chat/web/src/api/foo.ts
-import type { paths } from '@/types/api.gen'
-
-type LoginResponse = paths['/auth/login']['post']['responses']['200']['content']['application/json']
+```
+apps/orion-cowork/sidecar/src/orion_cowork_sidecar/handlers.py    ← Python RPC method
+        ↕  JSON-RPC over stdio
+apps/orion-cowork/renderer/src/api/agent.ts                       ← TS wrappers
+apps/orion-cowork/renderer/src/store/*.ts                         ← TS data types
 ```
 
-WS:
+加新 RPC method 時:
 
-```typescript
-import type { OrionChatServer→ClientEvents } from '@/types/ws-server-events.gen'
+1. 在 sidecar `handlers.py` 加 `async def method_name(self, params): yield ...`
+2. 在 `methods()` dict 註冊 RPC name(e.g. `"backup.export": ...`)
+3. 在 renderer `api/agent.ts` 加對應 `async function backupExport(...)` wrapper
+4. 在 store types 加新 type(若有 data shape)
+5. UI components 用新 wrapper
 
-ws.onmessage = (raw) => {
-  const ev: OrionChatServer→ClientEvents = JSON.parse(raw.data)
-  switch (ev.type) {
-    case 'assistant_text_delta': ...
-  }
-}
+## Preload API extension
+
+加 Electron `window.{...}Api`:
+
+```
+apps/orion-cowork/electron/preload.ts                     ← API impl + ipcRenderer.on
+apps/orion-cowork/electron/main.ts                        ← ipcMain.handle + 對應 listener
+apps/orion-cowork/renderer/src/preload.d.ts               ← TS interface 給 window.{xxx}Api
 ```
 
-**不要手寫 chat-api 對應的 types** — 一旦 schema 改了會跟生成的衝突。
+新加例:Phase 33 的 `window.updaterApi`(electron-updater):
 
-## CI drift check
+1. `electron/updater.ts` 寫 init + 對外 quitAndInstall
+2. `main.ts` 註冊 `ipcMain.handle('updater:quitAndInstall', ...)` + `initAutoUpdater(...)` 啟動
+3. `preload.ts` `contextBridge.exposeInMainWorld('updaterApi', {...})`
+4. `preload.d.ts` 加 `interface OrionUpdaterApi { ... }` + extend `Window`
 
-(未設定;設定後)CI 跑:
+順序錯了會撞 TS error。
 
-```bash
-make gen-types
-git diff --exit-code apps/orion-chat/shared apps/orion-chat/web/src/types
-```
+## Catalog 更新(`models.json`)
 
-若有改 schema 但忘記重 generate → CI 紅。
+加新 model:
 
-## 生成失敗常見原因
+1. `packages/orion-model/src/orion_model/models.json` 加 entry(id / label / max_tokens / pricing / supports_reasoning)
+2. 跑 `pytest packages/orion-model` 確認 catalog 不破
+3. 若新 model 需特殊 wire(e.g. OpenAI o-series 帶 reasoning_effort),`openai_provider.py` 內加邏輯
 
-| 症狀 | 原因 | 解 |
-|---|---|---|
-| `openapi-typescript: command not found` | 沒裝 npm dev deps | `npm install` |
-| `json2ts: Missing $ref pointer` | pydantic discriminated union 在同一檔內共用 $defs | `dump_ws_schema.py` 拆兩檔(已做) |
-| `cannot find module '@/types/api.gen'` | vite alias 沒設 / 沒 generate | `make gen-types`,確認檔案存在 |
+Catalog 用 `@functools.cache` — restart proxy / app 才看到新 model。
 
-## Cowork renderer
+## 同步 i18n keys
 
-目前 Cowork 用 stdio JSON-RPC,**不**透過 chat-api,所以**不**用這套 pipeline。Cowork 的 wire format 直接寫在 `apps/orion-cowork/renderer/src/api/agent.ts`(手動定義 union type)。
+加 new UI string:
 
-未來若 Cowork 也要型別契約自動化,設計類似(從 sidecar handlers 自動 dump schema)。
+1. 4 locale 都加 key(`zh-TW.ts` / `zh-CN.ts` / `en.ts` / `ja.ts`)
+2. TS strict mode 抓漏 — 若 zh-CN 漏一 key,typecheck 過(因為 union type)— 自己注意
+3. 用法:`t('settings.backup.exportTitle')`
 
-## 相關
+## Schema migration(proxy)
 
-- [chat-api.md](../features/chat-api.md) — schema 來源
-- [web-frontend.md](../features/web-frontend.md) — 怎麼用
+加 `users.rate_limit_rpm` 之類新 column:
+
+1. `packages/orion-model-proxy/src/orion_model_proxy/models.py` 加 column
+2. `init_db._add_missing_columns` 自動 ALTER TABLE(下次啟動)
+3. Production 用 alembic 寫 migration 是更穩(目前未做)
+
+## 看完繼續
+
+- [setup.md](./setup.md) — 跑 dev mode
+- [run-tests.md](./run-tests.md) — 測 schema 沒破

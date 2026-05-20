@@ -1,54 +1,63 @@
 # Sandbox
 
-把 `Bash` / `Read` / `Write` / `Edit` 等動到 host 的工具關到隔離環境(Docker container 或受限 local subprocess),保護 host 不被 LLM 誤觸發。
+把 `Bash` / `Read` / `Write` / `Edit` 等會碰 host 的工具關到隔離環境(Docker container 或
+受限 local subprocess),保護 host 不被 LLM 誤觸發。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/sandbox/`
 
-## Backend 選項
+## 3 種 mode
 
-| Backend | 用途 |
+| Mode | 行為 |
 |---|---|
-| `local` | 預設,工具直接動 host(無隔離)。dev / trusted 使用。 |
-| `docker` | 每個 session 起一個 container,工具透過 docker exec 跑 |
+| **`none`**(預設) | 直接在 host 跑(快、無隔離)— dev / 信任場景 |
+| **`local`** | subprocess + chroot-like jail + ulimit(CPU / memory cap)— Linux/macOS 輕量 |
+| **`docker`** | 跑指定 image 內,workdir mount RW,網路 off / on toggle — production |
 
-CLI:`orion run --sandbox docker ...`
-Chat API:`ORION_SANDBOX=docker` env var
+## 設定
 
-## Docker backend 細節
+```bash
+ORION_SANDBOX=docker
+# or local / none
 
-- 每個 session 對應一個 `Container`(image 預設 `orion-agent-sandbox:dev`,見 `deploy/Dockerfile.sandbox`)
-- 工具不直接執行,改 spawn `docker exec <container> <cmd>`
-- 檔案 I/O:`Read`/`Write`/`Edit` 走 container 的 fs,host 看不到
-- container 生命週期跟 session 綁:`SandboxBackend.cleanup()` 在 conversation 結束時刪除
-- 啟動 cost ~500ms;session 第一次 tool call 才 lazy spawn
-
-## 工具如何被 sandbox 攔截
-
-`sandbox/proxy_tools.py`:`build_sandboxed_tools(backend)` 回 wrap 過的 tool list。每個 tool 的 `run()` 改成把 input 序列化 → 透過 backend 跑 → 解析 output。
-
-`Conversation` caller 決定要不要傳 sandboxed tools:
-
-```python
-from orion_sdk.sandbox.factory import get_sandbox_backend
-from orion_sdk.sandbox.proxy_tools import build_sandboxed_tools
-
-backend = get_sandbox_backend("docker")
-tools = build_sandboxed_tools(backend)
-conv = Conversation(provider=llm, tools=tools, sandbox_backend=backend)
+# Docker mode 進一步:
+ORION_SANDBOX_IMAGE=python:3.12-slim
+ORION_SANDBOX_NETWORK=off      # off / bridge
+ORION_SANDBOX_CPU_LIMIT=2
+ORION_SANDBOX_MEMORY_LIMIT=2g
+ORION_SANDBOX_TIMEOUT=300
 ```
 
-## K8s production(未實作)
+## 介入
 
-Phase 7 docker socket mount 只適合本機 dev。Production 用 K8s pod-per-session + gVisor + NetworkPolicy。完整設計見 [`../roadmap/plans/7c-helm-chart.md`](../roadmap/plans/7c-helm-chart.md)。
+Sandbox-aware tools(Bash / Read / Write / Edit)在 SDK 內查 ctx.sandbox_config,根據 mode
+切實際執行 backend:
 
-## 限制
+```
+Bash("ls -la /")
+  ├─ ORION_SANDBOX=none  → asyncio.subprocess
+  ├─ ORION_SANDBOX=local → subprocess in jail dir + ulimit
+  └─ ORION_SANDBOX=docker → docker run --rm -v workspace:/work:rw --network off image bash -c "ls -la /"
+```
 
-- Docker daemon 必須 reachable(本機 unix socket 或遠端 daemon)
-- container image 預先 build:`docker build -f deploy/Dockerfile.sandbox -t orion-agent-sandbox:dev .`
-- 跨 OS 路徑問題(host `/Users/yuan-sencheng/foo` ↔ container `/work/foo`)由 backend 內部 mount mapping 處理
-- session abort 時 container 不立即殺,等 `cleanup()` 被叫到才走
+## 設計取捨
 
-## 相關
+- **None 預設**:dev 自家機器跑 agent 沒必要 sandbox。Production / shared 環境才開
+- **Docker 透過 docker-py**:不寫 shell call,API control 更精準
+- **Workspace 永遠 RW mount**:LLM 要編輯 code,要能寫進去。但 host /etc 之類不 mount
 
-- [tools.md](./tools.md) — Tool Protocol
-- [agent-loop.md](./agent-loop.md) — `sandbox_backend` 透過 `AgentContext` 傳到 tools
+## 限制 / 已知問題
+
+- **Docker mode 起 container 慢**:cold start ~1s,每個 Bash 都 spawn 一次 → 反覆 call 累積。要 long-lived container + exec 模式(尚未做)
+- **Local jail 不 secure**:LLM 可以走 absolute path / symlink 逃逸。真要 secure 用 docker
+- **Network off 阻擋 pip install / npm install**:LLM 想裝套件就失敗 — workaround:base image 預裝 / on-demand toggle
+
+## 未來方向
+
+- **Long-lived sandbox**:同 session 共用一個 container,exec 進去跑 command,不每次 spawn
+- **gVisor / Firecracker**:更輕量的 sandbox runtime(比 docker 啟動快 10×)
+- **Per-tool sandbox**:`Bash` 在 docker,`Read` 在 local(read-only 不必這麼重)
+
+## 看完繼續
+
+- [tools.md](./tools.md) — Tool 怎麼宣告自己要 sandbox
+- [permissions.md](./permissions.md) — 跟 permission policy 互補

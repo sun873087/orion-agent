@@ -1,55 +1,73 @@
 # Multi-agent
 
-兩種多 agent 模式:Coordinator(leader-worker)跟 Swarm(peer-to-peer)。
+兩種多 agent 模式:Coordinator(leader-worker)+ Swarm(peer-to-peer)。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/multi_agent/`
 
 ## Coordinator(leader-worker)
 
-一個主 agent(leader)分派任務給多個 worker,蒐集 result 回傳。
+主 agent 透過 `AgentTool` / `SubAgentCreate` spawn 子 agent 跑 sub-task,子 agent 完成回 result。
 
-```python
-from orion_sdk.multi_agent.coordinator import Coordinator
-from orion_sdk.multi_agent.types import TaskAssignment
-
-coord = Coordinator(provider=llm, tools=builtin_tools)
-results = await coord.dispatch([
-    TaskAssignment(id="t1", agent_role="researcher", prompt="research X"),
-    TaskAssignment(id="t2", agent_role="writer",     prompt="draft Y based on t1"),
-])
+```
+Main agent
+    ├─ Spawn(specialist: "code-review", prompt: "...")    → child A
+    ├─ Spawn(specialist: "test-writer", prompt: "...")     → child B
+    └─ Spawn(...)                                          → child C
+       (asyncio.gather — 平行)
+    ▼
+all return → main 看 result 決定下一步
 ```
 
-Worker 透過 `services/forked_agent.py` spawn — 獨立 `Conversation` instance,共用 `AgentContext.cwd` 但不同 state_messages,結束時 yield `AgentSummary`(`multi_agent/agent_summary.py`)給 coordinator。
+特性:
+- **單向資料流** — main 不能直接 send 子 agent 新訊息(子是 one-shot)
+- **平行** — N 個子 agent asyncio.gather
+- **Sub-agent 自帶 system prompt 跟 tools**(可被 main 限制)
 
 ## Swarm(peer-to-peer)
 
-無中心,多個 agent 透過 `message_bus.py`(in-memory pub/sub)互送 `PeerMessage`,各自決定回應誰。
+多個 agent 平等存在,可互相 send message,collaborative 完成 task。
 
-```python
-from orion_sdk.multi_agent.swarm import Swarm
-
-swarm = Swarm(agents=[agent1, agent2, agent3])
-await swarm.run(seed_message="solve task X")
+```
+Agent A ─── send "research X" ───▶ Agent B
+   ▲                                  │
+   │                                  │
+   │             share notes          ▼
+   └────── Agent C ◀────────── Agent B
 ```
 
-Swarm 適合「沒有明確分工」的腦力激盪場景。
+特性:
+- **互相 send**:`AgentSend(target_agent_id, message)`
+- **共用 workspace + memory**(per-swarm)
+- **Termination by consensus / timeout**
 
-## AgentSummary
+## 何時用哪個
 
-`agent_summary.py` 用獨立 LLM call 把 sub-agent 整段對話濃縮成 ≤500 字摘要,讓 coordinator / next agent 看得到關鍵結論不用讀完整 transcript。
+| 場景 | 用 |
+|---|---|
+| 「研究 X、寫 test、跑 lint」三件平行做 | Coordinator(spawn 3 子) |
+| 「multi-step planning + research + execute」三角色 collaborate | Swarm |
+| 簡單 fan-out(都跑同樣 task,只是 input 不同) | Coordinator |
+| 真實 long-running collaboration | Swarm |
 
-## Tool: `Agent`
+## 設計取捨
 
-LLM 也能主動 spawn sub-agent:`tools/agent/agent_tool.py` 提供 `Agent(description, prompt, subagent_type)` 工具,內部用 `Coordinator` 模式。
+- **Sub-agent 預設沒 memory**:避免 main 的 personal memory 漏給 sub。要 share 走 explicit input
+- **Permission 繼承**:sub-agent 預設繼承 main 的 permission policy
+- **Sub 失敗不擋 main**:gather 用 `return_exceptions=True`,main 看到 result list 內含 error
 
-## 限制
+## 限制 / 已知問題
 
-- Worker tools 受 main agent permission 限制(no escalation)
-- 沒有 cross-machine — 全部 in-process asyncio task
-- Cost / token 線性疊加 — N 個 sub-agent = N 倍成本
-- Swarm 沒有自動 termination 條件 — 要 caller 設 max_messages / timeout
+- **Swarm 還在早期**:peer message routing 沒持久化,crash 後 message in-flight 丟失
+- **No cost attribution**:sub 跑的 token 算誰的?目前都算 main session
+- **Sub recursion depth**:子可以再 spawn 孫,沒明確 cap
 
-## 相關
+## 未來方向
 
-- [tools.md](./tools.md) §Agent — 工具入口
-- [`../roadmap/plans/24-multiagent-tools.md`](../roadmap/plans/24-multiagent-tools.md) — 未來 multi-agent 工具規劃
+- **Cost rollup**:sub 的 cost attach 到 main(usage_log 加 parent_session_id 欄)
+- **Swarm 持久化**:message queue 進 DB,crash recovery
+- **Agent identity / role 概念**:每個 agent 有 persistent identity,可跨 session 復用
+
+## 看完繼續
+
+- [tools.md](./tools.md) — `AgentTool` / `SubAgentCreate` / `AgentSend`
+- [agent-loop.md](./agent-loop.md) — sub 是另一個 Conversation instance

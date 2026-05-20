@@ -1,297 +1,244 @@
-# Orion Model Proxy
+# Model Proxy
 
-**Phase 31-X**。Transparent reverse proxy 包 OpenAI / Anthropic。3 個自家 host
-(CLI / Chat / Cowork)透過 env var 把 SDK 的 `base_url` 切過去就走 proxy,
-外部任何用 OpenAI / Anthropic SDK 寫的工具也能用同個 endpoint。
+Transparent reverse proxy 包 OpenAI / Anthropic,加 multi-tenant auth + per-user
+計費 + budget enforcement + admin Web UI。可選 service,不啟用 client 直連也行。
 
 **實作位置**:`packages/orion-model-proxy/`
 
-## 為什麼
+## 為什麼存在
 
 | 痛點 | Proxy 解什麼 |
 |---|---|
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 各 host 各放 `.env` | 1 處(proxy 機)放完所有 host + 工具共用 |
-| Cost 各 host 各算 | 集中觀測點(下階段可加 DB 紀錄)|
-| 外部工具(LangChain / Cursor / aider)沒辦法跟我們共用 key | base_url 指 proxy 就 work |
-| 想 routing / cache / rate limit / failover | 集中加在 proxy(下階段)|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` 散在各 host `.env` | 集中於 proxy 那台機,client 不需要真 key |
+| Cost 各 host 各算,看不到全貌 | proxy 內 `usage_log` 表 + admin dashboard |
+| 想限 user 用量 / 月預算 | per-user budget cap + rate limit(RPM) |
+| 多人用同 API key 沒法歸帳 | 每位 user 一個 sk-orion-... token,usage_log 帶 user_id + client_id |
+| 想 routing alias / cache / failover | 集中加在 proxy(opt-in) |
+| 外部 SDK / 工具(LangChain / aider / Cursor)想共用 key | 它們 `base_url` 設 proxy 直接 work |
 
-## 架構(極簡)
+## 架構
 
 ```
-┌──────────────────────────────────────────────┐
-│  orion-model-proxy(FastAPI, :9090)            │
-│                                                │
-│  /openai/{path:path}     ──→ api.openai.com   │
-│  /anthropic/{path:path}  ──→ api.anthropic.com │
-│  /v1/health[/{provider}]                       │
-│                                                │
-│  Only:                                         │
-│  - 換 Authorization / x-api-key 為 proxy 真 key │
-│  - filter hop-by-hop headers                   │
-│  - 自動 gzip decompress                        │
-│  - SSE / NDJSON streaming 透傳                  │
-│                                                │
-│  **不解析 body** — 純 byte-for-byte 透傳        │
-└──────────────────────────────────────────────┘
-                ▲
-                │ OpenAI / Anthropic 原生 wire(client 怎麼打 proxy 就怎麼透傳)
-                │
-   ┌────────────┼─────────────────────────────┐
-   │            │                             │
-[自家 host]                              [外部 SDK / 工具]
- import orion_model                       LangChain / Cursor / aider /
-   provider.get_provider("anthropic"...)  自寫 script(用 OpenAI 或
-   audio.transcribe(...)                  Anthropic Python SDK)
-   audio.synthesize(...)
+┌─────────────────────────────────────────────────────────────────┐
+│  orion-model-proxy(FastAPI, :9090)                               │
+│                                                                  │
+│  /openai/{path:path}     → api.openai.com    catch-all,透傳     │
+│  /anthropic/{path:path}  → api.anthropic.com 同上,5 verb 全收  │
+│  /v1/health[/{provider}]                       public,no auth   │
+│  /v1/catalog                                   chat/stt/tts JSON │
+│  /admin/*                                      REST(admin token) │
+│  /admin/ui/*                                   Jinja2 web UI     │
+│                                                                  │
+│  request:                                                        │
+│    ① require_auth — sha256(Bearer) → DB lookup → principal      │
+│    ② enforce_rate_limit — token bucket(RPM)                     │
+│    ③ enforce_budget — running_cost >= cap → 402                 │
+│    ④ 改寫 Authorization / x-api-key 為 server-side 真 key        │
+│    ⑤ forward upstream                                           │
+│                                                                  │
+│  response:                                                       │
+│    ⑥ tee bytes → client + parser                                │
+│    ⑦ stream 結束 → parse usage → log + incr running cost         │
+│    ⑧ budget 達 80% / 100% → webhook fire(若有設)               │
+└─────────────────────────────────────────────────────────────────┘
+                ▲                                  │
+                │ OpenAI / Anthropic 原生 wire     │ tee 解析 + 寫 DB
+                │                                  ▼
+   ┌────────────┼─────────────────────────────┐   ┌─────────────┐
+   │            │                             │   │  proxy.db   │
+[自家 host]                              [外部 SDK]    │  (SQLite /  │
+ import orion_model                       LangChain    │   Postgres) │
+   provider.get_provider("anthropic"...)  / aider /    └─────────────┘
+   audio.transcribe(...) / synthesize(...)curl / 等
    ↑
-   SDK 內部 base_url 由 env ORION_MODEL_PROXY_URL 控:
+   SDK base_url 由 env ORION_MODEL_PROXY_URL 控:
      有設 → AsyncAnthropic(base_url=f"{proxy}/anthropic")
             AsyncOpenAI(base_url=f"{proxy}/openai/v1")
-     沒設 → SDK 預設打 api.anthropic.com / api.openai.com
-   Ollama 不經 proxy(本機 daemon,proxy 對它無增值)
+     沒設 → SDK 預設打 api.{anthropic,openai}.com
+   Ollama 不經 proxy(本機 daemon,無 key 概念,proxy 無增值)
 ```
 
-**沒有 Orion-native 中間層** — 之前的 `/v1/messages` + `/v1/audio/*` 抽象冗餘,SDK
-本來就會講 OpenAI / Anthropic 原生 wire,直接透傳更乾淨,wire format 跟外部 SDK 共用。
+## DB Schema
+
+```sql
+users (id, email, display_name, budget_usd, rate_limit_rpm, organization_id, created_at)
+api_keys (id, user_id, token_hash, token_prefix, label, created_at, last_used_at, revoked_at)
+usage_log (id, user_id, api_key_id, provider, model, endpoint,
+           input/output/cache_read/cache_creation_tokens, cost_usd, ts,
+           client_id, request_id)
+audit_log (id, ts, action, target_type, target_id, detail)         -- admin action 留底
+organizations (id, name, monthly_budget_usd, created_at)            -- multi-org 預留
+routing_aliases (id, user_id, alias, target_provider, target_model) -- "auto-fast" → 真實 model
+prompt_cache (id, content_hash, provider, model, response_blob,
+              created_at, hit_count)                                 -- prompt cache layer
+webhooks (id, user_id, event, url, enabled, created_at)             -- budget threshold POST
+usage_monthly (id, user_id, year_month, provider, model,
+               total_input_tokens, total_output_tokens,
+               total_cost_usd, request_count)                       -- >90 天 archive
+```
+
+DB backend 由 `ORION_PROXY_DB_URL` env 切:dev 用 SQLite,prod 用 Postgres。`init_db()`
+自動 `create_all` + 用 inspector 補缺 column(輕量 migration)。
 
 ## Quick start
 
-### 1. 啟動 proxy
-
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-# Admin Bearer(Phase 32 後必設,否則 admin endpoints 全 503)
-export ORION_MODEL_PROXY_ADMIN_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+# 1. Bootstrap(一鍵生 ADMIN_KEY + 寫 .env + 指引)
+make proxy-bootstrap
 
+# 2. 填上游 key
+$EDITOR packages/orion-model-proxy/.env
+# ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-proj-...
+
+# 3. 跑 proxy
 make dev-model-proxy
 # [orion-model-proxy] listening on http://127.0.0.1:9090  (admin endpoints: enabled)
+
+# 4. Admin UI 建 user + 生 token
+open http://127.0.0.1:9090/admin/ui/
+# Login(貼 admin token)→ New user → Generate API key → 複製明文
+
+# 5. Client 端用那 token
+# apps/orion-cowork/.env
+ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
+ORION_MODEL_PROXY_KEY=sk-orion-prod-...
 ```
 
-可選 env vars:
+## Auth 三層 token(Phase 32 起 multi-tenant only)
 
-| Env | 預設 | 說明 |
+| Token | 設在哪 | 用途 |
 |---|---|---|
-| `ORION_MODEL_PROXY_HOST` | `127.0.0.1` | listen host(對外服改 `0.0.0.0`)|
-| `ORION_MODEL_PROXY_PORT` | `9090` | listen port |
-| `ORION_MODEL_PROXY_ADMIN_KEY` | — | admin Bearer 給 `/admin/*` + `/admin/ui` |
-| `ORION_PROXY_DB_URL` | SQLite at `packages/orion-model-proxy/data/proxy.db` | DSN |
+| `ORION_MODEL_PROXY_ADMIN_KEY` | proxy server env | 進 `/admin/*` REST + `/admin/ui` |
+| User API key(`sk-orion-<env>-<random>`) | proxy DB(`api_keys.token_hash`) | client 走 `/openai/*` `/anthropic/*` 帶這個 |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | proxy server env | proxy 對上游用真實 key |
 
-### 2. 自家 host 切過去
+Status code 對齊 OpenAI / Anthropic 慣例:
 
-```bash
-export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
-# Cowork / CLI / Chat 程式碼**完全不變**,SDK base_url 由 env 控
-make dev-cowork   # 或 dev-cli / dev-api
-```
+| 情境 | Status |
+|---|---|
+| 沒帶 token / 格式錯 / DB 找不到 | **401** Unauthorized(SDK AuthenticationError) |
+| Token 曾有但被 revoked | **403** Forbidden(SDK PermissionDeniedError) |
+| Budget cap 已達 | **402** Payment Required |
+| Rate limit 超 | **429** Too Many Requests |
+| Upstream provider key 未設 | 503 |
 
-### 3. 外部 SDK 用法
+## Per-endpoint 計費
 
-**Python OpenAI SDK:**
+`usage_parser.py` 對下列 endpoint 做 token 提取 + cost 計算:
+
+| Endpoint | 提取邏輯 |
+|---|---|
+| `/openai/v1/chat/completions`(stream + non-stream) | `usage.prompt/completion_tokens` + `prompt_tokens_details.cached_tokens` |
+| `/openai/v1/responses` | `usage.input/output_tokens` |
+| `/openai/v1/embeddings` | `usage.prompt_tokens` |
+| `/openai/v1/audio/speech` | `input` text 字元數 × tts pricing |
+| `/anthropic/v1/messages`(stream + non-stream) | `usage.input/output/cache_read/cache_creation_input_tokens` |
+| 其他 | log endpoint + cost=0(best-effort) |
+
+Pricing 來源:`orion_model.catalog` / `tts_catalog`(跟 client SDK 同份)。
+
+## Admin features
+
+### Web UI(`/admin/ui/`)
+- Login(HttpOnly cookie 8h session)
+- Users list + 月用量 sparkline
+- User detail:keys 列表 / generate / rotate / revoke / budget / 30-day chart
+- Audit log
+- Dark mode toggle(localStorage)
+
+### REST
+- `/admin/users` CRUD + `/keys` + `/budget` + `/rate_limit` + `/usage` + `/usage/daily`
+- `/admin/keys/{id}/rotate` — atomic 新 key + revoke 舊
+- `/admin/organizations` + `/admin/routing_aliases` + `/admin/webhooks`
+- `/admin/audit` — 最近 N 筆 admin action
+- `/admin/maintenance/archive` — usage_log 90+ 天歸檔 → monthly rollup
+- `/admin/maintenance/backup` + `/restore` — 全表 JSON-zip dump
+
+## 行為:外部 SDK 用法
+
+**Python OpenAI SDK**:
 
 ```python
 from openai import OpenAI
 client = OpenAI(
     base_url="http://proxy.local:9090/openai/v1",
-    api_key="anything",  # client 隨便填,proxy 才有真 key
+    api_key="sk-orion-prod-...",  # admin 給的
 )
-
-# Chat completions
-resp = client.chat.completions.create(model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "hi"}])
-
-# Responses API
-resp = client.responses.create(model="gpt-4o-mini", input="hi")
-
-# TTS / STT / Embeddings / Files / Fine-tuning — 任何 OpenAI endpoint 自動支援
-audio = client.audio.speech.create(model="tts-1", voice="nova", input="hi")
-text  = client.audio.transcriptions.create(model="whisper-1", file=open("a.webm","rb"))
-emb   = client.embeddings.create(model="text-embedding-3-small", input="hi")
+# Chat / Responses / Embeddings / TTS / STT / Files / 任何 endpoint 自動支援
+resp = client.chat.completions.create(model="gpt-5-mini", messages=[...])
 ```
 
-**Python Anthropic SDK:**
+**Python Anthropic SDK**:
 
 ```python
 from anthropic import Anthropic
 client = Anthropic(
-    base_url="http://proxy.local:9090/anthropic",  # SDK 自動 append /v1
-    api_key="anything",
+    base_url="http://proxy.local:9090/anthropic",
+    api_key="sk-orion-prod-...",
 )
-resp = client.messages.create(
-    model="claude-sonnet-4-6",
-    max_tokens=1024,
-    messages=[{"role": "user", "content": "hi"}],
-)
+resp = client.messages.create(model="claude-haiku-4-5", ...)
 ```
 
-**curl:**
+**curl**:
 
 ```bash
 curl http://proxy.local:9090/openai/v1/chat/completions \
-  -H "Authorization: Bearer anything" \
+  -H "Authorization: Bearer sk-orion-prod-..." \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"gpt-5-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-## Endpoints
+## Webhook(budget threshold)
 
-| Path | 用途 |
-|---|---|
-| `GET /v1/health` | proxy 自家 health + 顯各 provider key 是否設好 |
-| `GET /v1/health/{provider}` | per-provider key 狀態 |
-| `GET /v1/catalog` | Orion catalog(chat / stt / tts)— **host 必 fetch 這個**,proxy 是唯一 source of truth |
-| `ANY /openai/{path:path}` | catch-all transparent proxy → api.openai.com |
-| `ANY /anthropic/{path:path}` | catch-all transparent proxy → api.anthropic.com |
+`webhook` 表內配置:
 
-**Catch-all 設計**:OpenAI / Anthropic 未來新加任何 endpoint(image / video / files / fine-tuning / vector store / batch ...) **proxy 不必改 code 自動支援**。
-
-## Auth(Phase 32 起 multi-tenant only)
-
-Phase 31-X 的單 `ORION_MODEL_PROXY_KEY` env mode 已**移除**。現在所有 client 走
-DB-issued per-user token,server 端只需 admin token + 上游 keys。
-
-三層 token:
-
-| Token | 設在哪 | 用途 |
-|---|---|---|
-| `ORION_MODEL_PROXY_ADMIN_KEY` | proxy server env | 進 `/admin/*` REST + `/admin/ui` |
-| User API key(`sk-orion-<env>-<random>`)| proxy DB(`api_keys.token_hash`)| client 走 `/openai/*` `/anthropic/*` 帶這個當 Bearer |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | proxy server env | proxy 對上游用真實 key |
-
-```
-client:  Authorization: Bearer sk-orion-prod-xxx
-         x-api-key: anything
-              ↓
-proxy:  ① sha256(token) DB lookup → user_id + budget_usd
-        ② running_cost[user] >= budget_usd → 402(hard cap)
-        ③ Authorization / x-api-key 覆寫為 server env 真 key
-        ④ forward 到 upstream
-        ⑤ tee response → parse usage → 寫 usage_log + incr running cost
+```bash
+curl -X POST http://proxy:9090/admin/webhooks \
+  -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"event":"budget.exceeded","url":"https://hooks.slack.com/services/..."}'
 ```
 
-### 怎麼幫 user 生 token
+Events:
+- `budget.warning_80` — user 累積 cost 達 cap × 80%
+- `budget.exceeded` — 達 100%(per user per event 只 fire 一次,reset 在 set_budget 時)
+- `key.revoked` / `user.created`(待接)
 
-兩條路:
-- **Web UI**:`http://127.0.0.1:9090/admin/ui/` → login(admin token)→ New user
-  → Generate API key → 明文 token **只在生成時顯示一次**
-- **REST**:
-  ```bash
-  curl -X POST http://127.0.0.1:9090/admin/users \
-    -H "Authorization: Bearer $ORION_MODEL_PROXY_ADMIN_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"email": "alice@example.com", "budget_usd": 50.0}'
-  # → {"id": "...", ...}
+Payload:
 
-  curl -X POST http://127.0.0.1:9090/admin/users/<uid>/keys \
-    -H "Authorization: Bearer $ORION_MODEL_PROXY_ADMIN_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"label": "laptop", "env": "prod"}'
-  # → {"token": "sk-orion-prod-...", ...}    ← 把這個給 client
-  ```
-
-### Client 端怎麼傳 Bearer
-
-`ORION_MODEL_PROXY_KEY` env 在 client 端設了就會自動帶上(env 名沒變,但內容
-從「shared secret」改成「個人 user token」):
-
-- **Anthropic SDK**(只送 `x-api-key`,沒這個 fix 會直接 401):
-  `orion_model.anthropic_provider` init 時把 token 塞 `default_headers={"Authorization": f"Bearer ..."}`
-- **OpenAI SDK**(本來會送 `Authorization: Bearer <api_key>`):同樣用 `default_headers`
-  蓋掉 SDK 自動生成的 Authorization,**不要**把 PROXY token 塞 `api_key` 欄位 — 那是給
-  upstream 用的(雖然會被 proxy 覆寫,但語意混淆)
-- **`orion_model.audio.stt` / `tts`**(httpx 直發)— Bearer 來源從 `OPENAI_API_KEY`
-  改成 `ORION_MODEL_PROXY_KEY`(若 proxy URL 設了)
-
-外部 SDK / 工具(LangChain / Cursor / aider / curl)— 你自己控 Authorization,
-直接帶 PROXY token 即可,Orion 不介入。
-
-## 自家 host 怎麼接
-
-`orion_model` 三個層次都靠 env `ORION_MODEL_PROXY_URL` 自動切到 proxy:
-
-### 1. Chat / Audio API call
-
-provider 在 SDK init 時換 base_url:
-
-```python
-# packages/orion-model/src/orion_model/anthropic_provider.py
-if proxy := os.environ.get("ORION_MODEL_PROXY_URL"):
-    client = AsyncAnthropic(
-        base_url=f"{proxy}/anthropic",
-        api_key=os.environ.get("ANTHROPIC_API_KEY") or "via-proxy",
-    )
-else:
-    client = AsyncAnthropic()  # 直連
+```json
+{
+  "event": "budget.exceeded",
+  "ts": 1700000000,
+  "user_id": "...",
+  "user_email": "alice@example.com",
+  "data": { "running_cost": 50.1, "budget_cap": 50.0, "pct": 1.002 }
+}
 ```
 
-Caller 完全不必動 — `get_provider("anthropic", "claude-...")` 回的還是 `AnthropicProvider` 實例,只是裡面 SDK 連的是 proxy 不是 api.anthropic.com。
+## Backup / Restore
 
-`orion_model.audio.stt` / `audio.tts` 內部 `httpx.post` 的 URL 也走同樣 env-gate(`_openai_base()`)。
+```bash
+# Export(全表 JSON-zip,跨 SQLite/PG)
+curl -X POST "http://proxy:9090/admin/maintenance/backup?target_path=/tmp/proxy.zip" \
+  -H "Authorization: Bearer $ADMIN_KEY"
 
-### 2. Catalog metadata
-
-`orion_model.catalog.list_catalog()` / `stt_catalog.list_stt_catalog()` /
-`tts_catalog.list_tts_catalog()` 內部的 `_load()` 函式優先順序:
-
-1. **proxy `/v1/catalog`**(設了 env 就 fetch)
-2. `ORION_MODELS_FILE` override path
-3. Packaged `models.json` fallback
-
-```python
-# packages/orion-model/src/orion_model/catalog.py
-def _fetch_from_proxy() -> ... | None:
-    proxy = os.environ.get("ORION_MODEL_PROXY_URL")
-    if not proxy:
-        return None
-    try:
-        resp = httpx.get(f"{proxy}/v1/catalog", timeout=5.0)
-        return _parse_config(resp.json()["chat"])
-    except Exception:
-        return None  # 失敗 fallback packaged
-
-@cache
-def _load():
-    if from_proxy := _fetch_from_proxy():
-        return from_proxy
-    ...  # 既有 override / packaged path
+# Restore(replace_all=true 預設,truncate 全表 + insert)
+curl -X POST "http://proxy:9090/admin/maintenance/restore?source_path=/tmp/proxy.zip" \
+  -H "Authorization: Bearer $ADMIN_KEY"
 ```
 
-`@functools.cache` 保證一次 process 內只 fetch 一次(proxy 改 catalog 後
-host 要重啟才看見;production 想 hot-reload 後續可加 TTL)。
+## 限制 / 已知問題
 
-Fetch fail / proxy 不可達自動 fallback 到 packaged json — dev / CI 不必先
-起 proxy daemon。但 production 部署時 proxy = source of truth,**catalog
-變更(新 model / 改 pricing)只在 proxy 那台機改**,host 重啟就同步。
+- **Hard budget last-request 略過 cap**:Pre-request 不知這次會花多少,只能擋下一次。文件明寫,user 接受。
+- **Single-process rate limit**:in-memory token bucket,多 instance 不共用。Production 要 Redis-backed。
+- **WebSocket realtime 還 skeleton**:`/openai/v1/realtime` endpoint 註冊但回 503 — Voice realtime 不通。
+- **Streaming 大檔上傳**:`req.body()` 整個讀進 memory,GB 級 fine-tuning training file 會爆 RAM。要 streaming request body。
+- **Prompt cache 沒 TTL eviction**:目前 hash 命中就回,沒 expire 機制。長跑會無限增。
+- **Failover skeleton**:`failover.py` 有 fallback chain 跟 status check,但 reverse proxy 還沒接入(需跨 provider wire format 互轉)。
 
-### 3. 下游函式(自動受惠)
+## 看完繼續
 
-`validate(provider, model)` / `get_pricing(provider, model)` /
-`get_max_context_tokens(...)` 等所有讀 catalog 的函式都走 `_load()` 拿同份
-資料,**caller 完全不必動**就跟著切到 proxy 來源。
-
-## Phasing
-
-**Phase A — MVP**(本 commit)
-- ✅ `/openai/*` + `/anthropic/*` transparent reverse proxy
-- ✅ Bearer-token auth(optional)
-- ✅ SDK base_url env-gate(provider + audio.stt + audio.tts)
-- ✅ Cowork / CLI / Chat zero code change
-
-**Phase B** — Cost tracking + audit log(Postgres `proxy_usage` + admin endpoint)
-**Phase C** — Routing alias(`auto-fast` → cheap model;per-user override)
-**Phase D** — Cache layer(prompt hash → cached response,proxy 端共用)
-**Phase E** — Failover(429 → 切其他 provider)+ rate limit
-
-## 已知限制
-
-- **Proxy 是 SPOF** — 緩解:env unset 立刻 fallback 直連
-- **多一跳延遲** — localhost <1 ms,跨網路看 RTT
-- **Ollama 不在 proxy 範圍** — 本機 daemon,host 直連最快(無 key 概念,proxy 無增值)
-- **無 cost dashboard / DB** — Phase B 才做
-
-## 相關
-
-- `packages/orion-model-proxy/`                                Proxy service
-- `packages/orion-model-proxy/.../upstream_proxy.py`            Reverse proxy core
-- `packages/orion-model/src/orion_model/{anthropic,openai}_provider.py:__init__` base_url env-gate
-- `packages/orion-model/src/orion_model/audio/{stt,tts}.py:_openai_base()`     audio base URL env-gate
+- [`../architecture/design-decisions.md`](../architecture/design-decisions.md) — 為何 transparent reverse + 為何 multi-tenant
+- [models.md](./models.md) — 直連模式的 provider 行為
+- [`../roadmap/README.md`](../roadmap/README.md) — Proxy 還在做什麼(routing 接入 / WS / cache eviction)

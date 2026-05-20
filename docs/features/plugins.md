@@ -1,74 +1,71 @@
 # Plugins
 
-第三方寫 Python code 擴充 orion-agent — 加新 tool / 新 hook / 新 skill。
+第三方寫 Python code 擴充 orion-agent — 加新 tool / 新 hook / 新 system prompt block。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/plugins/`
 
-## Plugin bundle 格式
+## Plugin 是什麼
 
-```
-~/.orion/plugins/<plugin-id>/
-├── plugin.json         # 註冊內容(name, entry, version, ...)
-├── <package>/          # Python module
-│   ├── __init__.py
-│   ├── tools/
-│   └── hooks.py
-└── skills/             # 可選:plugin 內附 skill
-    └── <name>/SKILL.md
-```
+Python package with `[project.entry-points."orion_sdk.plugins"]` block:
 
-`plugin.json` 範例:
+```toml
+# my-plugin/pyproject.toml
+[project]
+name = "orion-jira-integration"
 
-```json
-{
-  "id": "my-tool-pack",
-  "name": "My tool pack",
-  "version": "0.1.0",
-  "entry": "my_plugin.entry:register",
-  "permissions": ["read-files", "shell"]
-}
+[project.entry-points."orion_sdk.plugins"]
+jira = "orion_jira_integration:plugin_entry"
 ```
 
-`entry` 函式被 `PluginManager` 呼叫,plugin 用 SDK 暴露的 register API 加 tool / hook。
+```python
+# my_orion_plugin/__init__.py
+from orion_sdk.plugins import PluginEntry, ToolDefinition
 
-## 載入 layer(同 skills)
+def plugin_entry() -> PluginEntry:
+    return PluginEntry(
+        name="jira",
+        version="1.0.0",
+        tools=[JiraSearchTool(), JiraCreateIssueTool()],
+        system_prompt_block="When user mentions Jira, use jira__* tools.",
+        hooks={"PreToolUse": [my_log_hook]},
+    )
+```
 
-- `bundled` — 套件附 plugin(尚無)
-- `~/.orion/plugins/` — admin
-- `<cwd>/.orion/plugins/` — project
-- `~/.orion/users/<uid>/plugins/` — user
+## 載入
 
-## Plugin marketplace(未實作)
+SDK startup 時 `importlib.metadata.entry_points(group="orion_sdk.plugins")` 自動 discover + load all。
+`ORION_PLUGINS_DIR=/path/to/plugins` env 可指定額外目錄(dev / sandbox)。
 
-Web chat 場景需要 curated registry + 簽名驗證。設計見 [`../roadmap/plans/8c-plugin-marketplace.md`](../roadmap/plans/8c-plugin-marketplace.md)。
+## 跟 Skills 的差別
 
-## 安全考量
-
-Plugin 跑 Python code → 沒有 sandbox。**Plugin 應視為可信代碼**:
-
-- CLI:user 自己安裝,自己負責
-- Web chat:**禁止 user 上傳 plugin**,只允許 admin 預先安裝的 curated 列表
-
-## 跟 MCP server 差異
-
-| | MCP server | Plugin |
+| | Skill | Plugin |
 |---|---|---|
-| 寫法 | 外部 process(任何語言) | 同 process Python module |
-| 跨語言 | ✅ | ❌(Python only) |
-| 性能 | RPC overhead | 直接呼叫 |
-| 隔離 | 進程隔離 + permission | 同進程,完全信任 |
-| 安裝 | `mcp.json` 設 transport | `plugin.json` + Python package |
+| 形式 | Markdown | Python code |
+| 能加 | system prompt fragment | tool + hook + prompt block |
+| 安裝 | 拷貝 `.md` 進 `~/.orion/skills/` | `pip install` |
+| 安全性 | 信任 prompt content(prompt injection 風險) | 完全信任 — Python code 想做什麼都行 |
 
-新工具優先寫 MCP server(隔離 + 跨語言);只有需要深度 SDK 整合才走 plugin。
+要新 capability 寫 plugin;要改 LLM 行為寫 skill。
 
-## 限制
+## 設計取捨
 
-- Plugin entry 拋例外會炸 orion(沒有 retry)
-- 版本兼容性靠 plugin 自己 pin SDK 版本
-- 沒有 hot reload(改 plugin 要重啟)
+- **Entry points 不 path-based**:正規 Python 機制,user `pip install` 直接生效。比掃 `~/.orion/plugins/` 目錄優雅。
+- **單一 namespace**:All plugins 用 `orion_sdk.plugins` group — 跨 plugin 衝突由 plugin 自己負責(tool name 加 prefix 避撞)
 
-## 相關
+## 限制 / 已知問題
 
-- [hooks.md](./hooks.md) — plugin 通常會註冊 hooks
-- [mcp.md](./mcp.md) — 跨語言擴充
-- [skills.md](./skills.md) — 不寫 code 的擴充
+- **沒 sandbox**:plugin 是 Python code,可以做任何事(包括 `os.system`)。User 安裝前要看 source。
+- **No semver enforcement**:plugin 不檢查跟 SDK 的版本兼容性(API 變化 plugin 可能 break)
+- **跨 host UI 不一致**:plugin 加的 tool 在 CLI 直接可用;Cowork UI 要重啟 sidecar 才看見
+
+## 未來方向
+
+- **Plugin marketplace**:Cowork Settings → Plugins 瀏覽 + 一鍵安裝(走 PyPI 後台)
+- **Capability declaration**:plugin 宣告需要哪些權限(網路 / 檔案系統 / 子 process),user 同意後才載入
+- **Sandboxed plugins**:用 WASM 或 subprocess 隔離,limit blast radius
+
+## 看完繼續
+
+- [tools.md](./tools.md) — Tool 介面(plugin 寫 tool 要對齊)
+- [skills.md](./skills.md) — 兩種擴充方式比較
+- [hooks.md](./hooks.md) — Plugin 可注 hook

@@ -1,221 +1,194 @@
 # Packages
 
-5 個 workspace member,各自獨立 `pyproject.toml` / `package.json`,共用 root `.venv` + `node_modules`。
+3 個 reusable lib package + 3 個 app。本文掃過每一個 — 一句話定位、實作位置、
+entrypoint。
 
----
+## packages/
 
-## `packages/orion-model`
+### orion-model
 
-**LLM provider 抽象層**。Anthropic / OpenAI SDK 包裝成統一介面,輸出 normalized 事件流。
-
-- 上游依賴:`anthropic`、`openai`、`httpx`、`pydantic`、`structlog`(Ollama 走 httpx,不用額外 SDK)
-- 不依賴 agent loop / tools / DB / framework
-- 適合單純做 prompt 測試、benchmark、純 chatbot
-
-### 核心抽象
-
-```python
-from orion_model.provider import get_provider
-
-provider = get_provider("anthropic", "claude-sonnet-4-6")
-async for event in provider.stream(system=..., messages=..., tools=...):
-    # event: TextDeltaEvent | ToolUseStartEvent | MessageStopEvent | ...
-    ...
-```
-
-### 主要模組
-
-| 檔案 | 內容 |
-|---|---|
-| `provider.py` | `LLMProvider` Protocol + `get_provider()` factory |
-| `events.py` | `NormalizedEvent` union — 跨 provider 統一事件型別 |
-| `types.py` | `NormalizedMessage` — 跨 provider 統一訊息型別 |
-| `tool_def.py` | `ToolDefinition` — agent runtime 中立的 tool schema |
-| `anthropic_provider.py` / `openai_provider.py` / `ollama_provider.py` | 三個實作(Phase 31-L 加 Ollama native — 走 `/api/chat` NDJSON streaming) |
-| `translation/` | 各 provider 的 wire format ↔ Normalized 轉譯(`anthropic.py` / `openai.py` / `ollama.py`) |
-| `catalog.py` + `models.json` | 已知模型表(context window、capabilities)— Ollama 標 `dynamic: true`,models list 空,靠 RPC `ollama.list_models` 動態抓 |
-| `pricing.py` | per-token 計價(Ollama 永遠 $0) |
-| `cache_config.py` | prompt caching 決策 |
-
----
-
-## `packages/orion-model-proxy`
-
-**Transparent reverse proxy** to OpenAI / Anthropic(Phase 31-X)。讓 CLI / Chat
-/ Cowork 透過 env `ORION_MODEL_PROXY_URL` 把 SDK base_url 切過去,集中管 API
-key / cost / routing(下階段);**外部 SDK / 工具**(LangChain / Cursor / aider /
-任何用 OpenAI 或 Anthropic Python SDK 寫的東西)同 endpoint 直接用。
-
-- 上游依賴:`orion-model` + `fastapi` + `uvicorn` + `httpx`(runtime 純 reverse 不解析 wire,orion-model 依賴留給未來 cost / routing layer 用 catalog)
-- 跑法:`make dev-model-proxy`(default :9090)
-- 詳見 [`../features/model-proxy.md`](../features/model-proxy.md)
-
----
-
-## `packages/orion-sdk`
-
-**Agent runtime SDK**。Conversation loop、tools、MCP、sandbox、memory、permission policy 等核心邏輯。
-
-- 上游依賴:`orion-model` + `sqlalchemy` / `alembic` / `aiosqlite` / `asyncpg` / `mcp` / `docker` / `apscheduler` / `keyring` / `cryptography` / `nbformat` / `frontmatter` / `opentelemetry-*`
-- **禁止依賴**:`typer`、`fastapi`、`uvicorn`、`click`(由 import-linter 強制)
-- 不知道自己被誰用 — caller 可能是 CLI / chat-api / cowork sidecar / 第三方 app
-
-### 核心進入點
-
-```python
-from orion_sdk.core.conversation import Conversation
-from orion_sdk.core.state import AgentContext
-from orion_sdk.tools.builtin_set import build_default_tool_set
-from orion_model.provider import get_provider
-
-llm = get_provider("anthropic", "claude-sonnet-4-6")
-tools = build_default_tool_set(asker=None)  # asker 由 caller 注入
-conv = Conversation(provider=llm, tools=tools)
-ctx = AgentContext()
-
-async for event in conv.send("讀 /etc/hosts", ctx=ctx):
-    # event: AssistantTextDelta | ToolProgressUpdate | ToolResultUpdate | LoopTerminated
-    ...
-```
-
-### 主要子目錄(22 個)
-
-| 子目錄 | 內容 |
-|---|---|
-| `core/` | Conversation、QueryLoop、StreamingExecutor、ToolOrchestration — 心臟 |
-| `tools/` | 20+ 共用內建工具(Bash / Read / Edit / Grep / WebFetch / Task / Skill / Schedule / Sleep / ToolSearch / ...);host-specific 不默認註冊:Browser → Cowork sidecar、Cron / Config → CLI |
-| `mcp/` | MCP client(4 種 transport + OAuth + dynamic tool wrapping) |
-| `sandbox/` | Docker / local sandbox backend |
-| `permissions/` | Permission policy(`always_allow` / `ask` / DSL rules) |
-| `prompt/` | System prompt assembler — 7 層靜態 + 動態段 + cache 決策 |
-| `memory/` | per-user / per-project memory 載入 + 提取 |
-| `state/` | `AgentContext`(每次 send 共用)、AppState |
-| `storage/` | SQLAlchemy models + session 持久化 + 大結果三層 budget |
-| `compact/` | 對話壓縮(auto / reactive / strategies / tombstone) |
-| `recovery/` | ConversationRecovery — 中斷重啟 |
-| `plan_mode/` | Plan mode 狀態機 |
-| `multi_agent/` | Coordinator(leader-worker)+ Swarm(peer-to-peer)+ AgentSummary |
-| `plugins/` `skills/` `hooks/` | 擴充機制(plugin / skill / 8 種 hook event) |
-| `output_styles/` | 輸出樣板 |
-| `telemetry/` | OpenTelemetry instrumentation + cost tracker |
-| `perf/` | pyinstrument profiling |
-| `services/` | feature_flags、forked_agent、side_query |
-| `migrations/` | alembic 設定 + revision 檔(誰用 DB 誰跑) |
-
----
-
-## `apps/orion-cli`
-
-**Terminal CLI**。Typer-based,stdin / stdout / TTY 互動,用 `orion-sdk` 跑 agent loop。
-
-- 上游依賴:`orion-sdk` + `typer` + `python-dotenv`
-- Entrypoint:`orion`(`pyproject.toml [project.scripts]`)
-
-### 命令
-
-| 命令 | 用途 |
-|---|---|
-| `orion run "<prompt>"` | 跑一次 agent loop |
-| `orion run --resume <session-id>` | 從先前 session 繼續 |
-| `orion run --no-memory --no-mcp --sandbox docker ...` | 各種 flag |
-
-`serve`(原 chat-api 入口)**已移到 `orion-chat-api`**。
-
-### 子目錄
-
-| 子目錄 | 內容 |
-|---|---|
-| `commands/` | Slash 命令(`/clear` `/help` `/model` 等)註冊與分發 |
-| `input/` | stdin 處理 + slash parser + image upload + token estimation |
-| `cron_tools/` | `CronCreate / CronList / CronDelete`(APScheduler-backed shell cron)— Phase 31-H 從 SDK 搬來,CLI-only |
-| `config_tool.py` | `Config` LLM tool(讀寫 `~/.orion/settings.json`)— Phase 31-I 從 SDK 搬來,CLI-only |
-| `__main__.py` | `orion` entrypoint(typer app) |
-
----
-
-## `apps/orion-chat/api`
-
-**FastAPI + WebSocket + JWT auth server**。對外提供 `orion-sdk` 的能力給遠端 client(web / 行動裝置)。
-
-- 上游依賴:`orion-sdk` + `fastapi` + `uvicorn[standard]` + `pyjwt` + `bcrypt` + `typer`
-- Entrypoint:`orion-chat-api serve --host 0.0.0.0 --port 8000`
-
-### 主要模組
-
-| 檔案 | 內容 |
-|---|---|
-| `app.py` | FastAPI app + middleware + 啟動 hook |
-| `cli.py` | `orion-chat-api serve` typer entry |
-| `auth.py` / `auth_db.py` | JWT 簽發 + bcrypt + user DB(`users` 表) |
-| `deps.py` | `current_user` 等依賴注入 |
-| `event_schema.py` | WS `ClientEvent` / `ServerEvent` pydantic discriminated unions |
-| `session_manager.py` / `session_manager_db.py` | in-memory + DB-backed 對話 manager |
-| `ws_permissions.py` | WS 上的 permission ask flow |
-| `routes/` | REST endpoints:auth / sessions / me / settings / memories / models / health |
-
-### 與 orion-chat/web 的契約
-
-- REST schema 自動生成:`apps/orion-chat/shared/openapi.json` ← `scripts/dump_openapi.py`
-- WS schema 自動生成:`shared/ws-{client,server}-events.schema.json` ← `scripts/dump_ws_schema.py`
-- TS types 自動生成:`web/src/types/*.gen.ts` ← `npm run gen:ts-types`
-
----
-
-## `apps/orion-chat/web`
-
-**Vite + React + TypeScript 客戶端**(@orion/chat-web)。
-
-- npm workspace member,scoped name `@orion/chat-web`
-- 上游依賴:`react`、`react-dom`、`react-markdown`、`remark-gfm`、`zustand`
-- 開發:`npm run dev -w @orion/chat-web`(vite :5173,proxy 到 chat-api :8000)
-- Build:`npm run build -w @orion/chat-web`(vite + tsc)
-
-### 主要目錄
-
-| 目錄 | 內容 |
-|---|---|
-| `src/api/` | `apiFetch` / `apiUpload`(REST client) + `auth` 工具 |
-| `src/components/` | ChatView / MessageList / InputBox / 各 panel |
-| `src/hooks/` | useSessions / useModelCatalog 等 |
-| `src/types/*.gen.ts` | OpenAPI / WS schema 生成的 TS 型別(**不要手改**) |
-| `src/lib/` | WebSocket client、訊息序列化 |
-
----
-
-## `apps/orion-cowork`
-
-**PC 桌機 app**(@orion/cowork)— Electron + React renderer + Python sidecar 三層。
-
-**不經過 chat-api** — sidecar 直接 `import orion_sdk` 跑 agent loop,跟 cli / chat-api 是平行的 SDK consumer。
-
-### 三層
+純 LLM provider 抽象 — 只負責「拿到 prompt → 回 stream of events」。**不認** agent
+loop、不認工具、不認 memory。Cowork / CLI / Chat / proxy 都 import 它。
 
 ```
-Renderer (React, 獨立重寫) ◀── IPC ──▶ Main (Electron Node TS) ◀── stdio JSON-RPC ──▶ Sidecar (Python)
+packages/orion-model/src/orion_model/
+├── provider.py                  通用 Provider 介面 + factory
+├── anthropic_provider.py        AsyncAnthropic SDK 薄包
+├── openai_provider.py           AsyncOpenAI SDK 薄包(Chat + Responses API)
+├── ollama_provider.py           本機 daemon HTTP
+├── events.py                    NormalizedEvent / NormalizedUsage(跨 provider 一致)
+├── types.py                     NormalizedMessage / ImageBlock / TextBlock
+├── catalog.py + models.json     Chat model catalog(pricing / max_tokens)
+├── stt_catalog.py + stt_models.json    STT pricing
+├── tts_catalog.py + tts_models.json    TTS pricing
+├── pricing.py                   token → USD 計算
+├── cache_config.py              Anthropic cache TTL
+├── translation/                 NormalizedMessage ↔ provider 各自格式
+└── audio/                       STT / TTS direct calls
+    ├── stt.py
+    └── tts.py
 ```
 
-| 子目錄 | 內容 |
-|---|---|
-| `package.json` | `@orion/cowork`(Electron + Vite + React) |
-| `electron/` | main process (TS, CommonJS):`main.ts` / `sidecar.ts` / `preload.ts` |
-| `renderer/` | React UI(獨立重寫,**不**複用 chat/web)+ `agent.ts` (window.agent.call wrapper) |
-| `sidecar/` | Python workspace member `orion-cowork-sidecar`:`rpc.py` / `handlers.py` / `streaming.py` / `desktop_tools.py`(OpenUrl / OpenPath)/ `browser_tools/`(Phase 31-H 從 SDK 搬來,Cowork-only,headful Chrome via playwright) |
+**對外 entry**:`from orion_model.provider import get_provider("anthropic", "claude-...")`
+;`from orion_model.audio import transcribe, synthesize`。
 
-### 為何不走 chat-api
+### orion-sdk
 
-Cowork 是本機單機 app — 不需要 JWT / CORS / 多 session / HTTP overhead。Sidecar 直接跑 SDK,stdio 通訊,沒有 server port 對外。
+Agent runtime — agent loop + 工具 + 權限 + 記憶 + MCP + skills + sandbox + ...。
+host(CLI / chat-api / sidecar)透過 callback 注入「session 怎麼存 / 工具怎麼跑」,
+SDK 只定義 spec。
 
-詳見 [`design-decisions.md`](./design-decisions.md)。
+```
+packages/orion-sdk/src/orion_sdk/
+├── core/
+│   ├── conversation.py          Conversation(state machine + send loop)
+│   ├── query_loop.py            QueryLoop(provider stream → 高層 event)
+│   ├── streaming.py             ExecutorPolicy → 平行 tool 執行
+│   └── state.py                 AgentContext(turn-level mutable state)
+├── tools/                       30+ builtin + ToolDefinition spec
+│   ├── builtin_set.py           build_default_tool_set(callbacks)
+│   ├── file/                    Read / Write / Edit / Glob / Grep
+│   ├── shell/                   Bash / sandbox
+│   ├── web/                     WebFetch / WebSearch
+│   ├── agent/                   AgentTool(sub-agent spawn)
+│   ├── special/                 ExitPlanMode / TodoWrite / ask_user_question
+│   └── ...
+├── permissions/                 PermissionPolicy(always_allow / ask / DSL)
+├── memory/                      Per-user / per-project markdown memory
+├── compact/                     對話自動壓縮(token-based + reactive)
+├── mcp/                         MCP server lifecycle(stdio / SSE / http / WS / OAuth)
+├── skills/                      Skill bundle loader(markdown + frontmatter)
+├── plugins/                     Third-party extension entry point
+├── hooks/                       8 種 hook event(SessionStart / PreToolUse / ...)
+├── multi_agent/                 Coordinator(leader-worker)+ Swarm(peer)
+├── sandbox/                     Docker / local 沙箱
+├── recovery/                    Resume from snapshot
+├── storage/                     SQLAlchemy session DB(SQLite / Postgres)
+├── services/                    Feature flags / shared utilities
+└── plan_mode/                   Read-only investigation mode + 計畫審核
+```
 
----
+**對外 entry**:`from orion_sdk.core.conversation import Conversation`(主要)。
 
-## 速查表
+### orion-model-proxy
 
-| Package | 語言 | 大小(LOC 級) | Entrypoint | 用途 |
-|---|---|---|---|---|
-| `orion-model` | Python | ~600 | (lib) | LLM 抽象 |
-| `orion-sdk` | Python | ~15k | (lib) | Agent runtime |
-| `orion-cli` | Python | ~1k | `orion` | Terminal CLI |
-| `orion-chat-api` | Python | ~2k | `orion-chat-api serve` | REST + WS server |
-| `orion-chat/web` | TypeScript | ~3k | `npm run dev` | Web 客戶端 |
-| `orion-cowork` | TS + Python | ~1k | `npm run dev -w @orion/cowork` | 桌機 app |
+HTTP service 包 OpenAI / Anthropic — transparent reverse proxy(byte-for-byte 透傳)+
+multi-tenant auth + per-user cost tracking + budget enforcement + admin Web UI。
+**opt-in**:host 不必走它,直接打 upstream 也行(env-gated)。
+
+```
+packages/orion-model-proxy/src/orion_model_proxy/
+├── server.py                    FastAPI app + lifespan + WS skeleton
+├── __main__.py                  uvicorn entrypoint
+├── db.py                        SQLAlchemy async engine + auto-migration
+├── models.py                    ORM:User / ApiKey / UsageLog / AuditLog /
+│                                Organization / RoutingAlias / PromptCache /
+│                                Webhook / UsageMonthlyRollup
+├── auth.py                      sha256 Bearer lookup + cache + budget / rate enforce
+├── upstream_proxy.py            tee response → parser + log usage
+├── usage_parser.py              per-endpoint usage 解析(chat / responses /
+│                                embeddings / messages / audio.speech)
+├── usage_logger.py              DB insert(fire-and-forget)+ running cost cache
+├── rate_limit.py                Token bucket(per-user RPM)
+├── archive.py                   >cutoff_days usage_log → monthly rollup
+├── backup.py                    JSON-zip 全表 dump/restore(跨 SQLite/PG)
+├── audit.py                     Admin action audit recorder
+├── telemetry.py                 OTel span(env-gated, lazy import)
+├── webhook.py                   budget threshold POST
+├── routing.py                   user-level model alias 解析
+├── cache.py                     Content-hash prompt cache(skip stream/tools)
+├── failover.py                  provider fallback chain skeleton
+├── admin_routes.py              /admin/* REST(users / keys / org / webhook / ...)
+├── admin_ui.py                  /admin/ui/* Jinja2 server-rendered
+└── templates/                   base / login / users / user_detail / audit HTML
+```
+
+**對外 entry**:`make dev-model-proxy` 或 `uv run --package orion-model-proxy orion-model-proxy`。
+Client 端只需設 env `ORION_MODEL_PROXY_URL=http://...` + `ORION_MODEL_PROXY_KEY=sk-orion-...`。
+
+## apps/
+
+### orion-cli
+
+終端機 chat。最簡單,單檔 entrypoint。
+
+```
+apps/orion-cli/
+├── src/orion_cli/
+│   ├── __main__.py              Typer CLI:orion run "..." / orion chat / ...
+│   ├── slash/                   Slash command handlers
+│   ├── commands/                Builtin slash 實作
+│   └── output_styles/           Plain / Markdown / JSON / ...
+└── tests/                       Unit + integration(gated on env)
+```
+
+Sessions 走 `~/.orion/sessions/<uuid>/transcript.jsonl`(per-session 子目錄)。
+
+### orion-chat
+
+Web-facing FastAPI server + Vite React 客戶端。Multi-tenant 設計,JWT auth,Postgres-ready。
+
+```
+apps/orion-chat/
+├── api/                         FastAPI server
+│   ├── src/orion_chat_api/
+│   │   ├── app.py               FastAPI app + lifespan + CORS
+│   │   ├── cli.py               orion-chat-api serve(uvicorn entrypoint)
+│   │   ├── routes/              auth / chat / models / sessions / oauth / ...
+│   │   ├── auth/                JWT + OAuth providers(github / linear / google / microsoft)
+│   │   ├── deps.py              FastAPI Depends 工廠
+│   │   └── db.py                Async SQLAlchemy
+│   └── tests/
+└── web/                         Vite + React + Tailwind
+    └── src/
+        ├── App.tsx
+        ├── api/                 fetch wrappers + WebSocket client
+        ├── components/          Sidebar / Chat / Settings / ...
+        └── store/               Zustand state
+```
+
+Sessions 走 `~/.orion/sessions/<uuid>/`(同 CLI)或 Postgres(production)。
+
+### orion-cowork
+
+Electron 桌機 chat app — Python sidecar(用 orion-sdk)+ React renderer + Electron main。
+
+```
+apps/orion-cowork/
+├── electron/                    main process + preload
+│   ├── main.ts                  BrowserWindow + IPC + sidecar lifecycle + auto-update
+│   ├── preload.ts               contextBridge 暴露 window.{agent,dialog,scheduler,...}Api
+│   ├── sidecar.ts               Python sidecar spawn + stdio JSON-RPC
+│   └── updater.ts               electron-updater wire
+├── renderer/                    React UI
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── components/          InputBox / MessageList / Sidebar / Header / ...
+│   │   ├── store/               Zustand(agent / settings / projects)
+│   │   ├── api/                 JSON-RPC wrappers
+│   │   └── i18n/                4 locale(zh-TW / zh-CN / en / ja)
+│   └── public/
+├── sidecar/                     Python — uses orion_sdk
+│   ├── src/orion_cowork_sidecar/
+│   │   ├── __main__.py          uv run entrypoint
+│   │   ├── handlers.py          所有 RPC method(conversation / project / memory / ...)
+│   │   ├── rpc.py               stdio JSON-RPC server
+│   │   ├── storage.py           SQLite engine(cowork.db extends SDK schema)
+│   │   ├── backup_handlers.py   Cowork data zip backup/restore
+│   │   ├── stt_handlers.py / tts_handlers.py
+│   │   ├── scheduler.py         /loop schedule + cron
+│   │   ├── mcp_integration.py   Cowork-side MCP wiring
+│   │   └── desktop_tools.py     OpenPath / OpenUrl(本機 desktop 專屬)
+│   └── tests/
+├── electron-builder.yml         DMG / NSIS / AppImage + signing config
+└── package.json                 Electron / Vite / pnpm workspace
+```
+
+Sessions 走 `~/.orion/sessions/cowork.db`(SQLite,跟 SDK 共用 messages/sessions 表 +
+`cowork_*` 擴充表)。Cowork sidecar 不走 chat-api — 本機單機不需要 HTTP / JWT。
+
+## 看完繼續
+
+- [runtime-layout.md](./runtime-layout.md) — 設定 / 資料在哪幾個目錄
+- [design-decisions.md](./design-decisions.md) — 為何這樣不那樣
+- [`../features/`](../features/) — 各 feature 怎麼運作

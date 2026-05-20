@@ -1,60 +1,66 @@
 # Hooks
 
-8 種 hook event,給 caller 注入「在某事發生時跑點什麼」邏輯。
+8 種 hook event,給 caller / plugin 注入「某事發生時跑點什麼」邏輯。
 
 **實作位置**:`packages/orion-sdk/src/orion_sdk/hooks/`
 
-## Event 列表
+## 8 event
 
-| Event | 觸發點 | 用途 |
+| Event | 觸發時機 | 主要用途 |
 |---|---|---|
-| `SessionStart` | `Conversation.send` 第一次被叫(per conversation) | log session 啟動、注入 system prompt 動態段 |
-| `UserPromptSubmit` | user message 被加入 state_messages 後 | filter / 改寫 user prompt |
-| `PreToolUse` | tool 即將執行前 | permission check 替代、改 input、block 執行 |
-| `PostToolUse` | tool 執行完(成功或失敗) | log、後處理、副作用 |
-| `Notification` | 任意 user-facing 通知 | desktop notify、push、Slack |
-| `Stop` | LLM `stop_reason="end_turn"` 但 caller 還沒中止 | 強制繼續、注入後續 prompt |
-| `SubagentStop` | sub-agent(Agent tool / Task) 完成 | 收集 child 結果 |
-| `PreCompact` | auto/reactive compact 觸發前 | 紀錄、stash 原始訊息 |
+| **SessionStart** | Conversation 建好 | 紀錄 session metadata、配置 logger |
+| **SessionEnd** | shutdown / abort | flush metric、cleanup resource |
+| **UserPromptSubmit** | User send 進來 | log、moderation、auto-translate |
+| **PreToolUse** | Tool 跑前(permission decide 後) | audit log、metric、modify input |
+| **PostToolUse** | Tool 跑完 | log result、trigger 後續 action |
+| **Stop** | LLM 自然停 turn | metric、auto-summarize |
+| **PreCompact** | Auto-compact 觸發前 | snapshot、selective preserve |
+| **Notification** | 系統 notification 推出去前 | route 到 Slack / SMS / 等 |
 
 ## 註冊
 
 ```python
-from orion_sdk.hooks.registry import HookRegistry
-from orion_sdk.hooks.events import PreToolUseEvent
+from orion_sdk.hooks import register_hook
 
-hooks = HookRegistry()
+async def log_pre_tool(event, ctx):
+    print(f"Tool {event.tool_name} 即將跑,input={event.input!r}")
 
-@hooks.on("PreToolUse")
-async def log_tool_use(event: PreToolUseEvent) -> None:
-    print(f"about to run {event.tool_name}")
-
-conv = Conversation(provider=llm, tools=tools, hooks=hooks)
+register_hook("PreToolUse", log_pre_tool)
 ```
 
-## Hook 改變行為
+Hook 函式可 async / sync,可 modify event(in-place)— 例如 PreToolUse 改 `event.input` 影響後續 tool 執行。
 
-某些 hook return 可以影響 flow:
+## Plugin 內掛 hook
 
-- `PreToolUse` return `HookDecision.block` → 跳過該 tool
-- `UserPromptSubmit` return 新字串 → 改寫 prompt
-- 其他多半 read-only
+```python
+def plugin_entry() -> PluginEntry:
+    return PluginEntry(
+        ...
+        hooks={
+            "PreToolUse": [my_log_hook],
+            "PostToolUse": [my_metric_hook],
+        },
+    )
+```
 
-## CLI / chat-api / cowork 各自的 hook 設定
+## 設計取捨
 
-- **CLI**:`~/.orion/settings.json` 內 `hooks: {...}` 設 shell command(`SettingsHook`)
-- **chat-api**:webhook URL(POST event JSON 到外部 server)
-- **Cowork**:目前無 hook UI(後續加)
+- **Event 不可取消**:hook fail 不擋 main flow(swallow exception),避免 plugin bug 把 agent loop 弄死
+- **Sync + async 都可**:hook function 由 SDK detect coroutine,sync 直接 call
 
-詳見 [`../architecture/design-decisions.md`](../architecture/design-decisions.md) — Web chat 場景的 hook 設計差異。
+## 限制 / 已知問題
 
-## 限制
+- **沒 ordering**:多 plugin 註冊同 event,執行順序看 plugin load 順序(不確定)
+- **沒 priority**:重要 hook 跟次要 hook 同等對待
+- **沒 conditional skip**:hook 要 skip,只能函式內 early return
 
-- Hook 跑在 agent loop 主進程,慢 hook 拖累 latency
-- 沒有 hook timeout — 卡住會卡住 conversation
-- Webhook 失敗預設 silent(可開 strict mode)
+## 未來方向
 
-## 相關
+- **Hook priority + ordering**:`@hook("PreToolUse", priority=10)`
+- **Hook unregister**:test 場景 mock 後要能 clean
+- **更多 event**:`OnError` / `OnTimeout` / `OnContextOverflow`
 
-- [skills.md](./skills.md) — 跟 hook 不同(skills 是注入 prompt,hooks 是注入邏輯)
-- [plugins.md](./plugins.md) — 第三方擴充(用 hooks + tools)
+## 看完繼續
+
+- [plugins.md](./plugins.md) — plugin 註 hook
+- [agent-loop.md](./agent-loop.md) — hook 在 loop 哪幾段 trigger
