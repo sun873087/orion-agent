@@ -107,6 +107,32 @@ const planApi = {
   },
 }
 
+type BackupRestartPayload = {
+  reason: string
+  moved_to: string
+}
+
+const backupApi = {
+  /** Save dialog 拿 .zip 路徑;canceled → null。 */
+  pickSavePath: async (defaultName: string): Promise<string | null> => {
+    return ipcRenderer.invoke('dialog:pickBackupSavePath', defaultName)
+  },
+  /** Open dialog 拿 .zip 路徑;canceled → null。 */
+  pickOpenPath: async (): Promise<string | null> => {
+    return ipcRenderer.invoke('dialog:pickBackupOpenPath')
+  },
+  /** Restore 完成 — sidecar 推 backup.restart_required。renderer 訂閱顯重啟 UI。 */
+  onRestartRequired: (cb: (data: BackupRestartPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: BackupRestartPayload) => cb(data)
+    ipcRenderer.on('backup:restart_required', listener)
+    return () => ipcRenderer.removeListener('backup:restart_required', listener)
+  },
+  /** 重啟整個 app(app.relaunch + quit)。 */
+  relaunch: async (): Promise<void> => {
+    return ipcRenderer.invoke('app:relaunch')
+  },
+}
+
 type BudgetExceededPayload = {
   session_id: string
   current_usd: number
@@ -158,6 +184,7 @@ contextBridge.exposeInMainWorld('shellApi', shellApi)
 contextBridge.exposeInMainWorld('schedulerApi', schedulerApi)
 contextBridge.exposeInMainWorld('planApi', planApi)
 contextBridge.exposeInMainWorld('budgetApi', budgetApi)
+contextBridge.exposeInMainWorld('backupApi', backupApi)
 
 declare global {
   interface Window {
@@ -167,5 +194,6 @@ declare global {
     schedulerApi: typeof schedulerApi
     planApi: typeof planApi
     budgetApi: typeof budgetApi
+    backupApi: typeof backupApi
   }
 }

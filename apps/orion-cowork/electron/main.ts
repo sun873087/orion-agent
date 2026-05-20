@@ -125,6 +125,7 @@ app.whenReady().then(async () => {
     else if (evt === 'plan_mode.approved') broadcast('plan_mode:approved')
     else if (evt === 'plan_mode.rejected') broadcast('plan_mode:rejected')
     else if (evt === 'budget.exceeded') broadcast('budget:exceeded')
+    else if (evt === 'backup.restart_required') broadcast('backup:restart_required')
   })
 
   // 2. 註冊 IPC
@@ -167,6 +168,32 @@ app.whenReady().then(async () => {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  // Backup zip save picker — Settings → Backup → Export 用。
+  ipcMain.handle('dialog:pickBackupSavePath', async (_e, defaultName: string) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [{ name: 'Orion Backup', extensions: ['zip'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
+  })
+
+  // Backup zip open picker — Settings → Backup → Restore 用。
+  ipcMain.handle('dialog:pickBackupOpenPath', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Orion Backup', extensions: ['zip'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  // Restore 完成後 user 按 Restart → app.relaunch + quit。
+  ipcMain.handle('app:relaunch', () => {
+    app.relaunch()
+    app.quit()
   })
 
   // 檢查路徑是否實際存在 — RightSidebar / InlineFileCards 用,避免列出 model

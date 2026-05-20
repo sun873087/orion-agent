@@ -9,12 +9,13 @@
  * 也可以 openSettings('language') 直接跳到 Language section。
  */
 import type { ComponentType } from 'react'
-import { ArrowLeft, Brain, Clock, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
+import { Archive, ArrowLeft, Brain, Clock, Folder, Info, type LucideIcon, Plug, Settings as SettingsIcon, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
 
 import { useTranslation } from '../i18n'
 import { useSettingsStore } from '../store/settings'
 
 import { AboutSection } from './settings/AboutSection'
+import { BackupSection } from './settings/BackupSection'
 import { GeneralSection } from './settings/GeneralSection'
 import { McpSection } from './settings/McpSection'
 import { MemorySection } from './settings/MemorySection'
@@ -92,6 +93,13 @@ const SECTIONS: SectionDef[] = [
     groupKey: 'settings.group.desktop',
     icon: ShieldCheck,
     render: PermissionsSection,
+  },
+  {
+    id: 'backup',
+    labelKey: 'settings.section.backup',
+    groupKey: 'settings.group.desktop',
+    icon: Archive,
+    render: BackupSection,
   },
   {
     id: 'about',

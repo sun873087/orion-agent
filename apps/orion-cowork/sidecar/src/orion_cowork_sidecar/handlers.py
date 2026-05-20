@@ -36,6 +36,7 @@ from orion_sdk.tools.special.enter_plan_mode import EnterPlanModeTool
 from orion_sdk.tools.special.exit_plan_mode import ExitPlanModeTool
 
 from orion_cowork_sidecar import (
+    backup_handlers,
     memory_handlers,
     permissions as perm_mod,
     schedule_handlers,
@@ -529,6 +530,10 @@ class Handlers:
             "mcp.config_delete": self.mcp_config_delete,
             "maintenance.migrate_attachments": self.maintenance_migrate_attachments,
             "maintenance.cleanup_blobs": self.maintenance_cleanup_blobs,
+            "backup.preview": lambda p: backup_handlers.backup_preview(self, p),
+            "backup.export": lambda p: backup_handlers.backup_export(self, p),
+            "backup.inspect": lambda p: backup_handlers.backup_inspect(self, p),
+            "backup.restore": lambda p: backup_handlers.backup_restore(self, p),
         }
 
     # ─── Methods ────────────────────────────────────────────────────────

@@ -97,6 +97,22 @@ interface OrionBudgetApi {
   onExceeded: (cb: (data: OrionBudgetExceededPayload) => void) => () => void
 }
 
+interface OrionBackupRestartPayload {
+  reason: string
+  moved_to: string
+}
+
+interface OrionBackupApi {
+  /** Save dialog 拿 .zip 路徑;canceled → null。 */
+  pickSavePath: (defaultName: string) => Promise<string | null>
+  /** Open dialog 拿 .zip 路徑;canceled → null。 */
+  pickOpenPath: () => Promise<string | null>
+  /** Restore 完成 — UI 顯重啟提示 banner / modal。 */
+  onRestartRequired: (cb: (data: OrionBackupRestartPayload) => void) => () => void
+  /** app.relaunch + app.quit — 整個 Electron app 乾淨重啟。 */
+  relaunch: () => Promise<void>
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
@@ -109,6 +125,8 @@ declare global {
     planApi: OrionPlanApi
     /** Budget 通知通道(Phase 31-Q)。 */
     budgetApi: OrionBudgetApi
+    /** Backup / Restore 通道。 */
+    backupApi: OrionBackupApi
   }
 }
 

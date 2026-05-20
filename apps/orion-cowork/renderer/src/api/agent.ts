@@ -1610,3 +1610,96 @@ export async function deleteSchedule(id: string): Promise<void> {
 export async function runScheduleNow(id: string): Promise<void> {
   await window.agent.call('schedule.run_now', { id }, () => {})
 }
+
+// ─── Backup / Restore ─────────────────────────────────────────────────────
+
+export type BackupPreview = {
+  db_bytes: number
+  blobs_bytes: number
+  blobs_count: number
+  other_bytes: number
+  total_bytes: number
+}
+
+export type BackupManifest = {
+  schema_version: number
+  exported_at: number
+  include_blobs: boolean
+  data_dir: string
+  file_count: number
+  has_db: boolean
+}
+
+export async function backupPreview(includeBlobs: boolean): Promise<BackupPreview> {
+  let result: BackupPreview = {
+    db_bytes: 0,
+    blobs_bytes: 0,
+    blobs_count: 0,
+    other_bytes: 0,
+    total_bytes: 0,
+  }
+  await window.agent.call(
+    'backup.preview',
+    { include_blobs: includeBlobs },
+    (frame) => {
+      if (frame.event === 'backup.preview' && frame.data) {
+        result = frame.data as BackupPreview
+      }
+    },
+  )
+  return result
+}
+
+export async function backupExport(
+  targetPath: string,
+  includeBlobs: boolean,
+): Promise<{ path: string; total_bytes: number; manifest: BackupManifest }> {
+  let result: { path: string; total_bytes: number; manifest: BackupManifest } | null = null
+  await window.agent.call(
+    'backup.export',
+    { target_path: targetPath, include_blobs: includeBlobs },
+    (frame) => {
+      if (frame.event === 'backup.exported' && frame.data) {
+        result = frame.data as {
+          path: string
+          total_bytes: number
+          manifest: BackupManifest
+        }
+      }
+    },
+  )
+  if (!result) throw new Error('backup.export did not return final frame')
+  return result
+}
+
+export async function backupInspect(
+  sourcePath: string,
+): Promise<{ manifest: BackupManifest; zip_size: number }> {
+  let result: { manifest: BackupManifest; zip_size: number } | null = null
+  await window.agent.call(
+    'backup.inspect',
+    { source_path: sourcePath },
+    (frame) => {
+      if (frame.event === 'backup.inspected' && frame.data) {
+        result = frame.data as { manifest: BackupManifest; zip_size: number }
+      }
+    },
+  )
+  if (!result) throw new Error('backup.inspect did not return final frame')
+  return result
+}
+
+export async function backupRestore(sourcePath: string): Promise<{ moved_to: string }> {
+  let result: { moved_to: string } | null = null
+  await window.agent.call(
+    'backup.restore',
+    { source_path: sourcePath },
+    (frame) => {
+      if (frame.event === 'backup.restored' && frame.data) {
+        result = frame.data as { moved_to: string }
+      }
+    },
+  )
+  if (!result) throw new Error('backup.restore did not return final frame')
+  return result
+}
