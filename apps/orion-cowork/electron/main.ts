@@ -29,6 +29,7 @@ function customIconPath(): string | null {
 }
 
 import { SidecarClient, findRepoRoot } from './sidecar'
+import { initAutoUpdater, quitAndInstall } from './updater'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -196,6 +197,11 @@ app.whenReady().then(async () => {
     app.quit()
   })
 
+  // Phase 33-F electron-updater — user 點「立即更新」就 quit+install
+  ipcMain.handle('updater:quitAndInstall', () => {
+    quitAndInstall()
+  })
+
   // 檢查路徑是否實際存在 — RightSidebar / InlineFileCards 用,避免列出 model
   // 提到但檔已不存在的孤兒路徑。
   ipcMain.handle('fs:pathExists', async (_e, path: string) => {
@@ -272,6 +278,9 @@ app.whenReady().then(async () => {
 
   // 3. 開窗
   await createWindow()
+
+  // 4. Phase 33-F auto-update — 5s 後 check GitHub Releases
+  initAutoUpdater(() => BrowserWindow.getAllWindows())
 })
 
 // 全平台統一:關閉視窗 = 結束 app(macOS 不再保留 dock,user 預期行為)。

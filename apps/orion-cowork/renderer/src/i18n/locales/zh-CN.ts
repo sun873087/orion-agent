@@ -434,6 +434,7 @@ export default {
   'error.copy': '复制错误信息',
   'error.copied': '已复制',
   'error.dismiss': '关闭',
+  'header.cost.tooltip': '本对话累计 cost ${cost} — 点击展开右侧用量统计',
   'message.expand': '展开',
   'message.collapse': '收起',
   'message.failedHistory': '对话历史加载失败:{msg}',

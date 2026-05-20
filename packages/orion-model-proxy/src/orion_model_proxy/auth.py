@@ -55,6 +55,7 @@ class AuthedPrincipal:
     api_key_id: str
     email: str
     budget_usd: float | None
+    rate_limit_rpm: int | None = None
 
 
 _TTL_SECONDS = 60
@@ -94,6 +95,7 @@ async def _lookup_db(
         api_key_id=api_key.id,
         email=user.email,
         budget_usd=user.budget_usd,
+        rate_limit_rpm=user.rate_limit_rpm,
     )
 
 
@@ -225,9 +227,28 @@ async def enforce_budget(request: Request) -> None:
         )
 
 
+async def enforce_rate_limit(request: Request) -> None:
+    """Phase 33-B — pre-request rate limit。RPM 沒設或 0 → 不擋。"""
+    principal: AuthedPrincipal | None = getattr(request.state, "principal", None)
+    if principal is None or not principal.rate_limit_rpm:
+        return
+    from orion_model_proxy.rate_limit import check_and_consume
+
+    ok = await check_and_consume(principal.user_id, principal.rate_limit_rpm)
+    if not ok:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"rate limit exceeded ({principal.rate_limit_rpm} req/min). "
+                f"Retry after a few seconds."
+            ),
+        )
+
+
 __all__ = [
     "AuthedPrincipal",
     "enforce_budget",
+    "enforce_rate_limit",
     "generate_token",
     "hash_token",
     "invalidate_cache",

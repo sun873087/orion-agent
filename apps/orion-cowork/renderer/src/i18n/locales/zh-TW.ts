@@ -451,6 +451,7 @@ export default {
   'error.copy': '複製錯誤訊息',
   'error.copied': '已複製',
   'error.dismiss': '關閉',
+  'header.cost.tooltip': '本對話累積 cost ${cost} — 點開展開右側用量統計',
   'message.expand': '展開',
   'message.collapse': '收合',
   'message.failedHistory': '對話歷史載入失敗:{msg}',

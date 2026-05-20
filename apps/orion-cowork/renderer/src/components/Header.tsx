@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Folder, PanelLeft, PanelLeftClose, PanelRight, Search, Sparkles, X } from 'lucide-react'
+import { DollarSign, Folder, PanelLeft, PanelLeftClose, PanelRight, Search, Sparkles, X } from 'lucide-react'
 
-import { getPrefs, getProject, getSessionWorkspace } from '../api/agent'
+import { getConversationStats, getPrefs, getProject, getSessionWorkspace, type ConversationStats } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useProjects } from '../hooks/useProjects'
 import { useAgentStore } from '../store/agent'
@@ -162,6 +162,9 @@ export function Header() {
           <span>{model}</span>
         </button>
 
+        {/* Cumulative session cost — 點開啟 RightSidebar 看完整 stats */}
+        <SessionCostBadge sessionId={sessionId} onOpen={toggleRightSidebar} />
+
         <span className="font-mono text-xs text-fg-subtle">
           {initError ? (
             <span className="text-error">{initError}</span>
@@ -183,5 +186,47 @@ export function Header() {
         </button>
       </div>
     </header>
+  )
+}
+
+
+/** 累積 session cost badge — busy=false 時 refresh,點 → 展開 RightSidebar 看細節。 */
+function SessionCostBadge({ sessionId, onOpen }: { sessionId: string | null; onOpen: () => void }) {
+  const busy = useAgentStore((s) =>
+    s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
+  )
+  const [stats, setStats] = useState<ConversationStats | null>(null)
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    setStats(null)
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId || busy) return
+    let cancelled = false
+    getConversationStats(sessionId)
+      .then((s) => {
+        if (!cancelled) setStats(s)
+      })
+      .catch(() => {
+        if (!cancelled) setStats(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, busy])
+
+  if (!sessionId || !stats || stats.turns === 0) return null
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={t('header.cost.tooltip', { cost: stats.cumulative.costUsd.toFixed(4) })}
+      className="flex items-center gap-1 rounded-md border border-bg-hover bg-bg-input px-2 py-1 font-mono text-xs text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+    >
+      <DollarSign size={11} className="text-fg-subtle" />
+      <span>{stats.cumulative.costUsd.toFixed(4)}</span>
+    </button>
   )
 }

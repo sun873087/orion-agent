@@ -23,6 +23,10 @@ from dotenv import load_dotenv
 # provider 之前。不抓 project root .env;每 app 各自隔離 secret。
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
+# Phase 32 attribution(可被外層 env 覆蓋)— proxy usage_log 看得出來源
+import os as _os
+_os.environ.setdefault("ORION_CLIENT_ID", "orion-cli")
+
 from orion_sdk.core.conversation import Conversation  # noqa: E402
 from orion_sdk.core.query_loop import (  # noqa: E402
     AssistantTextDelta,

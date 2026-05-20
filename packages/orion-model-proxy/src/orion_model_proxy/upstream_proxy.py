@@ -149,6 +149,7 @@ async def _track_usage(
     provider: str,
 ) -> None:
     """Tee parser + DB log。失敗 swallow。"""
+    from orion_model_proxy.telemetry import span
     from orion_model_proxy.usage_logger import log_usage
     from orion_model_proxy.usage_parser import parse_usage
 
@@ -156,26 +157,30 @@ async def _track_usage(
     if principal is None:
         return
     endpoint_full = f"/{provider}/{path.lstrip('/')}"
-    event = parse_usage(
-        provider=provider,
-        path=path,
-        method=method,
-        request_body=request_body,
-        response_body=response_body,
-        content_type=content_type,
-        endpoint_full=endpoint_full,
-    )
-    if event is None:
-        return
-    client_id = req.headers.get("x-orion-client")
-    request_id = req.headers.get("x-orion-request-id")
-    await log_usage(
-        user_id=principal.user_id,
-        api_key_id=principal.api_key_id,
-        event=event,
-        client_id=client_id,
-        request_id=request_id,
-    )
+    with span(
+        "proxy.track_usage",
+        **{"provider": provider, "endpoint": endpoint_full, "user_id": principal.user_id},
+    ):
+        event = parse_usage(
+            provider=provider,
+            path=path,
+            method=method,
+            request_body=request_body,
+            response_body=response_body,
+            content_type=content_type,
+            endpoint_full=endpoint_full,
+        )
+        if event is None:
+            return
+        client_id = req.headers.get("x-orion-client")
+        request_id = req.headers.get("x-orion-request-id")
+        await log_usage(
+            user_id=principal.user_id,
+            api_key_id=principal.api_key_id,
+            event=event,
+            client_id=client_id,
+            request_id=request_id,
+        )
 
 
 def _require_key(env_var: str, provider_label: str) -> str:

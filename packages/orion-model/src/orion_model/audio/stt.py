@@ -13,6 +13,14 @@ from typing import Any
 
 import httpx
 
+
+def _with_client_id(headers: dict[str, str]) -> dict[str, str]:
+    """加上 X-Orion-Client 給 proxy 計費 attribution(env 沒設不變)。"""
+    cid = os.environ.get("ORION_CLIENT_ID")
+    if cid:
+        headers = {**headers, "X-Orion-Client": cid}
+    return headers
+
 from orion_model.audio.types import TranscribeResult
 from orion_model.stt_catalog import validate_stt
 from orion_model.stt_pricing import compute_stt_cost
@@ -107,7 +115,7 @@ async def transcribe(
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
                     f"{_openai_base()}/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {bearer}"},
+                    headers=_with_client_id({"Authorization": f"Bearer {bearer}"}),
                     files=files,
                     data=data,
                 )

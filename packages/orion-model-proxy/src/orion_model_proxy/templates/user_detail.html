@@ -77,6 +77,10 @@
       </td>
       <td class="actions">
         {% if not k.revoked_at %}
+        <form method="post" action="/admin/ui/keys/{{ k.id }}/rotate"
+              onsubmit="return confirm('Rotate this key? — new token will be generated, old key revoked atomically.')">
+          <button class="secondary outline" type="submit" title="Generate new token + revoke this one atomically">Rotate</button>
+        </form>
         <form method="post" action="/admin/ui/keys/{{ k.id }}/revoke"
               onsubmit="return confirm('Revoke this key?')">
           <button class="contrast outline" type="submit">Revoke</button>
@@ -90,6 +94,28 @@
     {% endif %}
   </tbody>
 </table>
+
+<h3>Usage trend (30 days)</h3>
+{% if sparkline_max > 0 %}
+<svg class="sparkline" width="700" height="60" viewBox="0 0 700 60" preserveAspectRatio="none">
+  {% set w = 700 %}
+  {% set h = 60 %}
+  {% set n = sparkline|length %}
+  {% set step = w / (n - 1) if n > 1 else w %}
+  {% set max = sparkline_max if sparkline_max > 0 else 1 %}
+  {% set pts = [] %}
+  {% for p in sparkline %}
+    {% set x = loop.index0 * step %}
+    {% set y = h - (p.cost / max) * (h - 4) - 2 %}
+    {% set _ = pts.append((x, y)) %}
+  {% endfor %}
+  <path class="area" d="M 0 {{ h }} {% for x, y in pts %}L {{ '%.1f'|format(x) }} {{ '%.1f'|format(y) }} {% endfor %}L {{ w }} {{ h }} Z"/>
+  <path class="line" d="M {% for x, y in pts %}{{ '%.1f'|format(x) }} {{ '%.1f'|format(y) }} {% if not loop.last %}L {% endif %}{% endfor %}"/>
+</svg>
+<p><small>Daily cost(max:${{ '%.4f'|format(sparkline_max) }})</small></p>
+{% else %}
+<p><em>No usage in past 30 days.</em></p>
+{% endif %}
 
 <h3>Usage (this month)</h3>
 {% if usage %}

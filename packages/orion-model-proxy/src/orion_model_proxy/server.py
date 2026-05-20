@@ -20,10 +20,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from orion_model_proxy.auth import enforce_budget, require_auth
+from orion_model_proxy.auth import enforce_budget, enforce_rate_limit, require_auth
 
 
 @asynccontextmanager
@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
     @app.api_route(
         "/openai/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        dependencies=[Depends(require_auth), Depends(enforce_budget)],
+        dependencies=[Depends(require_auth), Depends(enforce_rate_limit), Depends(enforce_budget)],
         tags=["openai"],
     )
     async def openai_compat(req: Request, path: str) -> StreamingResponse:
@@ -150,10 +150,27 @@ def create_app() -> FastAPI:
     @app.api_route(
         "/anthropic/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        dependencies=[Depends(require_auth), Depends(enforce_budget)],
+        dependencies=[Depends(require_auth), Depends(enforce_rate_limit), Depends(enforce_budget)],
         tags=["anthropic"],
     )
     async def anthropic_compat(req: Request, path: str) -> StreamingResponse:
         return await anthropic_reverse_proxy(req, path)
+
+    # Phase 33-E:OpenAI Realtime WebSocket pass-through 骨架。實作未完成 —
+    # 主要 use case 是 voice。先註冊 endpoint + 503,避免 path 撞到 catch-all。
+    @app.websocket("/openai/v1/realtime")
+    async def openai_realtime_ws(ws: WebSocket) -> None:
+        await ws.accept()
+        await ws.send_json({
+            "type": "error",
+            "error": {
+                "code": "NOT_IMPLEMENTED",
+                "message": (
+                    "WebSocket realtime proxy 尚未實作 — Phase 33-E skeleton。"
+                    "目前只支援 HTTP /openai/{path}。"
+                ),
+            },
+        })
+        await ws.close(code=1000)
 
     return app

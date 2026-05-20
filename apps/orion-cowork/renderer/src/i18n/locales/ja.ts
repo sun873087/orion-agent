@@ -433,6 +433,7 @@ export default {
   'error.copy': 'エラーをコピー',
   'error.copied': 'コピーしました',
   'error.dismiss': '閉じる',
+  'header.cost.tooltip': '会話累計 ${cost} — クリックで右パネル展開',
   'message.expand': '展開',
   'message.collapse': '折りたたむ',
   'message.failedHistory': '履歴の読み込みに失敗:{msg}',

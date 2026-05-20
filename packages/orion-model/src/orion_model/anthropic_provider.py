@@ -109,6 +109,11 @@ class AnthropicProvider:
                 proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
                 if proxy_key:
                     extra_headers["Authorization"] = f"Bearer {proxy_key}"
+                # X-Orion-Client:proxy usage_log.client_id 用,讓 admin 看得出
+                # 哪台 host(cli / chat-api / cowork)花多少。env 沒設 → 不帶。
+                client_id = _os.environ.get("ORION_CLIENT_ID")
+                if client_id:
+                    extra_headers["X-Orion-Client"] = client_id
                 client = AsyncAnthropic(
                     base_url=f"{proxy.rstrip('/')}/anthropic",
                     api_key=_os.environ.get("ANTHROPIC_API_KEY") or "via-proxy",

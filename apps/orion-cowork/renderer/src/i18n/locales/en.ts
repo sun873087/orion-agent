@@ -433,6 +433,7 @@ export default {
   'error.copy': 'Copy error message',
   'error.copied': 'Copied',
   'error.dismiss': 'Dismiss',
+  'header.cost.tooltip': 'Conversation cost ${cost} — click to open usage panel',
   'message.expand': 'Show more',
   'message.collapse': 'Show less',
   'message.failedHistory': 'failed to load history: {msg}',

@@ -107,6 +107,42 @@ const planApi = {
   },
 }
 
+type UpdaterAvailablePayload = { version: string; releaseDate?: string }
+type UpdaterProgressPayload = { percent?: number; transferred?: number; total?: number }
+
+const updaterApi = {
+  onChecking: (cb: () => void): (() => void) => {
+    const l = () => cb()
+    ipcRenderer.on('updater:checking', l)
+    return () => ipcRenderer.removeListener('updater:checking', l)
+  },
+  onAvailable: (cb: (data: UpdaterAvailablePayload) => void): (() => void) => {
+    const l = (_: unknown, data: UpdaterAvailablePayload) => cb(data)
+    ipcRenderer.on('updater:available', l)
+    return () => ipcRenderer.removeListener('updater:available', l)
+  },
+  onProgress: (cb: (data: UpdaterProgressPayload) => void): (() => void) => {
+    const l = (_: unknown, data: UpdaterProgressPayload) => cb(data)
+    ipcRenderer.on('updater:progress', l)
+    return () => ipcRenderer.removeListener('updater:progress', l)
+  },
+  onDownloaded: (cb: (data: UpdaterAvailablePayload) => void): (() => void) => {
+    const l = (_: unknown, data: UpdaterAvailablePayload) => cb(data)
+    ipcRenderer.on('updater:downloaded', l)
+    return () => ipcRenderer.removeListener('updater:downloaded', l)
+  },
+  onError: (cb: (data: { message: string }) => void): (() => void) => {
+    const l = (_: unknown, data: { message: string }) => cb(data)
+    ipcRenderer.on('updater:error', l)
+    return () => ipcRenderer.removeListener('updater:error', l)
+  },
+  /** User 點「立即更新」— quit+install。 */
+  quitAndInstall: async (): Promise<void> => {
+    return ipcRenderer.invoke('updater:quitAndInstall')
+  },
+}
+
+
 type BackupRestartPayload = {
   reason: string
   moved_to: string
@@ -201,6 +237,7 @@ contextBridge.exposeInMainWorld('schedulerApi', schedulerApi)
 contextBridge.exposeInMainWorld('planApi', planApi)
 contextBridge.exposeInMainWorld('budgetApi', budgetApi)
 contextBridge.exposeInMainWorld('backupApi', backupApi)
+contextBridge.exposeInMainWorld('updaterApi', updaterApi)
 
 declare global {
   interface Window {
@@ -211,5 +248,6 @@ declare global {
     planApi: typeof planApi
     budgetApi: typeof budgetApi
     backupApi: typeof backupApi
+    updaterApi: typeof updaterApi
   }
 }

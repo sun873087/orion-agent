@@ -1,21 +1,48 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}orion-model-proxy{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
+    :root { --tag-bg: #2d3748; --tag-fg: #cbd5e0; }
     body { max-width: 1100px; margin: 0 auto; padding: 1rem; }
-    .danger { color: #c0392b; }
-    .ok { color: #27ae60; }
-    .tag { background: #eee; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 0.85em; }
-    .token-flash { background: #fff3cd; border: 1px solid #ffeaa7; padding: 1rem; border-radius: 6px; }
+    .danger { color: #fc8181; }
+    .ok { color: #68d391; }
+    .tag { background: var(--tag-bg); color: var(--tag-fg); padding: 2px 6px;
+           border-radius: 3px; font-family: monospace; font-size: 0.85em; }
+    .token-flash { background: #2d3748; border: 1px solid #f6ad55; padding: 1rem; border-radius: 6px; }
     .token-flash code { word-break: break-all; }
     nav { margin-bottom: 1.5rem; }
     table.compact td, table.compact th { padding: 0.4rem 0.6rem; }
     .actions form { display: inline-block; margin: 0; }
+    .sparkline { display: inline-block; vertical-align: middle; }
+    .sparkline path.line { stroke: #4299e1; stroke-width: 1.5; fill: none; }
+    .sparkline path.area { fill: rgba(66, 153, 225, 0.15); stroke: none; }
+    /* light theme override(若 user 主動切) */
+    html[data-theme="light"] :root,
+    html[data-theme="light"] { --tag-bg: #edf2f7; --tag-fg: #2d3748; }
+    html[data-theme="light"] .danger { color: #c0392b; }
+    html[data-theme="light"] .ok { color: #27ae60; }
+    html[data-theme="light"] .token-flash { background: #fff3cd; border-color: #ffeaa7; }
+    .theme-toggle { background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; }
   </style>
+  <script>
+    // localStorage 記憶 theme(全 page 共用)— 先 init 再 render 避免 flash
+    (function () {
+      const saved = localStorage.getItem('orion-admin-theme');
+      if (saved === 'light' || saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    })();
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('orion-admin-theme', next);
+    }
+  </script>
 </head>
 <body>
   <nav>
@@ -24,6 +51,10 @@
     </ul>
     <ul>
       <li><a href="/admin/ui/users">Users</a></li>
+      <li><a href="/admin/ui/audit">Audit log</a></li>
+      <li>
+        <button type="button" class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌓</button>
+      </li>
       <li>
         <form method="post" action="/admin/ui/logout" style="display:inline">
           <button class="contrast outline" type="submit">Logout</button>

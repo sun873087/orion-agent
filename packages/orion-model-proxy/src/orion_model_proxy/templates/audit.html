@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Audit log — orion-model-proxy{% endblock %}
+{% block content %}
+<h2>Audit log</h2>
+<p><small>Recent admin actions(create / delete / revoke / rotate / budget set)。</small></p>
+<table class="compact">
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Action</th>
+      <th>Target</th>
+      <th>Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr>
+      <td><code>{{ e.ts }}</code></td>
+      <td><span class="tag">{{ e.action }}</span></td>
+      <td>
+        {% if e.target_type %}
+          <span class="tag">{{ e.target_type }}</span>
+          <code>{{ e.target_id or '—' }}</code>
+        {% else %} — {% endif %}
+      </td>
+      <td><small><code>{{ e.detail or '' }}</code></small></td>
+    </tr>
+    {% endfor %}
+    {% if not entries %}
+    <tr><td colspan="4"><em>No audit entries yet.</em></td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endblock %}

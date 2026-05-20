@@ -1,6 +1,6 @@
 .PHONY: help install test test-model test-sdk test-cli test-chat-api test-e2e-chat-api test-e2e-cowork test-sidecar test-all lint typecheck \
         gen-types \
-        dev-cli dev-api dev-web dev-cowork dev-model-proxy \
+        dev-cli dev-api dev-web dev-cowork dev-model-proxy proxy-bootstrap \
         demo-anthropic demo-openai \
         build-web build-cowork build-sidecar build-cowork-dist \
         clean
@@ -124,7 +124,40 @@ dev-cowork:
 # User Bearer 由 admin 透過 /admin/ui 為每位 user 生成,client 端設 ORION_MODEL_PROXY_KEY=<token>
 # Host 端切過去:export ORION_MODEL_PROXY_URL=http://127.0.0.1:9090
 dev-model-proxy:
+	@PORT=$${ORION_MODEL_PROXY_PORT:-9090}; \
+	STALE=$$(lsof -ti :$$PORT 2>/dev/null || true); \
+	if [ -n "$$STALE" ]; then \
+		echo "[dev-model-proxy] killing stale proxy(s) on :$$PORT — pids: $$STALE"; \
+		kill -9 $$STALE 2>/dev/null || true; \
+		sleep 0.3; \
+	fi
 	uv run --package orion-model-proxy orion-model-proxy
+
+# Phase 32:首次跑 proxy 一條龍 — 生 ADMIN_KEY、寫 .env、init DB、啟動,
+# 然後 user 自己開瀏覽器到 /admin/ui 建 user + 生 token。
+proxy-bootstrap:
+	@PROXY_ENV=packages/orion-model-proxy/.env; \
+	if [ ! -f $$PROXY_ENV ]; then \
+		cp packages/orion-model-proxy/.env.example $$PROXY_ENV; \
+		echo "[bootstrap] copied .env.example → $$PROXY_ENV"; \
+	fi; \
+	if ! grep -q "^ORION_MODEL_PROXY_ADMIN_KEY=." $$PROXY_ENV; then \
+		KEY=$$(python -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		sed -i.bak "s|^ORION_MODEL_PROXY_ADMIN_KEY=.*|ORION_MODEL_PROXY_ADMIN_KEY=$$KEY|" $$PROXY_ENV; \
+		rm -f $$PROXY_ENV.bak; \
+		echo "[bootstrap] generated fresh ADMIN_KEY into $$PROXY_ENV"; \
+	fi; \
+	ADMIN=$$(grep "^ORION_MODEL_PROXY_ADMIN_KEY=" $$PROXY_ENV | cut -d= -f2-); \
+	echo ""; \
+	echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "  Proxy bootstrap 完成。下一步:"; \
+	echo "    1. $$PROXY_ENV 確認 ANTHROPIC_API_KEY / OPENAI_API_KEY 已填"; \
+	echo "    2. make dev-model-proxy"; \
+	echo "    3. 開 http://127.0.0.1:9090/admin/ui/  →  貼 admin token:"; \
+	echo "       $$ADMIN"; \
+	echo "    4. New user → Generate API key → 把明文 token 貼到 client .env 的"; \
+	echo "       ORION_MODEL_PROXY_KEY"; \
+	echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ───── Build ─────
 build-web:

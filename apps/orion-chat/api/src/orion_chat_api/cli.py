@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 # 只讀 per-app .env(apps/orion-chat/.env);不抓 project root .env。
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
+os.environ.setdefault("ORION_CLIENT_ID", "orion-chat-api")
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 

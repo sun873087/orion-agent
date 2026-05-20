@@ -102,6 +102,27 @@ interface OrionBackupRestartPayload {
   moved_to: string
 }
 
+interface OrionUpdaterAvailablePayload {
+  version: string
+  releaseDate?: string
+}
+
+interface OrionUpdaterProgressPayload {
+  percent?: number
+  transferred?: number
+  total?: number
+}
+
+interface OrionUpdaterApi {
+  onChecking: (cb: () => void) => () => void
+  onAvailable: (cb: (data: OrionUpdaterAvailablePayload) => void) => () => void
+  onProgress: (cb: (data: OrionUpdaterProgressPayload) => void) => () => void
+  onDownloaded: (cb: (data: OrionUpdaterAvailablePayload) => void) => () => void
+  onError: (cb: (data: { message: string }) => void) => () => void
+  quitAndInstall: () => Promise<void>
+}
+
+
 interface OrionBackupApi {
   /** Save dialog 拿 .zip 路徑;canceled → null。 */
   pickSavePath: (defaultName: string) => Promise<string | null>
@@ -127,6 +148,8 @@ declare global {
     budgetApi: OrionBudgetApi
     /** Backup / Restore 通道。 */
     backupApi: OrionBackupApi
+    /** Auto-update(electron-updater)通道。 */
+    updaterApi: OrionUpdaterApi
   }
 }
 

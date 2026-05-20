@@ -102,6 +102,20 @@ async def log_usage(
             )
             s.add(row)
             await s.commit()
+
+            # Phase 33-D — budget threshold webhook 通知。讀回 user.budget_usd
+            # 跟最新 running cost,> 80% / 100% 時 emit(per-event per-user 只
+            # fire 一次,reset 在 set_budget 時走 cache invalidate)。
+            from orion_model_proxy.models import User
+            from orion_model_proxy.webhook import maybe_emit_budget_event
+
+            user = await s.get(User, user_id)
+            if user is not None and user.budget_usd is not None:
+                running = (await get_running_cost(user_id)) + event.cost_usd
+                await maybe_emit_budget_event(
+                    s, user_id=user_id,
+                    running_cost=running, budget_cap=user.budget_usd,
+                )
         await incr_running_cost(user_id, event.cost_usd)
     except Exception as e:  # noqa: BLE001 — fire-and-forget
         _log.warning("usage_log insert failed for %s: %s", user_id, e)

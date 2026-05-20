@@ -34,6 +34,14 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Signing & notarization(env-gated)— env 沒設 → unsigned build,user 機要
+  # 手動「右鍵 → 開啟」過 Gatekeeper。env 全設 → 自動簽 + notarize:
+  #   CSC_LINK           Developer ID Application 憑證 .p12 base64(或 path)
+  #   CSC_KEY_PASSWORD   .p12 解密密碼
+  #   APPLE_ID           Apple ID(notarize 用)
+  #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password
+  #   APPLE_TEAM_ID      team ID
+  notarize: false  # 由 GH Actions 跑時設 true + 提供 env
   target:
     - target: dmg
       arch:
@@ -48,6 +56,9 @@ win:
   extraResources:
     - from: dist/sidecar/orion-cowork-sidecar.exe
       to: sidecar/orion-cowork-sidecar.exe
+  # Windows signing(env-gated):
+  #   WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
+  # 沒設 → unsigned
 
 linux:
   category: Development
@@ -56,4 +67,11 @@ linux:
       arch:
         - x64
 
-# Phase 31-B 才加 signing / notarize 設定;Phase 31-A 先做 unsigned 版本。
+# ─── electron-updater(Phase 33-F)─────────────────────────────────────────
+# 發布到 GitHub Releases — `npm run release` 會用 GH_TOKEN 發 tag → upload
+# DMG / NSIS / latest.yml。client 端 electron-updater 自動 poll latest。
+publish:
+  - provider: github
+    owner: sun873087
+    repo: orion-agent
+    releaseType: release

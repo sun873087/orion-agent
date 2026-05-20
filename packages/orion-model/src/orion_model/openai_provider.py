@@ -69,6 +69,9 @@ class OpenAIProvider:
                 proxy_key = _os.environ.get("ORION_MODEL_PROXY_KEY")
                 if proxy_key:
                     extra_headers["Authorization"] = f"Bearer {proxy_key}"
+                client_id = _os.environ.get("ORION_CLIENT_ID")
+                if client_id:
+                    extra_headers["X-Orion-Client"] = client_id
                 client = AsyncOpenAI(
                     base_url=f"{proxy.rstrip('/')}/openai/v1",
                     api_key=_os.environ.get("OPENAI_API_KEY") or "via-proxy",

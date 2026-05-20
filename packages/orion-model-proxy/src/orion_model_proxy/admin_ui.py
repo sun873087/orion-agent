@@ -204,6 +204,29 @@ async def user_detail_page(
     usage = [{"model": m, "cost": float(c), "count": int(n)} for m, c, n in rows]
     total_cost = sum(u["cost"] for u in usage)
 
+    # 30 天 sparkline data — Python 端 bucket(避 SQLite/PG syntax 分歧)
+    import datetime as dt
+
+    days = 30
+    now = dt.datetime.now(dt.timezone.utc)
+    start_ts = int((now - dt.timedelta(days=days)).timestamp())
+    pts = (
+        await s.execute(
+            select(UsageLog.ts, UsageLog.cost_usd)
+            .where(UsageLog.user_id == user_id)
+            .where(UsageLog.ts >= start_ts)
+        )
+    ).all()
+    buckets: dict[str, float] = {}
+    for ts, cost in pts:
+        d = dt.datetime.fromtimestamp(ts, dt.timezone.utc).strftime("%Y-%m-%d")
+        buckets[d] = buckets.get(d, 0.0) + float(cost)
+    sparkline = []
+    for i in range(days, -1, -1):
+        d = (now - dt.timedelta(days=i)).strftime("%Y-%m-%d")
+        sparkline.append({"date": d, "cost": buckets.get(d, 0.0)})
+    sparkline_max = max((p["cost"] for p in sparkline), default=0.0)
+
     return templates.TemplateResponse(
         request,
         "user_detail.html",
@@ -213,6 +236,8 @@ async def user_detail_page(
             "usage": usage,
             "total_cost": total_cost,
             "new_token": new_token,
+            "sparkline": sparkline,
+            "sparkline_max": sparkline_max,
         },
     )
 
@@ -255,8 +280,8 @@ async def revoke_key_action(
     s: AsyncSession = Depends(db_session),
 ):
     import time
-
     from sqlalchemy import update
+    from orion_model_proxy.audit import record as audit_record
 
     key = await s.get(ApiKey, key_id)
     if key is None:
@@ -266,7 +291,72 @@ async def revoke_key_action(
     )
     await s.commit()
     await invalidate_cache(key.token_hash)
+    await audit_record(
+        s, action="key.revoke", target_type="key", target_id=key_id,
+        detail={"user_id": key.user_id, "via": "ui"},
+    )
     return RedirectResponse(url=f"/admin/ui/users/{key.user_id}", status_code=303)
+
+
+@router.post("/keys/{key_id}/rotate")
+async def rotate_key_action(
+    key_id: str,
+    _=Depends(_require_cookie),
+    s: AsyncSession = Depends(db_session),
+):
+    """UI 版 rotate — atomic gen-new + revoke-old,redirect 回 user detail
+    並把明文 token 透過 query string flash 一次。"""
+    import secrets
+    import time
+    from sqlalchemy import update
+    from orion_model_proxy.audit import record as audit_record
+
+    old = await s.get(ApiKey, key_id)
+    if old is None or old.revoked_at is not None:
+        return RedirectResponse(url="/admin/ui/users", status_code=303)
+    parts = old.token_prefix.split("-", 3)
+    env = parts[2] if len(parts) >= 3 else "prod"
+    plaintext = generate_token(env=env)
+    new_key = ApiKey(
+        id=secrets.token_hex(16),
+        user_id=old.user_id,
+        token_hash=hash_token(plaintext),
+        token_prefix=prefix_for_display(plaintext),
+        label=old.label,
+        created_at=int(time.time()),
+    )
+    s.add(new_key)
+    await s.execute(
+        update(ApiKey).where(ApiKey.id == key_id).values(revoked_at=int(time.time()))
+    )
+    await s.commit()
+    await invalidate_cache(old.token_hash)
+    await audit_record(
+        s, action="key.rotate", target_type="key", target_id=new_key.id,
+        detail={"user_id": old.user_id, "old_key_id": key_id, "via": "ui"},
+    )
+    return RedirectResponse(
+        url=f"/admin/ui/users/{old.user_id}?new_token={plaintext}",
+        status_code=303,
+    )
+
+
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_page(
+    request: Request,
+    limit: int = 200,
+    _=Depends(_require_cookie),
+    s: AsyncSession = Depends(db_session),
+):
+    from orion_model_proxy.models import AuditLog
+
+    limit = max(1, min(limit, 1000))
+    rows = (
+        await s.execute(select(AuditLog).order_by(AuditLog.ts.desc()).limit(limit))
+    ).scalars().all()
+    return templates.TemplateResponse(
+        request, "audit.html", {"entries": rows},
+    )
 
 
 @router.post("/users/{user_id}/budget")

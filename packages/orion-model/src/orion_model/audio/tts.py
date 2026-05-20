@@ -11,6 +11,14 @@ from orion_model.audio.types import SynthesizeResult
 from orion_model.tts_catalog import get_tts_pricing, validate_tts
 
 
+def _with_client_id(headers: dict[str, str]) -> dict[str, str]:
+    """加上 X-Orion-Client 給 proxy 計費 attribution(env 沒設不變)。"""
+    cid = os.environ.get("ORION_CLIENT_ID")
+    if cid:
+        headers = {**headers, "X-Orion-Client": cid}
+    return headers
+
+
 _MIME_MAP = {
     "mp3": "audio/mpeg",
     "opus": "audio/opus",
@@ -68,10 +76,10 @@ async def synthesize(
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{_openai_base()}/v1/audio/speech",
-                headers={
+                headers=_with_client_id({
                     "Authorization": f"Bearer {bearer}",
                     "Content-Type": "application/json",
-                },
+                }),
                 json={
                     "model": model,
                     "voice": voice,
