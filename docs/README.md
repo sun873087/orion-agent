@@ -58,6 +58,7 @@ orion-agent/
 | 看企業規模 / 跨國場景設計筆記 | [`roadmap/enterprise-scale.md`](./roadmap/enterprise-scale.md) |
 | 看 multi-pane 多 agent 協作(實作版) | [`features/multi-pane-collaboration.md`](./features/multi-pane-collaboration.md) |
 | 看 multi-pane 設計筆記 / 未來方向 | [`roadmap/multi-pane-collaboration.md`](./roadmap/multi-pane-collaboration.md) |
+| 看 multi-mode collab(Coordinator/Swarm 接 GUI) | [`roadmap/multi-mode-collab.md`](./roadmap/multi-mode-collab.md) |
 | 卡關 | [`guides/troubleshooting.md`](./guides/troubleshooting.md) |
 
 ## 寫文件原則
