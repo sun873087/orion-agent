@@ -157,6 +157,14 @@ orion-agent 的 vision + 未來方向。**主題式組織**(不按 phase 編號)
 - **Multi-region**:proxy / chat-api 跨 region(誰負責 user 的 session?)
 - **Backup-restore 跨 backend**:SQLite → Postgres / 反向(目前同 backend OK,跨 backend 需 schema convert)
 
+## 企業規模 / 跨國場景
+
+公司內部 1 萬人 + 跨國 = 完全不同 league(SSO / region-pinned 資料 / DLP /
+audit / SCIM / MDM / cost-center 計費 / 多 LLM provider failover ...)。
+**目前不在實作範圍**,但設計思考已留檔給未來。
+
+→ [`enterprise-scale.md`](./enterprise-scale.md)
+
 ## 不會做的(明確 out-of-scope)
 
 - **自家 LLM training**:orion 是 client-side agent runtime,不訓 model
@@ -168,5 +176,6 @@ orion-agent 的 vision + 未來方向。**主題式組織**(不按 phase 編號)
 ## 看完繼續
 
 - [`../README.md`](../README.md) — 整體入口
+- [`enterprise-scale.md`](./enterprise-scale.md) — 企業規模 / 跨國的設計筆記(未來再啟動)
 - [`../architecture/design-decisions.md`](../architecture/design-decisions.md) — 已決定的事
 - [`../features/`](../features/) — 各 feature 的「未來方向」段落(各篇 inline)
