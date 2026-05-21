@@ -222,6 +222,50 @@ async def test_cost_summary_empty_collab(engine):
 
 
 @pytest.mark.asyncio
+async def test_persist_and_get_session_stats(engine):
+    """寫累積 token 用量 → 讀回 → 數字相同。"""
+    await storage.persist_session_stats(
+        engine, "sx",
+        input_tokens=1500, output_tokens=600,
+        cache_read_tokens=300, cache_creation_tokens=200, turns=4,
+    )
+    got = await storage.get_session_stats(engine, "sx")
+    assert got["input_tokens"] == 1500
+    assert got["output_tokens"] == 600
+    assert got["cache_read_tokens"] == 300
+    assert got["cache_creation_tokens"] == 200
+    assert got["turns"] == 4
+
+
+@pytest.mark.asyncio
+async def test_get_session_stats_missing(engine):
+    """沒 row → 全部 0(不是 None)。"""
+    got = await storage.get_session_stats(engine, "no-such-sess")
+    assert got == {
+        "input_tokens": 0, "output_tokens": 0,
+        "cache_read_tokens": 0, "cache_creation_tokens": 0, "turns": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_persist_session_stats_overwrites(engine):
+    """重複 persist 覆寫(cumulative 由 caller 傳完整值,不 +=)。"""
+    await storage.persist_session_stats(
+        engine, "sx",
+        input_tokens=100, output_tokens=50, cache_read_tokens=0,
+        cache_creation_tokens=0, turns=1,
+    )
+    await storage.persist_session_stats(
+        engine, "sx",
+        input_tokens=300, output_tokens=150, cache_read_tokens=20,
+        cache_creation_tokens=10, turns=3,
+    )
+    got = await storage.get_session_stats(engine, "sx")
+    assert got["input_tokens"] == 300
+    assert got["turns"] == 3
+
+
+@pytest.mark.asyncio
 async def test_cost_summary_with_panes(engine):
     """有 session row(provider/model/tokens 已記)→ summary 加總。"""
     c = await storage.create_collaboration(engine, name="collab-with-data")

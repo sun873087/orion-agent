@@ -1103,6 +1103,24 @@ class Handlers:
                     f"[budget] check/notify failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
+            # ─── Persist cumulative token usage────────────
+            # 寫 conv.stats 進 cowork_session_ext 累積欄位,跨 sidecar 重啟
+            # cost 才不會歸 0。在這裡呼是因為 turn 結束才有當輪累積數字。
+            try:
+                stats = conv.stats
+                await storage.persist_session_stats(
+                    engine, sid,
+                    input_tokens=stats.input_tokens,
+                    output_tokens=stats.output_tokens,
+                    cache_read_tokens=stats.cache_read_tokens,
+                    cache_creation_tokens=stats.cache_creation_tokens,
+                    turns=stats.turns,
+                )
+            except Exception as e: # noqa: BLE001
+                print(
+                    f"[stats] persist failed for {sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
 
     def _build_can_use_tool(
         self,
@@ -2897,6 +2915,19 @@ class Handlers:
         )
         if conv.state_messages:
             self._title_done.add(sid)
+        # Hydrate cumulative token stats from DB(cross-restart cost 才不歸 0)
+        try:
+            persisted = await storage.get_session_stats(engine, sid)
+            conv.stats.input_tokens = persisted["input_tokens"]
+            conv.stats.output_tokens = persisted["output_tokens"]
+            conv.stats.cache_read_tokens = persisted["cache_read_tokens"]
+            conv.stats.cache_creation_tokens = persisted["cache_creation_tokens"]
+            conv.stats.turns = persisted["turns"]
+        except Exception as e: # noqa: BLE001
+            print(
+                f"[stats] hydrate failed for {sid[:8]}: {e}",
+                file=__import__('sys').stderr, flush=True,
+            )
         return conv
 
     async def conversation_abort(

@@ -218,6 +218,20 @@ export function useSwitchConversation() {
   }, [])
 }
 
+/** 共用 hydrate helper — 給 MultiPaneView 等非主切 session 場景重用。
+ *  Public 是為了讓 collab view 開啟 N pane 時各自先 load history 進 store。 */
+export async function hydrateSessionMessages(sessionId: string): Promise<void> {
+  const existing = useAgentStore.getState().messagesBySession[sessionId]
+  if (existing && existing.length > 0) return
+  try {
+    const loaded = await loadMessages(sessionId)
+    _hydrateMessages(sessionId, loaded)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    useAgentStore.getState().setError(sessionId, `failed to load history: ${msg}`)
+  }
+}
+
 function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
   // Reset 後重 build store.messages — attachment 只帶 ref,base64 由
   // MessageBubble.LazyImage 之後 useEffect 拿,不擋切換 latency。

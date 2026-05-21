@@ -199,6 +199,14 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             "pane_name TEXT", # @backend-coder / @reviewer / 同 collab 內唯一
             "pane_role TEXT", # researcher / coder / reviewer / doc-writer / custom
             "pane_position TEXT", # JSON {row, col, w, h, minimized},layout 還原用
+            # 累積 token 用量持久化—SDK Session 表只有 input/output,沒 cache。
+            # conv.stats 是 forward-only in-memory,sidecar restart 就歸 0;
+            # 寫進這幾個 column 跨 process 才看得到累積 cost。
+            "cum_input_tokens INTEGER NOT NULL DEFAULT 0",
+            "cum_output_tokens INTEGER NOT NULL DEFAULT 0",
+            "cum_cache_read_tokens INTEGER NOT NULL DEFAULT 0",
+            "cum_cache_creation_tokens INTEGER NOT NULL DEFAULT 0",
+            "cum_turns INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 await conn.exec_driver_sql(
@@ -1447,6 +1455,68 @@ async def delete_project(engine: AsyncEngine, project_id: str) -> bool:
         )
         await conn.commit()
     return (result.rowcount or 0) > 0
+
+
+async def persist_session_stats(
+    engine: AsyncEngine,
+    session_id: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int,
+    cache_creation_tokens: int,
+    turns: int,
+) -> None:
+    """寫累積 token 用量進 cowork_session_ext。每 send 完呼一次。
+
+    UPSERT — 既有 row 直接覆蓋(不 +=,因為 caller 已經傳 cumulative 值)。
+    """
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext
+                (session_id, cum_input_tokens, cum_output_tokens,
+                 cum_cache_read_tokens, cum_cache_creation_tokens, cum_turns)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                cum_input_tokens = excluded.cum_input_tokens,
+                cum_output_tokens = excluded.cum_output_tokens,
+                cum_cache_read_tokens = excluded.cum_cache_read_tokens,
+                cum_cache_creation_tokens = excluded.cum_cache_creation_tokens,
+                cum_turns = excluded.cum_turns
+            """,
+            (
+                session_id, input_tokens, output_tokens,
+                cache_read_tokens, cache_creation_tokens, turns,
+            ),
+        )
+        await conn.commit()
+
+
+async def get_session_stats(
+    engine: AsyncEngine, session_id: str,
+) -> dict[str, int]:
+    """讀累積 token 用量。沒 row 全回 0。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT cum_input_tokens, cum_output_tokens, cum_cache_read_tokens, "
+            "cum_cache_creation_tokens, cum_turns "
+            "FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None:
+        return {
+            "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_creation_tokens": 0, "turns": 0,
+        }
+    return {
+        "input_tokens": row[0] or 0,
+        "output_tokens": row[1] or 0,
+        "cache_read_tokens": row[2] or 0,
+        "cache_creation_tokens": row[3] or 0,
+        "turns": row[4] or 0,
+    }
 
 
 async def list_sessions_in_project(

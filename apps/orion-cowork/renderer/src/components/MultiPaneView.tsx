@@ -9,6 +9,7 @@ import {
   type CollaborationCostSummary,
   type CollaborationView,
 } from '../api/agent'
+import { hydrateSessionMessages } from '../hooks/useAgent'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import type { Message } from '../store/agent'
@@ -36,7 +37,15 @@ export function MultiPaneView() {
   const [loading, setLoading] = useState(true)
   // collaborations 列表變了(add_pane 完成 → setCollaborations)→ 重撈 view
   const collabSig = collaborations.find((c) => c.id === collaborationId)?.panes.length ?? 0
+  // Pane busy 狀態變化(send 完 transition idle 那刻)→ refresh cost。
+  // 用 join string 變動觸發 useEffect dep,避免 zustand object reference 比較。
+  const busyKey = useAgentStore((s) => {
+    const cur = s.collaborations.find((c) => c.id === collaborationId)
+    if (!cur) return ''
+    return cur.panes.map((p) => `${p.session_id}:${s.busyBySession[p.session_id] ? 'B' : 'I'}`).join('|')
+  })
 
+  // Main effect — load view + hydrate + initial cost
   useEffect(() => {
     if (!collaborationId) return
     let cancelled = false
@@ -45,6 +54,13 @@ export function MultiPaneView() {
       try {
         const v = await getCollaboration(collaborationId)
         if (!cancelled) setView(v)
+        // Hydrate 每個 pane 的 messages 進 store(panes 本身不會自動載 history,
+        // 跟 useSwitchConversation 不同 — 那個只載 active session 的)
+        if (v) {
+          await Promise.all(
+            v.panes.map((p) => hydrateSessionMessages(p.session_id)),
+          )
+        }
         const c = await getCollaborationCostSummary(collaborationId)
         if (!cancelled) setCostSummary(c)
       } finally {
@@ -55,6 +71,27 @@ export function MultiPaneView() {
       cancelled = true
     }
   }, [collaborationId, collabSig])
+
+  // Live refresh cost on pane busy → idle transitions(send 結束時最重要的瞬間)。
+  // 也每 5s polling 一次當保險(turn 中 LLM 在跑時也想看到累積上升)。
+  useEffect(() => {
+    if (!collaborationId) return
+    let cancelled = false
+    async function refresh() {
+      try {
+        const c = await getCollaborationCostSummary(collaborationId!)
+        if (!cancelled) setCostSummary(c)
+      } catch {
+        // 忽略 — 短暫網路 / sidecar 抖動下次重試
+      }
+    }
+    void refresh()
+    const interval = setInterval(() => void refresh(), 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [collaborationId, busyKey])
 
   // 切 active pane 時把 global sessionId 同步,讓既有 InputBox 送到對的 session。
   useEffect(() => {
