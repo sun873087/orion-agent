@@ -11,7 +11,7 @@ import {
   type ModelCatalog,
   type RoleListItem,
 } from '../api/agent'
-import { useDisabledRoles } from '../hooks/usePaneRolesEnabled'
+import { useDisabledRoles } from '../hooks/useDisabledRoles'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'

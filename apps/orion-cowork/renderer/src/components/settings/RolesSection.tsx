@@ -9,7 +9,7 @@ import {
   type Role,
   type RoleListItem,
 } from '../../api/agent'
-import { useDisabledRoles } from '../../hooks/usePaneRolesEnabled'
+import { useDisabledRoles } from '../../hooks/useDisabledRoles'
 import { useTranslation } from '../../i18n'
 
 const SOURCE_COLOR: Record<string, string> = {
@@ -41,14 +41,6 @@ export function RolesSection() {
     try {
       const items = await listRoles()
       setItems(items)
-      // user_dir 直接從第一筆 user role 推斷不可靠 — 改用 sidecar 回給 list 的
-      // 額外 field;listRoles 已忽略它,加 raw 抓
-      try {
-        const res = await fetch('') // placeholder, 真的應該從 RPC 來
-        void res
-      } catch {
-        // ignore
-      }
     } finally {
       setLoading(false)
     }

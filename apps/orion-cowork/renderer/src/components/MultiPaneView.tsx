@@ -10,7 +10,7 @@ import {
   type CollaborationView,
 } from '../api/agent'
 import { hydrateSessionMessages } from '../hooks/useAgent'
-import { useDisabledRoles } from '../hooks/usePaneRolesEnabled'
+import { useDisabledRoles } from '../hooks/useDisabledRoles'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import type { Message } from '../store/agent'
