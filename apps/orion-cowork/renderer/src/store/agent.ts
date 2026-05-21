@@ -207,6 +207,31 @@ type AgentState = {
   setPendingQuestion: (sid: string, q: PendingQuestion | null) => void
 
   finishLoop: (sid: string, status: LoopStatus) => void
+
+  /** Multi-pane collaboration — 開啟一個 collab window 時 session 切成「collab 視圖」,
+   *  N 個 pane 並排。in-memory only,DB(cowork_collaborations)是 source of truth。
+   *  null = 一般單 session view。 */
+  currentCollaborationId: string | null
+  collaborations: Array<{
+    id: string
+    name: string
+    workspace_dir: string | null
+    project_id: string | null
+    budget_usd_cap: number | null
+    panes: Array<{
+      session_id: string
+      pane_name: string
+      pane_role: string | null
+      pane_position: Record<string, unknown> | null
+    }>
+  }>
+  setCollaborations: (items: AgentState['collaborations']) => void
+  openCollaboration: (collaborationId: string | null) => void
+  /** Active pane index within current collab view(焦點 pane,鍵盤輸入 → 它);
+   *  null = 還沒 focus。 */
+  activeCollabPaneIndex: number | null
+  setActiveCollabPaneIndex: (index: number | null) => void
+
   /** 全清(logout / 災難用 — 不常用)。 */
   reset: () => void
 }
@@ -452,6 +477,15 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
     }),
   closeForkRequest: () => set({ forkRequest: null }),
 
+  // Multi-pane collaboration
+  currentCollaborationId: null,
+  collaborations: [],
+  setCollaborations: (items) => set({ collaborations: items }),
+  openCollaboration: (collaborationId) =>
+    set({ currentCollaborationId: collaborationId, activeCollabPaneIndex: 0 }),
+  activeCollabPaneIndex: null,
+  setActiveCollabPaneIndex: (index) => set({ activeCollabPaneIndex: index }),
+
   enterSidebarSelection: () =>
     set({ sidebarSelectionMode: true, selectedSessionIds: [] }),
   exitSidebarSelection: () =>
@@ -542,6 +576,9 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       lastLoopStatusBySession: {},
       pendingQuestionBySession: {},
       compactingBySession: {},
+      currentCollaborationId: null,
+      collaborations: [],
+      activeCollabPaneIndex: null,
     }),
 }), {
   name: 'orion-cowork-agent/v2',

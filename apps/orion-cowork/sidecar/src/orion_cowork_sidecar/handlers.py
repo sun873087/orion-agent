@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from dotenv import load_dotenv
@@ -544,6 +544,14 @@ class Handlers:
             "project.create": self.project_create,
             "project.update": self.project_update,
             "project.delete": self.project_delete,
+            "collaboration.create": self.collaboration_create,
+            "collaboration.list": self.collaboration_list,
+            "collaboration.get": self.collaboration_get,
+            "collaboration.delete": self.collaboration_delete,
+            "collaboration.add_pane": self.collaboration_add_pane,
+            "collaboration.remove_pane": self.collaboration_remove_pane,
+            "collaboration.update_pane_position": self.collaboration_update_pane_position,
+            "collaboration.cost_summary": self.collaboration_cost_summary,
             "memory.list": memory_handlers.memory_list,
             "memory.get": memory_handlers.memory_get,
             "memory.write": memory_handlers.memory_write,
@@ -2544,6 +2552,147 @@ class Handlers:
                 "target_session_id": target_sid,
             })
 
+    @staticmethod
+    def _content_to_text(content: Any) -> str:
+        """從 message.content(str | list[block])抽 plain text 給 cross-pane query。"""
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        parts: list[str] = []
+        for b in content:
+            if isinstance(b, str):
+                parts.append(b)
+                continue
+            if not isinstance(b, dict):
+                continue
+            btype = b.get("type")
+            if btype == "text":
+                t = b.get("text")
+                if isinstance(t, str):
+                    parts.append(t)
+            elif btype == "tool_use":
+                name = b.get("name") or "tool"
+                parts.append(f"[tool: {name}]")
+            elif btype == "tool_result":
+                tc = b.get("content")
+                if isinstance(tc, str):
+                    parts.append(f"[tool result: {tc[:200]}]")
+                elif isinstance(tc, list):
+                    parts.append(
+                        "[tool result: "
+                        + " ".join(
+                            x.get("text", "")[:200] for x in tc
+                            if isinstance(x, dict)
+                        )
+                        + "]"
+                    )
+        return "\n".join(p for p in parts if p)
+
+    def _build_ask_pane_callback(
+        self,
+        collaboration_id: str,
+        engine: AsyncEngine,
+    ) -> Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]:
+        """組裝 AskPaneTool 用的 callback。
+
+        Closure 抓 collaboration_id + engine + self(讀 _aborts 判斷 target 是否 busy)。
+        Tool call 時:
+          1. From requesting_session_id 反查 collab(double-check 真在這 collab)
+          2. By pane_name 找 target pane
+          3. 讀 target session 最近 N 條 message
+          4. 判 status:target session_id in self._aborts → running;有訊息 → done;沒訊息 → idle
+          5. 若 running,從目前 in-flight ctx 取最近活動描述(可選)
+        """
+        async def _ask_pane(params: dict[str, Any]) -> dict[str, Any]:
+            req_sid = params.get("requesting_session_id")
+            pane_name = params.get("pane_name") or ""
+            n_recent = int(params.get("n_recent_messages") or 8)
+            if not isinstance(req_sid, str) or not isinstance(pane_name, str):
+                return {"status": "error", "error": "bad params"}
+            # Confirm requester really在這 collab(避免被偽造跨 collab query)
+            my_cid, _, _ = await storage.get_collaboration_for_session(engine, req_sid)
+            if my_cid != collaboration_id:
+                return {
+                    "status": "not_found",
+                    "pane_name": pane_name,
+                    "error": "requester not part of expected collaboration",
+                }
+            target = await storage.find_collaboration_pane(
+                engine, collaboration_id, pane_name,
+            )
+            if target is None:
+                return {"status": "not_found", "pane_name": pane_name}
+            target_sid = target.session_id
+            # 別自我 query 卡死(LLM 容易誤呼)
+            if target_sid == req_sid:
+                return {
+                    "status": "error",
+                    "pane_name": pane_name,
+                    "error": "cannot AskPane against yourself",
+                }
+            # Status:有 in-flight ctx 表 running
+            is_running = target_sid in self._aborts
+            # 抓 target session 最近 N 條 raw message(user+assistant text)
+            try:
+                raw_msgs = await storage.load_raw_messages(engine, target_sid)
+            except Exception: # noqa: BLE001
+                raw_msgs = []
+            if not raw_msgs:
+                final_status = "running" if is_running else "idle"
+                return {
+                    "status": final_status,
+                    "pane_name": target.pane_name,
+                    "pane_role": target.pane_role,
+                    "current_action": "thinking..." if is_running else None,
+                    "transcript_excerpt": [],
+                    "partial_output": None,
+                }
+            # Tail N 訊息;每條抽 role + text 概要(避免回整 content json)
+            # load_raw_messages 回 list[(role, content_json, metadata_json)]
+            tail = raw_msgs[-n_recent:]
+            excerpt: list[dict[str, Any]] = []
+            for m in tail:
+                role: str | None = None
+                content: Any = None
+                if isinstance(m, tuple):
+                    role = m[0] if len(m) > 0 else None
+                    content = m[1] if len(m) > 1 else None
+                elif isinstance(m, dict):
+                    role = m.get("role")
+                    content = m.get("content")
+                else:
+                    role = getattr(m, "role", None)
+                    content = getattr(m, "content", None)
+                text = self._content_to_text(content)
+                excerpt.append({"role": role, "text": text[:1200]})
+            partial_output = None
+            current_action = None
+            if is_running:
+                # 取最後一條 assistant 部分(可能 stream 中)
+                last_assistant = next(
+                    (e for e in reversed(excerpt) if e["role"] == "assistant"),
+                    None,
+                )
+                if last_assistant:
+                    partial_output = last_assistant["text"]
+                    current_action = "streaming response..."
+                else:
+                    current_action = "processing input..."
+                final_status = "running"
+            else:
+                final_status = "done"
+            return {
+                "status": final_status,
+                "pane_name": target.pane_name,
+                "pane_role": target.pane_role,
+                "current_action": current_action,
+                "transcript_excerpt": excerpt,
+                "partial_output": partial_output,
+            }
+
+        return _ask_pane
+
         return {
             "create": create,
             "list": listing,
@@ -2595,6 +2744,43 @@ class Handlers:
             EnterPlanModeTool(),
             ExitPlanModeTool(),
         ]
+        # Multi-pane collaboration— 若此 session 已綁進 collab,
+        # 注入 AskPaneTool 讓 LLM 可跨 pane query。
+        collab_roster_lines: list[str] = []
+        if session_id is not None:
+            coll_id, my_pane_name, my_pane_role = await storage.get_collaboration_for_session(
+                engine, session_id,
+            )
+            if coll_id is not None:
+                from orion_sdk.tools.special import AskPaneTool
+
+                ask_pane_cb = self._build_ask_pane_callback(coll_id, engine)
+                host_tools.append(AskPaneTool(callback=ask_pane_cb))
+                # System prompt 帶 collaboration roster — LLM 才知道自己是誰、旁邊有誰
+                panes = await storage.list_collaboration_panes(engine, coll_id)
+                others = [p for p in panes if p.session_id != session_id]
+                you_role = my_pane_role or "agent"
+                collab_roster_lines.append(
+                    f"You are pane `@{my_pane_name or 'unnamed'}` (role: {you_role}) "
+                    f"in a multi-pane collaboration. Other panes you can query via "
+                    f"the AskPane tool:"
+                )
+                if others:
+                    for p in others:
+                        role_str = p.pane_role or "agent"
+                        collab_roster_lines.append(
+                            f"  - `@{p.pane_name}` (role: {role_str})"
+                        )
+                else:
+                    collab_roster_lines.append(
+                        "  (no other panes yet — you are working solo for now)"
+                    )
+                collab_roster_lines.append(
+                    "Use AskPane to read what other panes have done. Their output "
+                    "is non-blocking — if they are still running, you'll get partial "
+                    "output + status='running'; decide whether to proceed with partial "
+                    "info, suggest the user wait, or work on something else."
+                )
         if is_browser_available():
             host_tools.extend(build_browser_tools()) # type: ignore[arg-type]
         tools = (
@@ -2655,6 +2841,11 @@ class Handlers:
             system_prompt += "\n\n# Your instructions for Orion\n\n" + user_instructions.strip()
         if project_custom_instructions:
             system_prompt += "\n\n# Project instructions\n\n" + project_custom_instructions
+        if collab_roster_lines:
+            system_prompt += (
+                "\n\n# Multi-pane collaboration\n\n"
+                + "\n".join(collab_roster_lines)
+            )
 
         include_ws = bool(effective_workspace)
         # Project chat → auto-extract 寫 <workspace>/.orion/memory/
@@ -2872,6 +3063,8 @@ class Handlers:
                 "session_id": sid,
                 "workspace_dir": ext["workspace_dir"],
                 "project_id": ext["project_id"],
+                "collaboration_id": ext["collaboration_id"],
+                "pane_name": ext["pane_name"],
                 "resolved_cwd": str(resolved) if resolved else None,
             },
             "final": True,
@@ -3031,6 +3224,284 @@ class Handlers:
             "workspace_dir": p.workspace_dir,
             "custom_instructions": p.custom_instructions,
             "created_at": p.created_at,
+        }
+
+    # ─── Collaboration (multi-pane) ─────────────────────────────────────
+
+    @staticmethod
+    def _collab_to_dict(c: "storage.Collaboration") -> dict[str, Any]:
+        return {
+            "id": c.id,
+            "name": c.name,
+            "workspace_dir": c.workspace_dir,
+            "project_id": c.project_id,
+            "budget_usd_cap": c.budget_usd_cap,
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
+        }
+
+    @staticmethod
+    def _pane_to_dict(p: "storage.CollaborationPane") -> dict[str, Any]:
+        return {
+            "session_id": p.session_id,
+            "collaboration_id": p.collaboration_id,
+            "pane_name": p.pane_name,
+            "pane_role": p.pane_role,
+            "pane_position": p.pane_position,
+        }
+
+    async def collaboration_create(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        name = params.get("name")
+        if not isinstance(name, str) or not name.strip():
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                "message": "name required"}, "final": True}
+            return
+        workspace_dir = params.get("workspace_dir")
+        project_id = params.get("project_id")
+        budget_usd_cap = params.get("budget_usd_cap")
+        engine = await self.ensure_engine()
+        coll = await storage.create_collaboration(
+            engine,
+            name=name.strip()[:100],
+            workspace_dir=workspace_dir if isinstance(workspace_dir, str) else None,
+            project_id=project_id if isinstance(project_id, str) else None,
+            budget_usd_cap=float(budget_usd_cap) if isinstance(budget_usd_cap, (int, float)) else None,
+        )
+        yield {
+            "event": "collaboration_created",
+            "data": {"collaboration": self._collab_to_dict(coll), "panes": []},
+            "final": True,
+        }
+
+    async def collaboration_list(
+        self, _params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        engine = await self.ensure_engine()
+        colls = await storage.list_collaborations(engine)
+        # 同時帶各 collab 的 panes 簡略表(只 pane_name + role + session_id,layout 細節留給 get)
+        all_data: list[dict[str, Any]] = []
+        for c in colls:
+            panes = await storage.list_collaboration_panes(engine, c.id)
+            all_data.append({
+                "collaboration": self._collab_to_dict(c),
+                "panes": [self._pane_to_dict(p) for p in panes],
+            })
+        yield {
+            "event": "collaboration_list",
+            "data": {"items": all_data},
+            "final": True,
+        }
+
+    async def collaboration_get(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        cid = params.get("collaboration_id")
+        if not isinstance(cid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        coll = await storage.get_collaboration(engine, cid)
+        if coll is None:
+            yield {"event": "error", "data": {"code": "NOT_FOUND"}, "final": True}
+            return
+        panes = await storage.list_collaboration_panes(engine, cid)
+        yield {
+            "event": "collaboration_get",
+            "data": {
+                "collaboration": self._collab_to_dict(coll),
+                "panes": [self._pane_to_dict(p) for p in panes],
+            },
+            "final": True,
+        }
+
+    async def collaboration_delete(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        cid = params.get("collaboration_id")
+        if not isinstance(cid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ok = await storage.delete_collaboration(engine, cid)
+        # 釋放對應 conv:它們可能 cache 在 _conversations,內注入過 AskPaneTool callback
+        for sid in list(self._conversations.keys()):
+            cur_cid, _, _ = await storage.get_collaboration_for_session(engine, sid)
+            if cur_cid is None:
+                self._conversations.pop(sid, None)
+        yield {
+            "event": "collaboration_deleted",
+            "data": {"collaboration_id": cid, "ok": ok},
+            "final": True,
+        }
+
+    async def collaboration_add_pane(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        cid = params.get("collaboration_id")
+        sid = params.get("session_id")
+        pane_name = params.get("pane_name")
+        if not (
+            isinstance(cid, str)
+            and isinstance(sid, str)
+            and isinstance(pane_name, str)
+            and pane_name.strip()
+        ):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS",
+                "message": "collaboration_id, session_id, pane_name required"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        coll = await storage.get_collaboration(engine, cid)
+        if coll is None:
+            yield {"event": "error", "data": {"code": "NOT_FOUND",
+                "message": "collaboration not found"}, "final": True}
+            return
+        # Dedupe by pane_name within collab
+        existing = await storage.find_collaboration_pane(engine, cid, pane_name.strip())
+        if existing is not None and existing.session_id != sid:
+            yield {"event": "error", "data": {"code": "CONFLICT",
+                "message": f"pane name '{pane_name}' already in use"}, "final": True}
+            return
+        pane_role = params.get("pane_role")
+        pane_position = params.get("pane_position")
+        await storage.add_pane_to_collaboration(
+            engine,
+            collaboration_id=cid,
+            session_id=sid,
+            pane_name=pane_name.strip()[:128],
+            pane_role=pane_role if isinstance(pane_role, str) else None,
+            pane_position=pane_position if isinstance(pane_position, dict) else None,
+        )
+        # Invalidate cached conv — 下次 send 重 build,會帶 AskPaneTool
+        self._conversations.pop(sid, None)
+        yield {
+            "event": "pane_added",
+            "data": {
+                "collaboration_id": cid,
+                "session_id": sid,
+                "pane_name": pane_name.strip()[:128],
+                "pane_role": pane_role if isinstance(pane_role, str) else None,
+                "pane_position": pane_position if isinstance(pane_position, dict) else None,
+            },
+            "final": True,
+        }
+
+    async def collaboration_remove_pane(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        if not isinstance(sid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        old_cid = await storage.remove_pane_from_collaboration(engine, sid)
+        # Invalidate cached conv — 下次 send 重 build,沒有 AskPaneTool 了
+        self._conversations.pop(sid, None)
+        yield {
+            "event": "pane_removed",
+            "data": {"session_id": sid, "collaboration_id": old_cid},
+            "final": True,
+        }
+
+    async def collaboration_update_pane_position(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        sid = params.get("session_id")
+        pane_position = params.get("pane_position")
+        if not isinstance(sid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        ok = await storage.update_pane_position(
+            engine, sid,
+            pane_position if isinstance(pane_position, dict) else None,
+        )
+        yield {
+            "event": "pane_position_updated",
+            "data": {"session_id": sid, "ok": ok},
+            "final": True,
+        }
+
+    async def collaboration_cost_summary(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        cid = params.get("collaboration_id")
+        if not isinstance(cid, str):
+            yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
+            return
+        engine = await self.ensure_engine()
+        # SDK sessions table 的 input_tokens / output_tokens 從未被 update —
+        # 真實 token 計數活在 live `conv.stats` 上(in-memory)。所以我們:
+        #   1. 從 storage 拿 panes 結構 + provider/model(no tokens)
+        #   2. 對每 pane 取 in-memory conv;沒在記憶體就 resume
+        #   3. 從 conv.stats 拿 cumulative input/output/cache_read/cache_creation
+        #   4. 用 orion_model.pricing.get_pricing(有 unknown-model fallback)算 USD
+        from orion_model.pricing import get_pricing
+
+        panes = await storage.list_collaboration_panes(engine, cid)
+        out_panes: list[dict[str, Any]] = []
+        total_in = 0
+        total_out = 0
+        total_usd = 0.0
+        for p in panes:
+            sid = p.session_id
+            conv = self._conversations.get(sid)
+            if conv is None:
+                # Resume from DB so we get conv.stats — Conversation.__init__ 不會
+                # 自動 hydrate stats(stats 是 forward-only accumulator),但 provider /
+                # model 至少能拿到當前 metadata 顯給 user。
+                conv = await self._resume_from_db(sid, engine)
+                if conv is not None:
+                    self._conversations[sid] = conv
+            provider = conv.provider.name if conv else None
+            model = conv.provider.model if conv else None
+            stats = getattr(conv, "stats", None) if conv else None
+            in_t = getattr(stats, "input_tokens", 0) if stats else 0
+            out_t = getattr(stats, "output_tokens", 0) if stats else 0
+            cr_t = getattr(stats, "cache_read_tokens", 0) if stats else 0
+            cc_t = getattr(stats, "cache_creation_tokens", 0) if stats else 0
+            n_turns = getattr(stats, "turns", 0) if stats else 0
+            cost_usd = 0.0
+            if provider and model:
+                pricing = get_pricing(provider, model)
+                in_price = pricing.get("input", 0.0)
+                out_price = pricing.get("output", 0.0)
+                cr_price = pricing.get("cache_read", in_price)
+                cc_price = pricing.get("cache_creation", in_price)
+                cost_usd = round(
+                    (in_t * in_price + out_t * out_price
+                     + cr_t * cr_price + cc_t * cc_price) / 1_000_000,
+                    6,
+                )
+            total_in += in_t
+            total_out += out_t
+            total_usd += cost_usd
+            out_panes.append({
+                "session_id": sid,
+                "pane_name": p.pane_name,
+                "pane_role": p.pane_role,
+                "pane_position": p.pane_position,
+                "model": model,
+                "provider": provider,
+                "input_tokens": in_t,
+                "output_tokens": out_t,
+                "cache_read_tokens": cr_t,
+                "cache_creation_tokens": cc_t,
+                "n_turns": n_turns,
+                "n_messages": 0, # 維持既有 API shape
+                "cost_usd": cost_usd,
+            })
+        yield {
+            "event": "collaboration_cost_summary",
+            "data": {
+                "total_panes": len(panes),
+                "input_tokens": total_in,
+                "output_tokens": total_out,
+                "total_cost_usd": round(total_usd, 6),
+                "panes": out_panes,
+            },
+            "final": True,
         }
 
     async def conversation_delete(

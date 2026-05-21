@@ -56,6 +56,8 @@ orion-agent/
 | 看 memory 系統 | [`features/memory.md`](./features/memory.md) |
 | 看為何 Cowork 不走 chat-api | [`architecture/design-decisions.md`](./architecture/design-decisions.md) |
 | 看企業規模 / 跨國場景設計筆記 | [`roadmap/enterprise-scale.md`](./roadmap/enterprise-scale.md) |
+| 看 multi-pane 多 agent 協作(實作版) | [`features/multi-pane-collaboration.md`](./features/multi-pane-collaboration.md) |
+| 看 multi-pane 設計筆記 / 未來方向 | [`roadmap/multi-pane-collaboration.md`](./roadmap/multi-pane-collaboration.md) |
 | 卡關 | [`guides/troubleshooting.md`](./guides/troubleshooting.md) |
 
 ## 寫文件原則

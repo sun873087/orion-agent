@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookCheck,
   Check,
@@ -213,8 +213,8 @@ function isLikelyTextFile(f: File): boolean {
 // ─── @ mention detection──────────────────────────────
 
 type MentionContext = {
-  /** @file: 拖檔 / 路徑 引用,@skill: 載 skill */
-  mode: 'file' | 'skill'
+  /** @file: 拖檔 / 路徑 引用,@skill: 載 skill,@pane: cross-pane reference(collab 內) */
+  mode: 'file' | 'skill' | 'pane'
   /** `:` 後面 user 還在打的 query string */
   query: string
   /** `@` 在 text 內的 index(replace 時用) */
@@ -224,8 +224,16 @@ type MentionContext = {
 }
 
 /** 從 cursor 往回掃 `@`,判斷現在是否在 mention 中。
+ *
  * 條件:`@` 在 string 開頭 或 前一字是 whitespace,從 `@` 到 cursor 之間
- * 沒 whitespace。 */
+ * 沒 whitespace。
+ *
+ * 模式判定:
+ * - `@skill:xxx` → skill
+ * - `@file:xxx` → file
+ * - `@pane:xxx` → pane(明確指 cross-pane reference)
+ * - 其他 `@xxx`:由 caller 看 context — 在 collab 內優先試 pane,否則 file
+ */
 function detectMention(text: string, cursorPos: number): MentionContext | null {
   let i = cursorPos
   while (i > 0) {
@@ -235,11 +243,14 @@ function detectMention(text: string, cursorPos: number): MentionContext | null {
       if (i - 1 === 0 || /\s/.test(text[i - 2])) {
         const token = text.slice(i, cursorPos)
         if (/\s/.test(token)) return null
-        // 判 mode:`skill:xxx` 切 skill,其他都 file(也接受 `file:xxx`)
         if (token.startsWith('skill:')) {
           return { mode: 'skill', query: token.slice(6), startIdx: i - 1, endIdx: cursorPos }
         }
+        if (token.startsWith('pane:')) {
+          return { mode: 'pane', query: token.slice(5), startIdx: i - 1, endIdx: cursorPos }
+        }
         const fileQuery = token.startsWith('file:') ? token.slice(5) : token
+        // file mode 也加 query — caller 視 collab context 決定要不要疊加 pane suggestions
         return { mode: 'file', query: fileQuery, startIdx: i - 1, endIdx: cursorPos }
       }
       return null
@@ -381,30 +392,84 @@ export function InputBox({ onSend, onAbort }: Props) {
     })()
   }, [mention])
 
-  /** 過濾 mention 候選清單 — file fuzzy match path,skill fuzzy match name */
-  const mentionMatches = (() => {
-    if (!mention) return [] as Array<{ key: string; label: string; sublabel: string; payload: { mode: 'file' | 'skill'; absPath?: string; relPath?: string; size?: number; name?: string } }>
-    if (mention.mode === 'file') {
-      return workspaceFiles
-        .filter((f) => fuzzyMatch(f.relPath, mention.query))
+  // 當前 session 所在 collab 的其他 panes — `@<name>` 給 cross-pane reference 用。
+  // 用 stable selectors + useMemo 推導,避免 zustand selector 每次回傳新 array
+  // 觸發 infinite re-render(useSyncExternalStore reference 比較)。
+  const collabId = useAgentStore((s) => s.currentCollaborationId)
+  const collaborationsList = useAgentStore((s) => s.collaborations)
+  const currentSidForCollab = useAgentStore((s) => s.sessionId)
+  const collabPanes = useMemo(() => {
+    if (!collabId) return [] as Array<{ session_id: string; pane_name: string; pane_role: string | null }>
+    const coll = collaborationsList.find((c) => c.id === collabId)
+    if (!coll) return []
+    return coll.panes
+      .filter((p) => p.session_id !== currentSidForCollab)
+      .map((p) => ({ session_id: p.session_id, pane_name: p.pane_name, pane_role: p.pane_role }))
+  }, [collabId, collaborationsList, currentSidForCollab])
+
+  type MentionItem = {
+    key: string
+    label: string
+    sublabel: string
+    payload: {
+      mode: 'file' | 'skill' | 'pane'
+      absPath?: string
+      relPath?: string
+      size?: number
+      name?: string
+      paneName?: string
+    }
+  }
+
+  /** 過濾 mention 候選清單。
+   *  - skill mode → 純 skill list
+   *  - pane mode  → 純 collab panes(排除自己)
+   *  - file mode  → workspace files;若在 collab,**panes 疊在最上面**讓 user 看到 */
+  const mentionMatches = ((): MentionItem[] => {
+    if (!mention) return []
+    if (mention.mode === 'skill') {
+      return skillSlashes
+        .map((s) => s.name.replace(/^\//, ''))
+        .filter((name) => fuzzyMatch(name, mention.query))
         .slice(0, 12)
-        .map((f) => ({
-          key: f.absPath,
-          label: f.relPath,
-          sublabel: humanSize(f.size),
-          payload: { mode: 'file' as const, absPath: f.absPath, relPath: f.relPath, size: f.size },
+        .map((name) => ({
+          key: `skill:${name}`,
+          label: name,
+          sublabel: 'skill',
+          payload: { mode: 'skill' as const, name },
         }))
     }
-    return skillSlashes
-      .map((s) => s.name.replace(/^\//, ''))
-      .filter((name) => fuzzyMatch(name, mention.query))
-      .slice(0, 12)
-      .map((name) => ({
-        key: `skill:${name}`,
-        label: name,
-        sublabel: 'skill',
-        payload: { mode: 'skill' as const, name },
+    if (mention.mode === 'pane') {
+      return collabPanes
+        .filter((p) => fuzzyMatch(p.pane_name.replace(/^@/, ''), mention.query))
+        .slice(0, 12)
+        .map((p) => ({
+          key: `pane:${p.session_id}`,
+          label: p.pane_name,
+          sublabel: p.pane_role || 'pane',
+          payload: { mode: 'pane' as const, paneName: p.pane_name },
+        }))
+    }
+    // file mode(可能疊加 panes)
+    const panesPart: MentionItem[] = collabPanes
+      .filter((p) => fuzzyMatch(p.pane_name.replace(/^@/, ''), mention.query))
+      .slice(0, 6)
+      .map((p) => ({
+        key: `pane:${p.session_id}`,
+        label: p.pane_name,
+        sublabel: p.pane_role || 'pane',
+        payload: { mode: 'pane' as const, paneName: p.pane_name },
       }))
+    const filesPart: MentionItem[] = workspaceFiles
+      .filter((f) => fuzzyMatch(f.relPath, mention.query))
+      .slice(0, 12 - panesPart.length)
+      .map((f) => ({
+        key: f.absPath,
+        label: f.relPath,
+        sublabel: humanSize(f.size),
+        payload: { mode: 'file' as const, absPath: f.absPath, relPath: f.relPath, size: f.size },
+      }))
+    return [...panesPart, ...filesPart]
   })()
   // popup 開條件 — mention 在就開(empty matches 也顯空 state,user 才知道
   // 自己打的 query 沒命中而不是 popup 沒觸發)
@@ -453,6 +518,22 @@ export function InputBox({ onSend, onAbort }: Props) {
     }
     if (p.mode === 'skill' && p.name) {
       const inserted = `@skill:${p.name}`
+      const newText = before + inserted + after
+      setText(newText)
+      if (textareaRef.current) {
+        textareaRef.current.value = newText
+        const newPos = mention.startIdx + inserted.length
+        requestAnimationFrame(() => {
+          textareaRef.current?.setSelectionRange(newPos, newPos)
+          textareaRef.current?.focus()
+        })
+      }
+      setMention(null)
+      return
+    }
+    if (p.mode === 'pane' && p.paneName) {
+      // pane_name 已經帶 @ 前綴(@xxx 形式),直接 inline 寫進文字
+      const inserted = p.paneName.startsWith('@') ? p.paneName : `@${p.paneName}`
       const newText = before + inserted + after
       setText(newText)
       if (textareaRef.current) {
@@ -915,7 +996,13 @@ export function InputBox({ onSend, onAbort }: Props) {
         {showMention && (
           <div className="scrollbar-thin mb-2 max-h-72 overflow-y-auto rounded-2xl border border-bg-hover bg-bg-panel p-1.5 shadow-xl">
             <div className="border-b border-bg-hover px-3 py-1 text-[10px] uppercase tracking-wide text-fg-subtle">
-              {mention?.mode === 'skill' ? 'Skills' : 'Files'}
+              {mention?.mode === 'skill'
+                ? 'Skills'
+                : mention?.mode === 'pane'
+                ? 'Panes'
+                : collabPanes.length > 0
+                ? 'Panes & files'
+                : 'Files'}
               {mention?.mode === 'file' && workspaceFiles.length === 0 && (
                 <span className="ml-2 text-fg-muted normal-case">— 載入中 / 沒檔</span>
               )}
@@ -923,14 +1010,21 @@ export function InputBox({ onSend, onAbort }: Props) {
             {mentionMatches.length === 0 && (
               <div className="px-3 py-2 text-xs text-fg-muted">
                 {mention?.mode === 'file'
-                  ? (workspaceFiles.length === 0
+                  ? (workspaceFiles.length === 0 && collabPanes.length === 0
                       ? '工作區還沒設定,或正在載入。打 @skill: 改載 skill。'
-                      : `沒檔案符合 "${mention.query}" — 試別的關鍵字`)
+                      : `沒項目符合 "${mention.query}" — 試別的關鍵字`)
+                  : mention?.mode === 'pane'
+                  ? `沒 pane 符合 "${mention.query}"`
                   : `沒 skill 符合 "${mention.query}"`}
               </div>
             )}
             {mentionMatches.map((item, i) => {
               const active = i === mentionIdx
+              const Icon = item.payload.mode === 'skill'
+                ? Sparkles
+                : item.payload.mode === 'pane'
+                ? Users
+                : FileText
               return (
                 <button
                   key={item.key}
@@ -942,11 +1036,7 @@ export function InputBox({ onSend, onAbort }: Props) {
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    {mention?.mode === 'skill' ? (
-                      <Sparkles size={12} className="shrink-0 text-fg-muted" />
-                    ) : (
-                      <FileText size={12} className="shrink-0 text-fg-muted" />
-                    )}
+                    <Icon size={12} className="shrink-0 text-fg-muted" />
                     <span className="truncate font-mono">{item.label}</span>
                   </span>
                   <span className="shrink-0 text-[10px] text-fg-subtle">{item.sublabel}</span>
@@ -957,7 +1047,11 @@ export function InputBox({ onSend, onAbort }: Props) {
               <kbd className="font-mono">↑↓</kbd> 切換 ·{' '}
               <kbd className="font-mono">Tab/Enter</kbd> 選 ·{' '}
               <kbd className="font-mono">Esc</kbd> 取消 ·{' '}
-              <span className="text-fg-muted">type `@skill:` for skills</span>
+              <span className="text-fg-muted">
+                {collabPanes.length > 0
+                  ? 'type `@skill:` / `@pane:` / `@file:` for explicit'
+                  : 'type `@skill:` for skills'}
+              </span>
             </div>
           </div>
         )}

@@ -83,6 +83,10 @@ export type SessionExt = {
   /** Session 的最終 cwd(session override > project > app default)。
    * /export 等想實際寫檔到對話工作目錄的 caller 用這個。 */
   resolved_cwd: string | null
+  /** Multi-pane collaboration — session 屬於哪個 collab(NULL = 不在任何 collab)。 */
+  collaboration_id: string | null
+  /** Session 在 collab 內的 pane 名(@xxx)。NULL = 不是 pane。 */
+  pane_name: string | null
 }
 
 export async function getSessionWorkspace(sessionId: string): Promise<SessionExt> {
@@ -91,6 +95,8 @@ export async function getSessionWorkspace(sessionId: string): Promise<SessionExt
     workspace_dir: null,
     project_id: null,
     resolved_cwd: null,
+    collaboration_id: null,
+    pane_name: null,
   }
   await window.agent.call(
     'conversation.get_workspace',
@@ -194,6 +200,155 @@ export async function updateProject(
 
 export async function deleteProject(projectId: string): Promise<void> {
   await window.agent.call('project.delete', { project_id: projectId }, () => {})
+}
+
+// ─── Multi-pane collaboration ─────────────────────────────────────────
+
+export type Collaboration = {
+  id: string
+  name: string
+  workspace_dir: string | null
+  project_id: string | null
+  budget_usd_cap: number | null
+  created_at: number
+  updated_at: number
+}
+
+export type CollaborationPane = {
+  session_id: string
+  collaboration_id: string
+  pane_name: string
+  pane_role: string | null
+  pane_position: Record<string, unknown> | null
+}
+
+export type CollaborationView = {
+  collaboration: Collaboration
+  panes: CollaborationPane[]
+}
+
+export async function createCollaboration(input: {
+  name: string
+  workspace_dir?: string | null
+  project_id?: string | null
+  budget_usd_cap?: number | null
+}): Promise<CollaborationView> {
+  let out: CollaborationView | null = null
+  await window.agent.call('collaboration.create', input as Record<string, unknown>, (frame) => {
+    if (frame.event === 'collaboration_created' && frame.data) {
+      const d = frame.data as { collaboration: Collaboration; panes: CollaborationPane[] }
+      out = { collaboration: d.collaboration, panes: d.panes ?? [] }
+    }
+  })
+  if (!out) throw new Error('collaboration.create returned no collaboration')
+  return out
+}
+
+export async function listCollaborations(): Promise<CollaborationView[]> {
+  let items: CollaborationView[] = []
+  await window.agent.call('collaboration.list', {}, (frame) => {
+    if (frame.event === 'collaboration_list' && frame.data) {
+      const d = frame.data as { items: CollaborationView[] }
+      items = d.items ?? []
+    }
+  })
+  return items
+}
+
+export async function getCollaboration(
+  collaborationId: string,
+): Promise<CollaborationView | null> {
+  let out: CollaborationView | null = null
+  await window.agent.call(
+    'collaboration.get',
+    { collaboration_id: collaborationId },
+    (frame) => {
+      if (frame.event === 'collaboration_get' && frame.data) {
+        const d = frame.data as { collaboration: Collaboration; panes: CollaborationPane[] }
+        out = { collaboration: d.collaboration, panes: d.panes ?? [] }
+      }
+    },
+  )
+  return out
+}
+
+export async function deleteCollaboration(collaborationId: string): Promise<void> {
+  await window.agent.call(
+    'collaboration.delete',
+    { collaboration_id: collaborationId },
+    () => {},
+  )
+}
+
+export async function addPaneToCollaboration(input: {
+  collaboration_id: string
+  session_id: string
+  pane_name: string
+  pane_role?: string | null
+  pane_position?: Record<string, unknown> | null
+}): Promise<void> {
+  await window.agent.call(
+    'collaboration.add_pane',
+    input as Record<string, unknown>,
+    () => {},
+  )
+}
+
+export async function removePaneFromCollaboration(sessionId: string): Promise<void> {
+  await window.agent.call(
+    'collaboration.remove_pane',
+    { session_id: sessionId },
+    () => {},
+  )
+}
+
+export async function updatePanePosition(
+  sessionId: string,
+  pane_position: Record<string, unknown> | null,
+): Promise<void> {
+  await window.agent.call(
+    'collaboration.update_pane_position',
+    { session_id: sessionId, pane_position },
+    () => {},
+  )
+}
+
+export type CollaborationCostPane = {
+  session_id: string
+  pane_name: string
+  pane_role: string | null
+  pane_position: Record<string, unknown> | null
+  model: string | null
+  provider: string | null
+  input_tokens: number
+  output_tokens: number
+  n_turns: number
+  n_messages: number
+  cost_usd: number
+}
+
+export type CollaborationCostSummary = {
+  total_panes: number
+  input_tokens: number
+  output_tokens: number
+  total_cost_usd: number
+  panes: CollaborationCostPane[]
+}
+
+export async function getCollaborationCostSummary(
+  collaborationId: string,
+): Promise<CollaborationCostSummary | null> {
+  let out: CollaborationCostSummary | null = null
+  await window.agent.call(
+    'collaboration.cost_summary',
+    { collaboration_id: collaborationId },
+    (frame) => {
+      if (frame.event === 'collaboration_cost_summary' && frame.data) {
+        out = frame.data as CollaborationCostSummary
+      }
+    },
+  )
+  return out
 }
 
 export type MemoryType = 'user' | 'feedback' | 'project' | 'reference'

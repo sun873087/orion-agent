@@ -173,6 +173,23 @@ type SettingsState = {
   closeNewProject: () => void
   openEditProject: (id: string) => void
   closeEditProject: () => void
+
+  /** New Collaboration modal 開關。 */
+  newCollabOpen: boolean
+  openNewCollab: () => void
+  closeNewCollab: () => void
+  /** Add Pane modal — null = closed,string = 目標 collab id。 */
+  addPaneTargetCollabId: string | null
+  openAddPane: (collabId: string) => void
+  closeAddPane: () => void
+
+  /** Sidebar 主 nav tab:
+   *   'chats' = 個人對話(project_id=null)
+   *   'projects' = 專案列表(user 挑一個 → activeProjectId 設成它)
+   *   'collaborations' = 協作列表 + multi-pane 工作台
+   *  互斥;同時只渲染一個 section。 */
+  sidebarNavTab: 'chats' | 'projects' | 'collaborations'
+  setSidebarNavTab: (tab: 'chats' | 'projects' | 'collaborations') => void
 }
 
 const STORAGE_KEY = 'orion-cowork-settings/v1'
@@ -250,6 +267,9 @@ export const useSettingsStore = create<SettingsState>()(
       activeProjectId: null,
       newProjectOpen: false,
       editingProjectId: null,
+      newCollabOpen: false,
+      addPaneTargetCollabId: null,
+      sidebarNavTab: 'chats',
 
       setTheme: (t) => {
         set({ theme: t })
@@ -331,6 +351,11 @@ export const useSettingsStore = create<SettingsState>()(
       closeNewProject: () => set({ newProjectOpen: false }),
       openEditProject: (id) => set({ editingProjectId: id }),
       closeEditProject: () => set({ editingProjectId: null }),
+      openNewCollab: () => set({ newCollabOpen: true }),
+      closeNewCollab: () => set({ newCollabOpen: false }),
+      openAddPane: (collabId) => set({ addPaneTargetCollabId: collabId }),
+      closeAddPane: () => set({ addPaneTargetCollabId: null }),
+      setSidebarNavTab: (tab) => set({ sidebarNavTab: tab }),
     }),
     {
       name: STORAGE_KEY,

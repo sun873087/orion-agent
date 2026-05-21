@@ -165,6 +165,15 @@ audit / SCIM / MDM / cost-center 計費 / 多 LLM provider failover ...)。
 
 → [`enterprise-scale.md`](./enterprise-scale.md)
 
+## Multi-pane collaboration(tmux-like 多 agent 工作台)
+
+把 Cowork 升級成「一 window 同時跑 2-4 個 agent,各自 model / persona,可
+cross-pane reference」。受 tmux 啟發,目標是讓「多 agent 協作」**互動式可見**,
+而非 SDK 既有 Coordinator/Swarm 的 headless 場景。**目前不在實作範圍**,設計
+細節(對話記錄 / cross-pane skill / workspace 衝突 / UI / 成本)留檔。
+
+→ [`multi-pane-collaboration.md`](./multi-pane-collaboration.md)
+
 ## 不會做的(明確 out-of-scope)
 
 - **自家 LLM training**:orion 是 client-side agent runtime,不訓 model
@@ -177,5 +186,6 @@ audit / SCIM / MDM / cost-center 計費 / 多 LLM provider failover ...)。
 
 - [`../README.md`](../README.md) — 整體入口
 - [`enterprise-scale.md`](./enterprise-scale.md) — 企業規模 / 跨國的設計筆記(未來再啟動)
+- [`multi-pane-collaboration.md`](./multi-pane-collaboration.md) — tmux-like 多 agent 工作台設計
 - [`../architecture/design-decisions.md`](../architecture/design-decisions.md) — 已決定的事
 - [`../features/`](../features/) — 各 feature 的「未來方向」段落(各篇 inline)

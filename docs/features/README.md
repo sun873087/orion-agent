@@ -44,6 +44,7 @@
 | Feature | 一句話 | 主要模組 |
 |---|---|---|
 | [multi-agent.md](./multi-agent.md) | Coordinator(leader-worker)+ Swarm(peer-to-peer) | `multi_agent/` |
+| [multi-pane-collaboration.md](./multi-pane-collaboration.md) | Cowork tmux-like 多 pane 工作台 + AskPane cross-pane query | `apps/orion-cowork/`、`tools/special/ask_pane.py` |
 
 ## 環境與 I/O
 

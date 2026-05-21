@@ -165,6 +165,7 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
        - cowork_projects:Project 定義
        - cowork_prefs:KV(default_workspace_dir 等 app 級偏好)
        - cowork_schedules:排程任務(time-based 觸發 Skill / prompt)
+       - cowork_collaborations:multi-pane collaboration 容器
     """
     async with engine.connect() as conn:
         await conn.exec_driver_sql(
@@ -193,6 +194,11 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             # Fork lineage— 顯「分叉自 X」badge 用:
             "forked_from_session_id TEXT", # source session uuid
             "forked_from_message_index INTEGER", # 分叉點 chronological row index(inclusive)
+            # Multi-pane collaboration—把 N 個 session 綁進同一 window/collaboration:
+            "collaboration_id TEXT", # FK to cowork_collaborations.id, NULL = 一般獨立 session
+            "pane_name TEXT", # @backend-coder / @reviewer / 同 collab 內唯一
+            "pane_role TEXT", # researcher / coder / reviewer / doc-writer / custom
+            "pane_position TEXT", # JSON {row, col, w, h, minimized},layout 還原用
         ):
             try:
                 await conn.exec_driver_sql(
@@ -262,6 +268,25 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS cowork_schedules_target_session_idx "
             "ON cowork_schedules(target_session_id)"
+        )
+        # Multi-pane collaboration—容器表
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_collaborations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                workspace_dir TEXT,
+                project_id TEXT,
+                budget_usd_cap REAL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        # 反向查詢:給 session_id 找其 collaboration / 列同 collab 所有 panes
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_session_ext_collab_idx "
+            "ON cowork_session_ext(collaboration_id)"
         )
         await conn.commit()
 
@@ -592,7 +617,8 @@ async def get_session_ext(
     """讀 cowork_session_ext row。沒 row 回 dict with None values。"""
     async with engine.connect() as conn:
         result = await conn.exec_driver_sql(
-            "SELECT workspace_dir, project_id, scheduled_by_id, scheduled_by_name "
+            "SELECT workspace_dir, project_id, scheduled_by_id, scheduled_by_name, "
+            "collaboration_id, pane_name "
             "FROM cowork_session_ext WHERE session_id = ?",
             (session_id,),
         )
@@ -601,12 +627,15 @@ async def get_session_ext(
         return {
             "workspace_dir": None, "project_id": None,
             "scheduled_by_id": None, "scheduled_by_name": None,
+            "collaboration_id": None, "pane_name": None,
         }
     return {
         "workspace_dir": row[0],
         "project_id": row[1],
         "scheduled_by_id": row[2],
         "scheduled_by_name": row[3],
+        "collaboration_id": row[4],
+        "pane_name": row[5],
     }
 
 
@@ -1429,6 +1458,350 @@ async def list_sessions_in_project(
             (project_id,),
         )
         return [r[0] for r in result.all()]
+
+
+# ─── Multi-pane collaboration ─────────────────────────────────────────────
+
+
+@dataclass
+class Collaboration:
+    id: str
+    name: str
+    workspace_dir: str | None
+    project_id: str | None
+    budget_usd_cap: float | None
+    created_at: float
+    updated_at: float
+
+
+@dataclass
+class CollaborationPane:
+    session_id: str
+    collaboration_id: str
+    pane_name: str
+    pane_role: str | None
+    pane_position: dict[str, Any] | None # JSON-decoded
+
+
+def _parse_pane_position(raw: str | None) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    import json
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _serialize_pane_position(pos: dict[str, Any] | None) -> str | None:
+    if pos is None:
+        return None
+    import json
+    return json.dumps(pos, separators=(",", ":"))
+
+
+async def create_collaboration(
+    engine: AsyncEngine,
+    *,
+    name: str,
+    workspace_dir: str | None = None,
+    project_id: str | None = None,
+    budget_usd_cap: float | None = None,
+) -> Collaboration:
+    from uuid import uuid4
+    cid = str(uuid4())
+    now = time.time()
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_collaborations
+                (id, name, workspace_dir, project_id, budget_usd_cap, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (cid, name, workspace_dir, project_id, budget_usd_cap, now, now),
+        )
+        await conn.commit()
+    return Collaboration(
+        id=cid, name=name, workspace_dir=workspace_dir, project_id=project_id,
+        budget_usd_cap=budget_usd_cap, created_at=now, updated_at=now,
+    )
+
+
+async def get_collaboration(
+    engine: AsyncEngine, collaboration_id: str
+) -> Collaboration | None:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT id, name, workspace_dir, project_id, budget_usd_cap, created_at, updated_at "
+            "FROM cowork_collaborations WHERE id = ?",
+            (collaboration_id,),
+        )
+        r = result.first()
+    if r is None:
+        return None
+    return Collaboration(
+        id=r[0], name=r[1], workspace_dir=r[2], project_id=r[3],
+        budget_usd_cap=r[4], created_at=r[5], updated_at=r[6],
+    )
+
+
+async def list_collaborations(engine: AsyncEngine) -> list[Collaboration]:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT id, name, workspace_dir, project_id, budget_usd_cap, created_at, updated_at "
+            "FROM cowork_collaborations ORDER BY updated_at DESC"
+        )
+        return [
+            Collaboration(
+                id=r[0], name=r[1], workspace_dir=r[2], project_id=r[3],
+                budget_usd_cap=r[4], created_at=r[5], updated_at=r[6],
+            )
+            for r in result.all()
+        ]
+
+
+async def update_collaboration(
+    engine: AsyncEngine,
+    collaboration_id: str,
+    *,
+    name: str | None = None,
+    workspace_dir: str | None = None,
+    project_id: str | None = None,
+    budget_usd_cap: float | None = None,
+) -> bool:
+    """Partial update。傳入 None 視為不動;workspace_dir / project_id 想清空請傳空字串再 caller 端處理(這裡 None 統一視為「沒指定」)。"""
+    fields: list[tuple[str, Any]] = []
+    if name is not None:
+        fields.append(("name", name))
+    if workspace_dir is not None:
+        fields.append(("workspace_dir", workspace_dir or None))
+    if project_id is not None:
+        fields.append(("project_id", project_id or None))
+    if budget_usd_cap is not None:
+        fields.append(("budget_usd_cap", budget_usd_cap))
+    if not fields:
+        return False
+    fields.append(("updated_at", time.time()))
+    set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
+    params = [v for _, v in fields] + [collaboration_id]
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            f"UPDATE cowork_collaborations SET {set_clause} WHERE id = ?",
+            tuple(params),
+        )
+        await conn.commit()
+        return (result.rowcount or 0) > 0
+
+
+async def delete_collaboration(engine: AsyncEngine, collaboration_id: str) -> bool:
+    """刪 collaboration 容器;成員 session 上的 collaboration_id 變 NULL(從容器釋放,session 本身仍存在)。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            "UPDATE cowork_session_ext SET collaboration_id = NULL, "
+            "pane_name = NULL, pane_role = NULL, pane_position = NULL "
+            "WHERE collaboration_id = ?",
+            (collaboration_id,),
+        )
+        result = await conn.exec_driver_sql(
+            "DELETE FROM cowork_collaborations WHERE id = ?", (collaboration_id,),
+        )
+        await conn.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def add_pane_to_collaboration(
+    engine: AsyncEngine,
+    *,
+    collaboration_id: str,
+    session_id: str,
+    pane_name: str,
+    pane_role: str | None = None,
+    pane_position: dict[str, Any] | None = None,
+) -> None:
+    """把 session 綁進 collaboration 並設 pane_name / role / position。Upsert 既有 row。
+
+    同 collab 內 pane_name 必須唯一(caller 端負責 dedupe)。
+    """
+    pos_text = _serialize_pane_position(pane_position)
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext
+                (session_id, collaboration_id, pane_name, pane_role, pane_position)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                collaboration_id = excluded.collaboration_id,
+                pane_name = excluded.pane_name,
+                pane_role = excluded.pane_role,
+                pane_position = excluded.pane_position
+            """,
+            (session_id, collaboration_id, pane_name, pane_role, pos_text),
+        )
+        await conn.exec_driver_sql(
+            "UPDATE cowork_collaborations SET updated_at = ? WHERE id = ?",
+            (time.time(), collaboration_id),
+        )
+        await conn.commit()
+
+
+async def remove_pane_from_collaboration(
+    engine: AsyncEngine, session_id: str,
+) -> str | None:
+    """把 session 從 collab 釋放(session 本身不刪)。回原 collaboration_id 給 caller。"""
+    async with engine.connect() as conn:
+        existing = await conn.exec_driver_sql(
+            "SELECT collaboration_id FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = existing.first()
+        old_cid = row[0] if row else None
+        await conn.exec_driver_sql(
+            "UPDATE cowork_session_ext SET collaboration_id = NULL, "
+            "pane_name = NULL, pane_role = NULL, pane_position = NULL "
+            "WHERE session_id = ?",
+            (session_id,),
+        )
+        if old_cid:
+            await conn.exec_driver_sql(
+                "UPDATE cowork_collaborations SET updated_at = ? WHERE id = ?",
+                (time.time(), old_cid),
+            )
+        await conn.commit()
+        return old_cid
+
+
+async def list_collaboration_panes(
+    engine: AsyncEngine, collaboration_id: str
+) -> list[CollaborationPane]:
+    """同 collab 的所有 pane(session_id + 名字 + 角色 + position)。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id, collaboration_id, pane_name, pane_role, pane_position "
+            "FROM cowork_session_ext WHERE collaboration_id = ? "
+            "ORDER BY pane_name",
+            (collaboration_id,),
+        )
+        return [
+            CollaborationPane(
+                session_id=r[0],
+                collaboration_id=r[1],
+                pane_name=r[2] or "",
+                pane_role=r[3],
+                pane_position=_parse_pane_position(r[4]),
+            )
+            for r in result.all()
+        ]
+
+
+async def get_collaboration_for_session(
+    engine: AsyncEngine, session_id: str
+) -> tuple[str | None, str | None, str | None]:
+    """給 session_id → (collaboration_id, pane_name, pane_role)。沒綁回 (None, None, None)。
+
+    AskPaneTool / 跨 pane query 用 — 從目前 session 知道自己屬於哪個 collab 才能找對方。
+    """
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT collaboration_id, pane_name, pane_role "
+            "FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None or row[0] is None:
+        return (None, None, None)
+    return (row[0], row[1], row[2])
+
+
+async def find_collaboration_pane(
+    engine: AsyncEngine, collaboration_id: str, pane_name: str
+) -> CollaborationPane | None:
+    """同 collab 內,by pane_name 找 pane。 AskPaneTool 用。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT session_id, collaboration_id, pane_name, pane_role, pane_position "
+            "FROM cowork_session_ext WHERE collaboration_id = ? AND pane_name = ?",
+            (collaboration_id, pane_name),
+        )
+        r = result.first()
+    if r is None:
+        return None
+    return CollaborationPane(
+        session_id=r[0], collaboration_id=r[1], pane_name=r[2] or "",
+        pane_role=r[3], pane_position=_parse_pane_position(r[4]),
+    )
+
+
+async def update_pane_position(
+    engine: AsyncEngine,
+    session_id: str,
+    pane_position: dict[str, Any] | None,
+) -> bool:
+    """更新 pane 的 position(layout 改動時 caller 端持續存)。"""
+    pos_text = _serialize_pane_position(pane_position)
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "UPDATE cowork_session_ext SET pane_position = ? "
+            "WHERE session_id = ? AND collaboration_id IS NOT NULL",
+            (pos_text, session_id),
+        )
+        await conn.commit()
+        return (result.rowcount or 0) > 0
+
+
+async def get_collaboration_cost_summary(
+    engine: AsyncEngine, collaboration_id: str
+) -> dict[str, Any]:
+    """加總 collab 內所有 session 的 input/output token 與成本估算。
+
+    成本 = sum(messages.input + cache + output tokens 對應 model 單價)。
+    這裡只回 token 加總,實際 USD 由 caller 端算(對應 catalog 單價,model 各異)。
+    """
+    panes = await list_collaboration_panes(engine, collaboration_id)
+    if not panes:
+        return {"total_panes": 0, "panes": [], "input_tokens": 0, "output_tokens": 0}
+    sids = [p.session_id for p in panes]
+    placeholders = ",".join("?" * len(sids))
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            f"SELECT id, model, provider, input_tokens, output_tokens, n_turns, n_messages "
+            f"FROM sessions WHERE id IN ({placeholders})",
+            tuple(sids),
+        )
+        per_pane: dict[str, dict[str, Any]] = {}
+        total_in = 0
+        total_out = 0
+        for row in result.all():
+            per_pane[row[0]] = {
+                "session_id": row[0],
+                "model": row[1],
+                "provider": row[2],
+                "input_tokens": row[3] or 0,
+                "output_tokens": row[4] or 0,
+                "n_turns": row[5] or 0,
+                "n_messages": row[6] or 0,
+            }
+            total_in += row[3] or 0
+            total_out += row[4] or 0
+    out_panes: list[dict[str, Any]] = []
+    for p in panes:
+        info = per_pane.get(p.session_id, {
+            "session_id": p.session_id,
+            "model": None, "provider": None,
+            "input_tokens": 0, "output_tokens": 0,
+            "n_turns": 0, "n_messages": 0,
+        })
+        out_panes.append({**info,
+            "pane_name": p.pane_name,
+            "pane_role": p.pane_role,
+            "pane_position": p.pane_position,
+        })
+    return {
+        "total_panes": len(panes),
+        "panes": out_panes,
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+    }
 
 
 @dataclass

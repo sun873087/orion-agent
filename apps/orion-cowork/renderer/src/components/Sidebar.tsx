@@ -20,6 +20,7 @@ import {
   Star,
   Trash2,
   User,
+  Users,
   X,
 } from 'lucide-react'
 
@@ -51,11 +52,13 @@ export function Sidebar() {
   const setSearchQuery = useSettingsStore((s) => s.setSidebarSearchQuery)
   const toggleSearch = useSettingsStore((s) => s.toggleSidebarSearch)
   const activeProjectId = useSettingsStore((s) => s.activeProjectId)
-  const [sessionExt, setSessionExt] = useState<Map<string, { project_id: string | null }>>(
-    new Map(),
-  )
-  // 永遠 fetch ext — 個人 scope 需要過濾「不屬於任何 project」的 chat,
-  // project scope 需要過濾「屬於該 project」的 chat。兩種都要 ext。
+  const tab = useSettingsStore((s) => s.sidebarNavTab)
+  const currentCollabId = useAgentStore((s) => s.currentCollaborationId)
+  const [sessionExt, setSessionExt] = useState<
+    Map<string, { project_id: string | null; collaboration_id: string | null }>
+  >(new Map())
+  // 永遠 fetch ext — 三個 tab 都要不同 filter(personal / project / collab),
+  // 故每個 session 的 project_id + collaboration_id 都要拉。
   useEffect(() => {
     let cancelled = false
     Promise.all(
@@ -64,9 +67,15 @@ export function Sidebar() {
       ),
     ).then((results) => {
       if (cancelled) return
-      const m = new Map<string, { project_id: string | null }>()
+      const m = new Map<
+        string,
+        { project_id: string | null; collaboration_id: string | null }
+      >()
       for (const [sid, ext] of results) {
-        m.set(sid, { project_id: ext.project_id })
+        m.set(sid, {
+          project_id: ext.project_id,
+          collaboration_id: ext.collaboration_id,
+        })
       }
       setSessionExt(m)
     })
@@ -74,9 +83,24 @@ export function Sidebar() {
       cancelled = true
     }
   }, [sessions])
+  // Tab-aware filter:
+  //   chats → 沒綁 project 也沒綁 collab 的純個人對話
+  //   projects → 綁 project 的 session;若選了 activeProjectId,僅那個 project
+  //   collaborations → 綁 collab 的 session;若開了 currentCollabId,僅那個 collab
   const projectFilteredSessions = sessions.filter((s) => {
-    const pid = sessionExt.get(s.session_id)?.project_id ?? null
-    return activeProjectId ? pid === activeProjectId : pid === null
+    const ext = sessionExt.get(s.session_id)
+    const pid = ext?.project_id ?? null
+    const cid = ext?.collaboration_id ?? null
+    if (tab === 'chats') {
+      return pid === null && cid === null
+    }
+    if (tab === 'projects') {
+      if (!pid) return false
+      return activeProjectId ? pid === activeProjectId : true
+    }
+    // collaborations
+    if (!cid) return false
+    return currentCollabId ? cid === currentCollabId : true
   })
 
   // Backend full-text search:有 query 時 debounce 300ms call sidecar;空就清空
@@ -125,7 +149,7 @@ export function Sidebar() {
           <span>{t('sidebar.newChat')}</span>
         </button>
       </div>
-      <ProjectsSection />
+      <SidebarNavTabs />
       <div className="mx-3 my-2 border-t border-bg-hover" />
       {searchOpen && (
         <SearchBar
@@ -803,6 +827,95 @@ function MenuItem({
   )
 }
 
+/** Sidebar 主 nav:[對話] [專案] [協作] 三 tab 切換,只渲染一個 section。 */
+function SidebarNavTabs() {
+  const { t } = useTranslation()
+  const tab = useSettingsStore((s) => s.sidebarNavTab)
+  const setTab = useSettingsStore((s) => s.setSidebarNavTab)
+  const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
+  const inCollab = useAgentStore((s) => s.currentCollaborationId !== null)
+  const openCollaboration = useAgentStore((s) => s.openCollaboration)
+
+  function switchTo(next: 'chats' | 'projects' | 'collaborations') {
+    // 切「對話」= 個人對話 mode(no project,no collab)
+    if (next === 'chats') {
+      setActiveProjectId(null)
+      if (inCollab) openCollaboration(null)
+    }
+    // 切「專案」= 關 collab,project 選擇由 user 在 section 內 click 決定
+    if (next === 'projects' && inCollab) {
+      openCollaboration(null)
+    }
+    // 切「協作」不動 project state(它被 collab view 覆蓋掉)
+    setTab(next)
+  }
+
+  return (
+    <>
+      <div className="mt-3 flex gap-1 border-b border-bg-hover px-3">
+        <TabButton
+          active={tab === 'chats'}
+          onClick={() => switchTo('chats')}
+          label={t('sidebar.tabs.chats')}
+        />
+        <TabButton
+          active={tab === 'projects'}
+          onClick={() => switchTo('projects')}
+          label={t('sidebar.projects')}
+        />
+        <TabButton
+          active={tab === 'collaborations'}
+          onClick={() => switchTo('collaborations')}
+          label={t('sidebar.collaborations')}
+        />
+      </div>
+      {tab === 'chats' && <ChatsSection />}
+      {tab === 'projects' && <ProjectsSection />}
+      {tab === 'collaborations' && <CollaborationsSection />}
+    </>
+  )
+}
+
+/** 「對話」tab — 顯示「個人對話模式」標題;真正的 session list 在下方 list 區
+ *  自動 filter 出 project_id=null 的(activeProjectId=null 由 switchTo 設定)。 */
+function ChatsSection() {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-2 px-2">
+      <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-fg-base">
+        <Inbox size={13} className="shrink-0" />
+        <span className="flex-1 truncate text-left font-medium">
+          {t('sidebar.personalConversations')}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`-mb-px flex-1 border-b-2 px-2 py-1.5 text-xs font-medium transition-colors ${
+        active
+          ? 'border-accent text-fg-base'
+          : 'border-transparent text-fg-muted hover:text-fg-base'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
 function ProjectsSection() {
   const { t } = useTranslation()
   const projects = useProjects()
@@ -810,13 +923,19 @@ function ProjectsSection() {
   const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
   const openNewProject = useSettingsStore((s) => s.openNewProject)
   const openEditProject = useSettingsStore((s) => s.openEditProject)
+  // 互斥:collab 開著時,project 那邊 row 不該顯 active(視覺上 user 才看得出當前焦點在哪)
+  const inCollab = useAgentStore((s) => s.currentCollaborationId !== null)
+  const openCollaboration = useAgentStore((s) => s.openCollaboration)
+
+  function selectProject(id: string | null) {
+    setActiveProjectId(id)
+    // 切到 project / 個人對話 = 退出任何開著的 collab view
+    if (inCollab) openCollaboration(null)
+  }
 
   return (
-    <div className="mt-3 px-2">
-      <div className="mb-1 flex items-center justify-between px-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-          {t('sidebar.projects')}
-        </span>
+    <div className="mt-2 px-2">
+      <div className="mb-1 flex justify-end px-1">
         <button
           type="button"
           onClick={openNewProject}
@@ -826,29 +945,17 @@ function ProjectsSection() {
           <Plus size={12} />
         </button>
       </div>
+      {projects.length === 0 && (
+        <p className="px-2 text-xs text-fg-subtle">
+          {t('sidebar.projectsEmpty')}
+        </p>
+      )}
       <ul className="flex flex-col gap-0.5">
-        <li>
-          <button
-            type="button"
-            onClick={() => setActiveProjectId(null)}
-            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              activeProjectId === null
-                ? 'bg-bg-hover text-fg-base'
-                : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
-            }`}
-          >
-            <Inbox size={13} className="shrink-0" />
-            <span className="flex-1 truncate text-left">{t('sidebar.personalConversations')}</span>
-          </button>
-        </li>
-        {projects.length > 0 && (
-          <li className="mx-1 my-1 border-t border-bg-hover/60" aria-hidden />
-        )}
         {projects.map((p) => (
           <li key={p.id}>
             <div
               className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
-                activeProjectId === p.id
+                activeProjectId === p.id && !inCollab
                   ? 'bg-bg-hover text-fg-base'
                   : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
               }`}
@@ -856,7 +963,7 @@ function ProjectsSection() {
             >
               <button
                 type="button"
-                onClick={() => setActiveProjectId(p.id)}
+                onClick={() => selectProject(p.id)}
                 className="flex flex-1 items-center gap-2 text-left"
               >
                 <Folder size={13} className="shrink-0" />
@@ -876,6 +983,114 @@ function ProjectsSection() {
             </div>
           </li>
         ))}
+      </ul>
+    </div>
+  )
+}
+
+function CollaborationsSection() {
+  const { t } = useTranslation()
+  const collaborations = useAgentStore((s) => s.collaborations)
+  const currentCollabId = useAgentStore((s) => s.currentCollaborationId)
+  const openCollaboration = useAgentStore((s) => s.openCollaboration)
+  const setCollaborations = useAgentStore((s) => s.setCollaborations)
+  const openNewCollab = useSettingsStore((s) => s.openNewCollab)
+
+  async function handleDelete(c: { id: string; name: string }, e: React.MouseEvent) {
+    e.stopPropagation()
+    const { deleteCollaboration, listCollaborations } = await import('../api/agent')
+    if (!confirm(t('collab.deleteConfirm', { name: c.name }))) return
+    await deleteCollaboration(c.id)
+    // 若刪的是當前開著的 → 關掉 collab view 回到單視圖
+    if (currentCollabId === c.id) {
+      openCollaboration(null)
+    }
+    // 重 load list 更新 sidebar
+    const items = await listCollaborations()
+    setCollaborations(items.map((v) => ({
+      id: v.collaboration.id,
+      name: v.collaboration.name,
+      workspace_dir: v.collaboration.workspace_dir,
+      project_id: v.collaboration.project_id,
+      budget_usd_cap: v.collaboration.budget_usd_cap,
+      panes: v.panes.map((p) => ({
+        session_id: p.session_id,
+        pane_name: p.pane_name,
+        pane_role: p.pane_role,
+        pane_position: p.pane_position,
+      })),
+    })))
+  }
+
+  if (collaborations.length === 0) {
+    // 沒任何 collab — 只放「+」按鈕讓使用者建立第一個 + 空狀態提示
+    return (
+      <div className="mt-2 px-2">
+        <div className="mb-1 flex justify-end px-1">
+          <button
+            type="button"
+            onClick={openNewCollab}
+            title={t('sidebar.newCollaboration')}
+            className="rounded p-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+        <p className="px-2 text-xs text-fg-subtle">
+          {t('collab.empty.sidebarHint')}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 px-2">
+      <div className="mb-1 flex justify-end px-1">
+        <button
+          type="button"
+          onClick={openNewCollab}
+          title={t('sidebar.newCollaboration')}
+          className="rounded p-0.5 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+      <ul className="flex flex-col gap-0.5">
+        {collaborations.map((c) => {
+          const active = currentCollabId === c.id
+          return (
+            <li key={c.id}>
+              <div
+                className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm ${
+                  active
+                    ? 'bg-bg-hover text-fg-base'
+                    : 'text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+                }`}
+                title={c.workspace_dir ?? undefined}
+              >
+                <button
+                  type="button"
+                  onClick={() => openCollaboration(c.id)}
+                  className="flex flex-1 items-center gap-2 text-left"
+                >
+                  <Users size={13} className="shrink-0" />
+                  <span className="flex-1 truncate">{c.name}</span>
+                  <span className="shrink-0 text-[10px] text-fg-subtle">
+                    {c.panes.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(c, e)}
+                  title={t('collab.delete')}
+                  className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-red-400"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

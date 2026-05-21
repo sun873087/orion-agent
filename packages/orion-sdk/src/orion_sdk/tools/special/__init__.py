@@ -6,6 +6,11 @@
 
 from __future__ import annotations
 
+from orion_sdk.tools.special.ask_pane import (
+    AskPaneCallback,
+    AskPaneInput,
+    AskPaneTool,
+)
 from orion_sdk.tools.special.enter_plan_mode import (
     EnterPlanModeInput,
     EnterPlanModeTool,
@@ -22,6 +27,9 @@ from orion_sdk.tools.special.synthetic_output import (
 from orion_sdk.tools.special.tool_search import ToolSearchInput, ToolSearchTool
 
 __all__ = [
+    "AskPaneCallback",
+    "AskPaneInput",
+    "AskPaneTool",
     "EnterPlanModeInput",
     "EnterPlanModeTool",
     "ExitPlanModeInput",
