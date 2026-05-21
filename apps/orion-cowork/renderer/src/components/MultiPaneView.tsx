@@ -10,6 +10,7 @@ import {
   type CollaborationView,
 } from '../api/agent'
 import { hydrateSessionMessages } from '../hooks/useAgent'
+import { useDisabledRoles } from '../hooks/usePaneRolesEnabled'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import type { Message } from '../store/agent'
@@ -350,6 +351,8 @@ function PaneHeader({
   const collaborations = useAgentStore((s) => s.collaborations)
   const setCollaborations = useAgentStore((s) => s.setCollaborations)
   const currentCollabId = useAgentStore((s) => s.currentCollaborationId)
+  const { isDisabled: isRoleDisabled } = useDisabledRoles()
+  const roleOff = !!paneRole && isRoleDisabled(paneRole)
   const statusColor = busy
     ? 'bg-yellow-400'
     : isActive
@@ -374,8 +377,15 @@ function PaneHeader({
       <span className={`h-2 w-2 rounded-full ${statusColor}`} />
       <span className="font-mono font-medium">{paneName}</span>
       {paneRole && (
-        <span className="rounded bg-bg-hover px-1.5 py-0.5 text-[10px] text-fg-muted">
-          {paneRole}
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] ${
+            roleOff
+              ? 'bg-bg-hover text-amber-400 line-through'
+              : 'bg-bg-hover text-fg-muted'
+          }`}
+          title={roleOff ? t('role.row.disabled.tooltip') : undefined}
+        >
+          {paneRole}{roleOff ? ' ⏸' : ''}
         </span>
       )}
       <div className="ml-auto flex items-center gap-2 text-fg-muted">

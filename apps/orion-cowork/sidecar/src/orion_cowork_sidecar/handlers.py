@@ -39,6 +39,7 @@ from orion_cowork_sidecar import (
     backup_handlers,
     memory_handlers,
     permissions as perm_mod,
+    role_handlers,
     schedule_handlers,
     skill_handlers,
     storage,
@@ -561,6 +562,10 @@ class Handlers:
             "skill.write": skill_handlers.skill_write,
             "skill.import_folder": skill_handlers.skill_import_folder,
             "skill.delete": skill_handlers.skill_delete,
+            "role.list": role_handlers.role_list,
+            "role.get": role_handlers.role_get,
+            "role.write": role_handlers.role_write,
+            "role.delete": role_handlers.role_delete,
             "prefs.get_all": self.prefs_get_all,
             "prefs.set": self.prefs_set,
             "tools.list_builtin": self.tools_list_builtin,
@@ -2765,6 +2770,7 @@ class Handlers:
         # Multi-pane collaboration— 若此 session 已綁進 collab,
         # 注入 AskPaneTool 讓 LLM 可跨 pane query。
         collab_roster_lines: list[str] = []
+        role_prompt_addendum: str | None = None
         if session_id is not None:
             coll_id, my_pane_name, my_pane_role = await storage.get_collaboration_for_session(
                 engine, session_id,
@@ -2799,6 +2805,33 @@ class Handlers:
                     "output + status='running'; decide whether to proceed with partial "
                     "info, suggest the user wait, or work on something else."
                 )
+                # 載入 role markdown(bundled + user override)→ 套 disabled_tools +
+                # 取 prompt body 等下 append 到 system_prompt。
+                # User 可在 Settings 對個別 role 關掉(disabled_roles pref,CSV)—
+                # 該 role 仍存在當 label,但不再套 prompt / disabled_tools。
+                disabled_roles_raw = await storage.get_pref(engine, "disabled_roles") or ""
+                disabled_roles = {r.strip() for r in disabled_roles_raw.split(",") if r.strip()}
+                if (
+                    my_pane_role
+                    and my_pane_role not in ("custom", "")
+                    and my_pane_role not in disabled_roles
+                ):
+                    try:
+                        from orion_sdk.roles import load_all_roles
+                        roles = load_all_roles(user_id=storage.LOCAL_USER_ID)
+                        by_name = {r.name: r for r in roles}
+                        role_obj = by_name.get(my_pane_role)
+                        if role_obj is not None:
+                            # Merge role 預設關掉的 tools 進當前 disabled_set
+                            for t in role_obj.default_disabled_tools:
+                                disabled_set.add(t)
+                            if role_obj.body and role_obj.body.strip():
+                                role_prompt_addendum = role_obj.body.strip()
+                    except Exception as e: # noqa: BLE001
+                        print(
+                            f"[role] load {my_pane_role!r} failed: {e}",
+                            file=__import__('sys').stderr, flush=True,
+                        )
         if is_browser_available():
             host_tools.extend(build_browser_tools()) # type: ignore[arg-type]
         tools = (
@@ -2859,6 +2892,8 @@ class Handlers:
             system_prompt += "\n\n# Your instructions for Orion\n\n" + user_instructions.strip()
         if project_custom_instructions:
             system_prompt += "\n\n# Project instructions\n\n" + project_custom_instructions
+        if role_prompt_addendum:
+            system_prompt += "\n\n# Your role\n\n" + role_prompt_addendum
         if collab_roster_lines:
             system_prompt += (
                 "\n\n# Multi-pane collaboration\n\n"
@@ -3354,16 +3389,41 @@ class Handlers:
         if not isinstance(cid, str):
             yield {"event": "error", "data": {"code": "BAD_PARAMS"}, "final": True}
             return
+        # delete_sessions=True 把成員 session 一起整批 delete(對話也消失)
+        # =False(預設)只刪 collab 容器,session 釋放成個人對話
+        delete_sessions = bool(params.get("delete_sessions"))
         engine = await self.ensure_engine()
+        deleted_session_ids: list[str] = []
+        if delete_sessions:
+            # 先抓 pane session_id 再做 delete(delete_collaboration 會把
+            # collaboration_id NULL 掉,之後查不到)
+            panes = await storage.list_collaboration_panes(engine, cid)
+            deleted_session_ids = [p.session_id for p in panes]
         ok = await storage.delete_collaboration(engine, cid)
         # 釋放對應 conv:它們可能 cache 在 _conversations,內注入過 AskPaneTool callback
         for sid in list(self._conversations.keys()):
             cur_cid, _, _ = await storage.get_collaboration_for_session(engine, sid)
             if cur_cid is None:
                 self._conversations.pop(sid, None)
+        # 若選擇連 session 一起刪 — 走 delete_session 標準路徑(會清 messages /
+        # ext / blobs 等)
+        if delete_sessions and deleted_session_ids:
+            for sid in deleted_session_ids:
+                try:
+                    await storage.delete_session(engine, sid)
+                except Exception as e: # noqa: BLE001
+                    print(
+                        f"[collab.delete] failed to delete session {sid[:8]}: {e}",
+                        file=__import__('sys').stderr, flush=True,
+                    )
+                self._conversations.pop(sid, None)
         yield {
             "event": "collaboration_deleted",
-            "data": {"collaboration_id": cid, "ok": ok},
+            "data": {
+                "collaboration_id": cid,
+                "ok": ok,
+                "deleted_session_count": len(deleted_session_ids) if delete_sessions else 0,
+            },
             "final": True,
         }
 

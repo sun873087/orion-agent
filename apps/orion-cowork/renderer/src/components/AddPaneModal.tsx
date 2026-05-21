@@ -7,13 +7,14 @@ import {
   fetchModels,
   getCollaboration,
   listCollaborations,
+  listRoles,
   type ModelCatalog,
+  type RoleListItem,
 } from '../api/agent'
+import { useDisabledRoles } from '../hooks/usePaneRolesEnabled'
 import { useTranslation } from '../i18n'
 import { useAgentStore } from '../store/agent'
 import { useSettingsStore } from '../store/settings'
-
-const PANE_ROLES = ['researcher', 'coder', 'reviewer', 'doc-writer', 'custom'] as const
 
 export function AddPaneModal() {
   const { t } = useTranslation()
@@ -24,11 +25,13 @@ export function AddPaneModal() {
   const defaultModel = useSettingsStore((s) => s.selectedModel)
 
   const [paneName, setPaneName] = useState('')
-  const [paneRole, setPaneRole] = useState<typeof PANE_ROLES[number]>('coder')
+  const [paneRole, setPaneRole] = useState<string>('coder')
   const [provider, setProvider] = useState(defaultProvider)
   const [model, setModel] = useState(defaultModel)
   const [busy, setBusy] = useState(false)
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null)
+  const [roles, setRoles] = useState<RoleListItem[]>([])
+  const { isDisabled: isRoleDisabled } = useDisabledRoles()
 
   useEffect(() => {
     if (!targetCollabId) return
@@ -38,7 +41,24 @@ export function AddPaneModal() {
       } catch {
         // 失敗則保留 defaultProvider/Model 不更
       }
+      try {
+        const rs = await listRoles()
+        setRoles(rs)
+        // 跳過已被 user 停用的 role,挑第一個 enabled 的
+        const enabled = rs.filter((r) => !isRoleDisabled(r.name))
+        if (enabled.length > 0) {
+          // 若預設 paneRole 是 disabled 或不存在 → 用第一個 enabled
+          if (!enabled.find((r) => r.name === paneRole)) {
+            setPaneRole(enabled[0].name)
+          }
+        } else {
+          setPaneRole('custom')
+        }
+      } catch {
+        // role list 失敗 → 退到只能輸 custom
+      }
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetCollabId])
 
   const providers = catalog?.providers ?? []
@@ -124,12 +144,27 @@ export function AddPaneModal() {
           <Field label={t('collab.addPane.role')}>
             <select
               value={paneRole}
-              onChange={(e) => setPaneRole(e.target.value as typeof PANE_ROLES[number])}
+              onChange={(e) => setPaneRole(e.target.value)}
               className="w-full rounded-md border border-bg-hover bg-bg-input px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
             >
-              {PANE_ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
+              {/* 停用的 role 完全 filter 掉(user 在 Settings 主動 disable
+                  的 — 不該再讓他在這選到) */}
+              {(() => {
+                const visible = roles.filter((r) => !isRoleDisabled(r.name))
+                if (visible.length === 0) {
+                  return <option value="custom">custom(無預設 prompt / 工具)</option>
+                }
+                return (
+                  <>
+                    {visible.map((r) => (
+                      <option key={r.name} value={r.name}>
+                        {r.name}{r.description ? ` — ${r.description}` : ''}
+                      </option>
+                    ))}
+                    <option value="custom">custom(無預設 prompt / 工具)</option>
+                  </>
+                )
+              })()}
             </select>
           </Field>
           <Field label={t('collab.addPane.provider')}>
@@ -187,15 +222,18 @@ export function AddPaneModal() {
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string
+  hint?: string
   children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-fg-muted">{label}</label>
       {children}
+      {hint && <span className="text-[11px] text-amber-400">{hint}</span>}
     </div>
   )
 }

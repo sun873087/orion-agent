@@ -272,10 +272,16 @@ export async function getCollaboration(
   return out
 }
 
-export async function deleteCollaboration(collaborationId: string): Promise<void> {
+export async function deleteCollaboration(
+  collaborationId: string,
+  opts?: { deleteSessions?: boolean },
+): Promise<void> {
   await window.agent.call(
     'collaboration.delete',
-    { collaboration_id: collaborationId },
+    {
+      collaboration_id: collaborationId,
+      delete_sessions: !!opts?.deleteSessions,
+    },
     () => {},
   )
 }
@@ -349,6 +355,58 @@ export async function getCollaborationCostSummary(
     },
   )
   return out
+}
+
+// ─── Pane roles ───────────────────────────────────────────────────────
+
+export type RoleSource = 'bundled' | 'user' | 'other' | 'unknown'
+
+export type RoleListItem = {
+  name: string
+  description: string
+  filename: string
+  source: RoleSource
+  editable: boolean
+  source_path: string | null
+  default_disabled_tools: string[]
+  default_permission_mode: 'ask' | 'act' | null
+}
+
+export type Role = RoleListItem & { body: string }
+
+export async function listRoles(): Promise<RoleListItem[]> {
+  let items: RoleListItem[] = []
+  await window.agent.call('role.list', {}, (frame) => {
+    if (frame.event === 'role_list' && frame.data) {
+      const d = frame.data as { roles: RoleListItem[] }
+      items = d.roles ?? []
+    }
+  })
+  return items
+}
+
+export async function getRole(name: string): Promise<Role | null> {
+  let r: Role | null = null
+  await window.agent.call('role.get', { name }, (frame) => {
+    if (frame.event === 'role' && frame.data) {
+      r = frame.data as Role
+    }
+  })
+  return r
+}
+
+export async function writeRole(input: {
+  name: string
+  body: string
+  description?: string
+  default_disabled_tools?: string[]
+  default_permission_mode?: 'ask' | 'act' | null
+}): Promise<void> {
+  await window.agent.call('role.write', input as Record<string, unknown>, () => {})
+}
+
+export async function deleteRole(filename: string): Promise<void> {
+  await window.agent.call('role.delete', { filename }, () => {})
 }
 
 export type MemoryType = 'user' | 'feedback' | 'project' | 'reference'

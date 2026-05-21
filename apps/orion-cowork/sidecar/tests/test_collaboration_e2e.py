@@ -180,6 +180,35 @@ def test_update_pane_position(data_dir: str) -> None:
     assert panes[0]["pane_position"] == {"w": 80, "h": 50, "minimized": False}
 
 
+def test_delete_collaboration_with_delete_sessions(data_dir: str) -> None:
+    """delete_sessions=True → 成員 session 也跟著刪。"""
+    frames = _run_sidecar([
+        '{"id":"c","method":"collaboration.create","params":{"name":"t"}}',
+        '{"id":"conv","method":"conversation.create",'
+        '"params":{"provider":"anthropic","model":"claude-haiku-4-5"}}',
+    ], data_dir)
+    cid = next(f for f in frames if f.get("id") == "c")["data"]["collaboration"]["id"]
+    sid = next(f for f in frames if f.get("id") == "conv")["data"]["session_id"]
+
+    _run_sidecar([
+        f'{{"id":"a","method":"collaboration.add_pane",'
+        f'"params":{{"collaboration_id":"{cid}","session_id":"{sid}","pane_name":"@x"}}}}',
+    ], data_dir)
+    frames_del = _run_sidecar([
+        f'{{"id":"d","method":"collaboration.delete",'
+        f'"params":{{"collaboration_id":"{cid}","delete_sessions":true}}}}',
+    ], data_dir)
+    d = next(f for f in frames_del if f.get("id") == "d")
+    assert d["event"] == "collaboration_deleted"
+    assert d["data"]["deleted_session_count"] == 1
+    frames_check = _run_sidecar([
+        '{"id":"cl","method":"conversation.list"}',
+    ], data_dir)
+    cl = next(f for f in frames_check if f.get("id") == "cl")
+    # Session 也消失,不會留在 conversation.list
+    assert not any(s["session_id"] == sid for s in cl["data"]["sessions"])
+
+
 def test_delete_collaboration_releases_panes(data_dir: str) -> None:
     frames = _run_sidecar([
         '{"id":"c","method":"collaboration.create","params":{"name":"t"}}',

@@ -996,16 +996,27 @@ function CollaborationsSection() {
   const setCollaborations = useAgentStore((s) => s.setCollaborations)
   const openNewCollab = useSettingsStore((s) => s.openNewCollab)
 
-  async function handleDelete(c: { id: string; name: string }, e: React.MouseEvent) {
+  async function handleDelete(
+    c: { id: string; name: string; panes: { session_id: string }[] },
+    e: React.MouseEvent,
+  ) {
     e.stopPropagation()
-    const { deleteCollaboration, listCollaborations } = await import('../api/agent')
+    const { deleteCollaboration, listCollaborations, listConversations } =
+      await import('../api/agent')
     if (!confirm(t('collab.deleteConfirm', { name: c.name }))) return
-    await deleteCollaboration(c.id)
-    // 若刪的是當前開著的 → 關掉 collab view 回到單視圖
+    // 第二問:成員 session 一起刪 / 釋放成個人對話
+    let deleteSessions = false
+    const paneCount = c.panes.length
+    if (paneCount > 0) {
+      deleteSessions = confirm(
+        t('collab.deleteSessionsConfirm', { count: String(paneCount) }),
+      )
+    }
+    await deleteCollaboration(c.id, { deleteSessions })
     if (currentCollabId === c.id) {
       openCollaboration(null)
     }
-    // 重 load list 更新 sidebar
+    // 重 load collab list
     const items = await listCollaborations()
     setCollaborations(items.map((v) => ({
       id: v.collaboration.id,
@@ -1020,6 +1031,15 @@ function CollaborationsSection() {
         pane_position: p.pane_position,
       })),
     })))
+    // 若連 session 一起刪 → sessions list 也要 refresh,免得舊孤兒還掛著
+    if (deleteSessions) {
+      try {
+        const refreshed = await listConversations()
+        useAgentStore.getState().setSessions(refreshed)
+      } catch {
+        // 不擋
+      }
+    }
   }
 
   if (collaborations.length === 0) {
