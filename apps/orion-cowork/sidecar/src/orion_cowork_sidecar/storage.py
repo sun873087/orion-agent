@@ -207,6 +207,17 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             "cum_cache_read_tokens INTEGER NOT NULL DEFAULT 0",
             "cum_cache_creation_tokens INTEGER NOT NULL DEFAULT 0",
             "cum_turns INTEGER NOT NULL DEFAULT 0",
+            # Cost breakdown JSON — per-origin 累計成本,可拆細給 UI 顯示
+            # {chat / subagent / compact / title / follow_ups / explain / summarize: {
+            #     "input_tokens": int, "output_tokens": int,
+            #     "cache_read_tokens": int, "cache_creation_tokens": int,
+            #     "cost_usd": float, "count": int,
+            #     "provider": str, "model": str  # 最後一次用的 provider/model(顯示用)
+            # }}
+            # 為什麼存 JSON 而不另開 cost_entries 表:每個 origin 只要 aggregate
+            # 不需要逐筆 audit;查詢只在 turn 結束 / cost_breakdown RPC 時讀,
+            # 不會被高頻 join。Schema 演進加新 origin 也不必 migration。
+            "cost_breakdown_json TEXT",
         ):
             try:
                 await conn.exec_driver_sql(
@@ -1511,6 +1522,40 @@ async def persist_session_stats(
             ),
         )
         await conn.commit()
+
+
+async def persist_cost_breakdown(
+    engine: AsyncEngine,
+    session_id: str,
+    breakdown_json: str,
+) -> None:
+    """寫 cost breakdown JSON 進 cowork_session_ext。UPSERT 整段覆蓋。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, cost_breakdown_json)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                cost_breakdown_json = excluded.cost_breakdown_json
+            """,
+            (session_id, breakdown_json),
+        )
+        await conn.commit()
+
+
+async def get_cost_breakdown_json(
+    engine: AsyncEngine, session_id: str,
+) -> str | None:
+    """讀 cost breakdown JSON。沒 row / 沒填 → None。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT cost_breakdown_json FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None:
+        return None
+    return row[0]
 
 
 async def get_session_stats(

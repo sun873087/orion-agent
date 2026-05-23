@@ -25,6 +25,7 @@ def test_8_event_names() -> None:
         "SessionStart",
         "Setup",
         "SubagentStart",
+        "SubagentStop",
         "FileChanged",
     }
 

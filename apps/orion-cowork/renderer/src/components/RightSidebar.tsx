@@ -10,6 +10,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   Coins,
   ExternalLink,
@@ -21,9 +23,11 @@ import {
 
 import {
   getConversationStats,
+  getCostBreakdown,
   getSessionBudget,
   setSessionBudget,
   type ConversationStats,
+  type CostBreakdown,
   type SessionBudget,
 } from '../api/agent'
 import { useTranslation } from '../i18n'
@@ -404,6 +408,80 @@ export function RightSidebar() {
  * 累積超過 cap 時 sidecar 會自動 abort 下次 send 並推 notification —
  * 這裡只負責顯狀態 + 提供調整入口。
  */
+/**
+ * 累積 cost 顯示 + 可展開 breakdown by origin。對非工程使用者解釋「我花了
+ * 多少錢、各功能各佔多少」。Header total 跟 breakdown total **必須一致**
+ * — 都從上層傳進來的同一份 ledger snapshot 拿,避免 stats RPC 跟 breakdown
+ * RPC 兩條路 race 出來不一致(turn 完 + fire-and-forget 跑完之間)。
+ */
+function CostBreakdownToggle({
+  breakdown,
+  fallbackTotalUsd,
+}: {
+  /** 從上層 fetch 的 breakdown — null 表示還沒拿到(用 fallback 數字) */
+  breakdown: CostBreakdown | null
+  /** breakdown 還沒拿到時的 fallback total(顯主對話 stats 估的) */
+  fallbackTotalUsd: number
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+
+  // Header total:有 breakdown 就用 breakdown.totalUsd(權威),否則 fallback
+  const total = breakdown?.totalUsd ?? fallbackTotalUsd
+
+  // 排序順序 — chat 最大 / 最重要在前;其他按 cost 由大到小
+  const entries = breakdown
+    ? Object.entries(breakdown.byOrigin).sort(([a, ba], [b, bb]) => {
+        if (a === 'chat') return -1
+        if (b === 'chat') return 1
+        return bb.costUsd - ba.costUsd
+      })
+    : []
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 rounded-md px-1 py-0.5 text-xs hover:bg-bg-hover"
+      >
+        <span className="flex items-center gap-1 text-fg-muted">
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          <span>{t('rightSidebar.cost')}</span>
+        </span>
+        <span className="font-mono font-medium text-accent">${total.toFixed(4)}</span>
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5 pl-4">
+          {!breakdown && (
+            <div className="text-[10px] italic text-fg-subtle">{t('rightSidebar.costBreakdown.loading')}</div>
+          )}
+          {breakdown && entries.length === 0 && (
+            <div className="text-[10px] italic text-fg-subtle">{t('rightSidebar.costBreakdown.empty')}</div>
+          )}
+          {entries.map(([origin, bucket]) => {
+            // t() 對未知 key 會 fallback 回 key 自己 — 如果 sidecar 加了新 origin
+            // 但 i18n 還沒同步,顯示 key 本身比缺漏好
+            const key = `rightSidebar.costBreakdown.origin.${origin}`
+            const label = t(key)
+            return (
+              <div key={origin} className="flex items-center justify-between text-[10px]">
+                <span className="text-fg-muted">
+                  {label === key ? origin : label}
+                  {bucket.count > 1 && (
+                    <span className="ml-1 text-fg-subtle">× {bucket.count}</span>
+                  )}
+                </span>
+                <span className="font-mono text-fg-base">${bucket.costUsd.toFixed(4)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BudgetSection() {
   const { t } = useTranslation()
   const sessionId = useAgentStore((s) => s.sessionId)
@@ -589,30 +667,48 @@ function UsageSection() {
     s.sessionId ? s.busyBySession[s.sessionId] ?? false : false,
   )
   const [stats, setStats] = useState<ConversationStats | null>(null)
+  const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
   const [loading, setLoading] = useState(false)
 
   // 換 session 馬上清舊資料,避免閃前面 session 的數字
   useEffect(() => {
     setStats(null)
+    setBreakdown(null)
   }, [sessionId])
 
-  // sessionId 有 + busy 轉 false(turn 結束)時 refetch
+  // sessionId 有 + busy 轉 false(turn 結束)時 refetch stats + breakdown。
+  // Title / follow_ups / explain 等 fire-and-forget LLM call 不在 busy 內,
+  // 完成有 1-3 秒延遲;turn 完 3 秒後再 refetch 一次抓到那些 cost。
   useEffect(() => {
     if (!sessionId || busy) return
     let cancelled = false
     setLoading(true)
-    getConversationStats(sessionId)
-      .then((s) => {
-        if (!cancelled) setStats(s)
-      })
-      .catch(() => {
-        if (!cancelled) setStats(null)
-      })
-      .finally(() => {
+    async function refetch(): Promise<void> {
+      try {
+        const [s, bd] = await Promise.all([
+          getConversationStats(sessionId!),
+          getCostBreakdown(sessionId!).catch(() => null),
+        ])
+        if (cancelled) return
+        setStats(s)
+        if (bd) setBreakdown(bd)
+      } catch {
+        if (!cancelled) {
+          setStats(null)
+          setBreakdown(null)
+        }
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    }
+    void refetch()
+    // 延遲再抓一次 — 捕捉 fire-and-forget(title/explain/follow_ups)完成
+    const t = setTimeout(() => {
+      if (!cancelled) void refetch()
+    }, 3000)
     return () => {
       cancelled = true
+      clearTimeout(t)
     }
   }, [sessionId, busy])
 
@@ -669,10 +765,9 @@ function UsageSection() {
             <span>{t('rightSidebar.session')}</span>
             <span className="font-mono text-fg-subtle">· {stats.turns} turns</span>
           </div>
-          <UsageRow
-            label={t('rightSidebar.cost')}
-            value={`$${stats.cumulative.costUsd.toFixed(4)}`}
-            highlight
+          <CostBreakdownToggle
+            breakdown={breakdown}
+            fallbackTotalUsd={stats.cumulative.costUsd}
           />
           <UsageRow
             label={t('rightSidebar.totalTokens')}

@@ -100,6 +100,7 @@ export function MessageBubble({
         summaryProvider,
         summaryModel,
         locale,
+        sessionId: useAgentStore.getState().sessionId,
       })
       setSummaryState({ status: 'done', text, expanded: true })
     } catch (e) {

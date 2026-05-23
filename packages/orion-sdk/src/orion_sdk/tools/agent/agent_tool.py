@@ -128,6 +128,28 @@ class AgentTool:
             yield ErrorEvent(message=f"sub-agent crashed: {type(e).__name__}: {e}")
             return
 
+        # 子 agent 跑完 → fire SubagentStop hook 帶 token 用量,讓 host 可以
+        # attribute cost 進 parent session ledger(原本 sub-agent token 完全
+        # 漏算)。沒 hook registry 也沒事,純 cost 會計用,主功能不依賴。
+        if self.parent_hooks is not None:
+            from orion_sdk.hooks.events import SubagentStopEvent
+
+            usage = result.total_usage or {}
+            await self.parent_hooks.fire(
+                SubagentStopEvent(
+                    parent_session_id=str(ctx.session_id),
+                    subagent_type=self.name,
+                    ctx=ctx,
+                    user_id=ctx.user_id,
+                    input_tokens=int(usage.get("input_tokens", 0) or 0),
+                    output_tokens=int(usage.get("output_tokens", 0) or 0),
+                    cache_read_tokens=int(usage.get("cache_read_tokens", 0) or 0),
+                    cache_creation_tokens=0,
+                    provider=getattr(self.provider, "name", ""),
+                    model=getattr(self.provider, "model", ""),
+                ),
+            )
+
         final_text = result.final_text.strip()
         if not final_text:
             yield TextEvent(text="(sub-agent finished but produced no final text)")

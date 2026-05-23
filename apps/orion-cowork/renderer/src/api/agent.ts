@@ -812,6 +812,8 @@ export async function explainToolInput(opts: {
   locale: string
   /** 帶這個就走 error explain mode(2-3 句,解釋失敗原因 + 建議) */
   errorText?: string
+  /** 帶這個 sidecar 把這次 LLM call cost attribute 到該 session ledger */
+  sessionId?: string | null
 }): Promise<string> {
   let explanation = ''
   let errMessage = ''
@@ -825,6 +827,7 @@ export async function explainToolInput(opts: {
       summary_model: opts.summaryModel ?? undefined,
       locale: opts.locale,
       error_text: opts.errorText ?? undefined,
+      session_id: opts.sessionId ?? undefined,
     },
     (frame) => {
       if (frame.event === 'tool_explained') {
@@ -853,6 +856,7 @@ export async function summarizeMessage(opts: {
   summaryProvider: string | null
   summaryModel: string | null
   locale: string
+  sessionId?: string | null
 }): Promise<string> {
   let summary = ''
   let errMessage = ''
@@ -864,6 +868,7 @@ export async function summarizeMessage(opts: {
       summary_provider: opts.summaryProvider ?? undefined,
       summary_model: opts.summaryModel ?? undefined,
       locale: opts.locale,
+      session_id: opts.sessionId ?? undefined,
     },
     (frame) => {
       if (frame.event === 'message_summarized') {
@@ -987,6 +992,63 @@ export async function getSessionBudget(
           typeof d.budget_usd_cap === 'number' ? (d.budget_usd_cap as number) : null,
         currentUsd: typeof d.current_usd === 'number' ? (d.current_usd as number) : 0,
         exceeded: Boolean(d.exceeded),
+      }
+    },
+  )
+  return out
+}
+
+export type CostBucket = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  costUsd: number
+  count: number
+  provider: string
+  model: string
+}
+
+export type CostBreakdown = {
+  sessionId: string
+  totalUsd: number
+  /** Origin → bucket。Known origins:chat / subagent / compact / title /
+   * follow_ups / explain / summarize。沒記到的 origin 不在 map 內。 */
+  byOrigin: Record<string, CostBucket>
+}
+
+/** 讀 session cost breakdown(按 origin 拆細),給 RightSidebar 展開顯示。 */
+export async function getCostBreakdown(sessionId: string): Promise<CostBreakdown> {
+  let out: CostBreakdown = { sessionId, totalUsd: 0, byOrigin: {} }
+  await window.agent.call(
+    'conversation.cost_breakdown',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: Record<string, unknown> }
+      if (f.event !== 'cost_breakdown' || !f.data) return
+      const d = f.data
+      const rawByOrigin = (d.by_origin ?? {}) as Record<string, Record<string, unknown>>
+      const byOrigin: Record<string, CostBucket> = {}
+      for (const [origin, bucket] of Object.entries(rawByOrigin)) {
+        const n = (k: string): number =>
+          typeof bucket[k] === 'number' ? (bucket[k] as number) : 0
+        const s = (k: string): string =>
+          typeof bucket[k] === 'string' ? (bucket[k] as string) : ''
+        byOrigin[origin] = {
+          inputTokens: n('input_tokens'),
+          outputTokens: n('output_tokens'),
+          cacheReadTokens: n('cache_read_tokens'),
+          cacheCreationTokens: n('cache_creation_tokens'),
+          costUsd: n('cost_usd'),
+          count: n('count'),
+          provider: s('provider'),
+          model: s('model'),
+        }
+      }
+      out = {
+        sessionId: String(d.session_id ?? sessionId),
+        totalUsd: typeof d.total_usd === 'number' ? (d.total_usd as number) : 0,
+        byOrigin,
       }
     },
   )

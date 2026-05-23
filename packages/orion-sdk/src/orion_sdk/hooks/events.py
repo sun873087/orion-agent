@@ -209,6 +209,42 @@ class SubagentStartEvent:
 
 
 @dataclass
+class SubagentStopEvent:
+    """AgentTool 子 agent 跑完。帶累積 usage 讓 host 可 attribute cost 回 parent。"""
+
+    type: Literal["SubagentStop"] = "SubagentStop"
+    parent_session_id: str = ""
+    subagent_type: str = ""
+    ctx: AgentContext | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    # 子 agent 內部所有 turn 加總 — 主對話 LLM call 累計 token
+    # (跟 ForkedAgentResult.total_usage 對齊)。Host 可用這 + provider/model
+    # 算 cost,attribute 進 parent session ledger origin="subagent"。
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    provider: str = "" # e.g. "anthropic" / "openai"
+    model: str = "" # 子 agent 用的 model id
+
+    def to_serializable(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "parent_session_id": self.parent_session_id,
+            "subagent_type": self.subagent_type,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
+            "provider": self.provider,
+            "model": self.model,
+        }
+
+
+@dataclass
 class FileChangedEvent:
     """FileWriteTool / FileEditTool 成功改檔。"""
 
@@ -237,6 +273,7 @@ HookEvent = (
     | SessionStartEvent
     | SetupEvent
     | SubagentStartEvent
+    | SubagentStopEvent
     | FileChangedEvent
 )
 
@@ -249,6 +286,7 @@ HookEventName = Literal[
     "SessionStart",
     "Setup",
     "SubagentStart",
+    "SubagentStop",
     "FileChanged",
 ]
 
@@ -261,6 +299,7 @@ HOOK_EVENT_NAMES: tuple[str, ...] = (
     "SessionStart",
     "Setup",
     "SubagentStart",
+    "SubagentStop",
     "FileChanged",
 )
 

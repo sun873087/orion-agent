@@ -360,6 +360,7 @@ function ToolApprovalBanner({
         summaryProvider,
         summaryModel,
         locale,
+        sessionId: useAgentStore.getState().sessionId,
       })
       setExplainState({ status: 'done', text })
     } catch (e) {
@@ -541,6 +542,7 @@ function ToolErrorExplain({
         summaryModel,
         locale,
         errorText,
+        sessionId: useAgentStore.getState().sessionId,
       })
       setState({ status: 'done', text })
     } catch (e) {

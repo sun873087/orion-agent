@@ -35,6 +35,7 @@ from orion_sdk.tools.builtin_set import build_default_tool_set
 from orion_sdk.tools.special.enter_plan_mode import EnterPlanModeTool
 from orion_sdk.tools.special.exit_plan_mode import ExitPlanModeTool
 
+from orion_cowork_sidecar.cost_ledger import CostLedger
 from orion_cowork_sidecar import (
     backup_handlers,
     memory_handlers,
@@ -270,6 +271,9 @@ class Handlers:
         # Fire-and-forget background task 必須持有 reference,否則 Python 3.11+
         # GC 會把沒人引用的 task 中途收掉(尤其在 generator close cleanup 時)。
         self._bg_tasks: set[asyncio.Task[Any]] = set()
+        # Per-session cost ledger — 主對話 + 子 agent + 所有 cheap LLM call 都
+        # record 進來,UI 可拆 breakdown 顯示。Lazy hydrate from DB on first access。
+        self._ledgers: dict[str, CostLedger] = {}
         # Per-sid follow-up gen task — 同 sid 連發新 turn 時 cancel 舊 task
         # 避免兩次 LLM call race,只留最新一輪的建議。
         self._followup_tasks: dict[str, asyncio.Task[Any]] = {}
@@ -503,6 +507,81 @@ class Handlers:
         """由 __main__ 注入 RpcServer._write_frame,讓背景事件能推 frame 給 main。"""
         self._notifier = notifier
 
+    async def _cumulative_cost_usd(self, sid: str, conv: Any | None) -> float:
+        """算當前 session 累積 cost。優先用 ledger(含主對話 + 所有 cheap LLM
+        + 子 agent),legacy 場景(ledger 空,或第一個 turn 還沒結束)fallback
+        用 conv.stats 估。供 budget check / get_budget RPC 用。
+        """
+        ledger = await self._get_ledger(sid)
+        total = ledger.total_usd()
+        if total > 0:
+            return total
+        if conv is not None:
+            return _compute_cumulative_cost(conv)
+        return 0.0
+
+    async def _get_ledger(self, sid: str) -> CostLedger:
+        """取 sid 的 cost ledger;in-memory miss 從 DB JSON hydrate 一次。"""
+        ledger = self._ledgers.get(sid)
+        if ledger is not None:
+            return ledger
+        engine = self._engine
+        if engine is None:
+            ledger = CostLedger()
+        else:
+            try:
+                raw = await storage.get_cost_breakdown_json(engine, sid)
+                ledger = CostLedger.from_json(raw)
+            except Exception as e: # noqa: BLE001
+                print(
+                    f"[ledger] hydrate failed sid={sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
+                ledger = CostLedger()
+        self._ledgers[sid] = ledger
+        return ledger
+
+    async def _persist_ledger(self, sid: str) -> None:
+        """寫 in-memory ledger 進 DB。Turn 結束 / cheap LLM call 完成時呼叫。"""
+        ledger = self._ledgers.get(sid)
+        if ledger is None:
+            return
+        engine = self._engine
+        if engine is None:
+            return
+        try:
+            await storage.persist_cost_breakdown(engine, sid, ledger.to_json())
+        except Exception as e: # noqa: BLE001
+            print(
+                f"[ledger] persist failed sid={sid[:8]}: {e}",
+                file=__import__('sys').stderr, flush=True,
+            )
+
+    def _record_usage_from_event(
+        self,
+        ledger: CostLedger,
+        ev: Any,
+        *,
+        origin: str,
+        provider_name: str,
+        model: str,
+    ) -> None:
+        """從 MessageStopEvent 抽 usage 寫 ledger。其他 event type 忽略。"""
+        if getattr(ev, "type", None) != "message_stop":
+            return
+        usage = getattr(ev, "usage", None)
+        if usage is None:
+            return
+        ledger.record(
+            origin,
+            provider=provider_name,
+            model=model,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            cache_read_tokens=getattr(usage, "cache_read_tokens", 0) or 0,
+            cache_creation_tokens=getattr(usage, "cache_creation_tokens", 0) or 0,
+        )
+
     async def notify(self, frame: dict[str, Any]) -> None:
         """推一個 notification frame 給 main(無 id)。fallback 走 stderr log。"""
         if self._notifier is None:
@@ -603,6 +682,7 @@ class Handlers:
             "permissions.set": self.permissions_set,
             "tool.explain": self.tool_explain,
             "message.summarize": self.message_summarize,
+            "conversation.cost_breakdown": self.conversation_cost_breakdown,
             "stt.transcribe": stt_handlers.stt_transcribe,
             "stt.status": self.stt_status,
             "tts.synthesize": tts_handlers.tts_synthesize,
@@ -801,7 +881,7 @@ class Handlers:
         # set_budget RPC 內會 reset flag。
         budget_info = await storage.get_session_budget(engine, sid)
         if budget_info["exceeded"] and budget_info["budget_usd_cap"] is not None:
-            current = _compute_cumulative_cost(conv)
+            current = await self._cumulative_cost_usd(sid, conv)
             yield {
                 "event": "error",
                 "data": {
@@ -867,6 +947,14 @@ class Handlers:
 
         # 記下 turn 開始時的 message 數,結束後 diff append 新訊息進 DB
         before_count = len(conv.state_messages)
+        # 同時 snapshot stats — 結束後 delta = current - before,寫進 ledger
+        # origin="chat"。Conv.stats 是 forward-only cumulative,所以 delta 是
+        # 純這 turn 主對話貢獻的 token。
+        before_stats = conv.stats
+        before_input = before_stats.input_tokens
+        before_output = before_stats.output_tokens
+        before_cache_read = before_stats.cache_read_tokens
+        before_cache_creation = before_stats.cache_creation_tokens
 
         # Workspace / project 設定:有則 ctx.cwd 用 workspace_dir,SDK 看到後就
         # 跑 cwd-derived sections。沒設用 process cwd 但 include_workspace_context=False
@@ -1140,6 +1228,38 @@ class Handlers:
                     f"[stats] persist failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
+            # ─── Cost ledger:主對話 delta 寫進 origin=chat ──
+            # 拿 turn 開始時 snapshot 的 stats 跟結束 stats 做差,寫 ledger,
+            # 跟其他 cheap LLM call(title / explain / follow_ups / summarize / subagent)
+            # 一起算 cumulative breakdown。注意 conv.stats 也含 auto-compact 的
+            # cost(SDK 內部 LLM call 沒額外 emit,被算進主對話 stats 是 SDK
+            # 已知行為)— 這 delta 包含但無法拆出。
+            try:
+                ledger = await self._get_ledger(sid)
+                delta_input = stats.input_tokens - before_input
+                delta_output = stats.output_tokens - before_output
+                delta_cache_read = stats.cache_read_tokens - before_cache_read
+                delta_cache_creation = stats.cache_creation_tokens - before_cache_creation
+                # 只有真的有 LLM call 才 record(避免空 turn 記 0 次但 count++)
+                if (
+                    delta_input or delta_output
+                    or delta_cache_read or delta_cache_creation
+                ):
+                    ledger.record(
+                        "chat",
+                        provider=conv.provider.name,
+                        model=conv.provider.model,
+                        input_tokens=delta_input,
+                        output_tokens=delta_output,
+                        cache_read_tokens=delta_cache_read,
+                        cache_creation_tokens=delta_cache_creation,
+                    )
+                    await self._persist_ledger(sid)
+            except Exception as e: # noqa: BLE001
+                print(
+                    f"[ledger] chat record failed for {sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
             # ─── LLM 後補 session title─────────────────────
             # 規則 quick title 只是「使用者第一句剪一段」,讀起來呆。turn 結束
             # 後背景跑一次 LLM 摘要,寫出像 ChatGPT/Claude.ai 那種自然標題。
@@ -1203,6 +1323,7 @@ class Handlers:
                 user_msg_text += f"\n--- 助理第一句回覆 ---\n{assistant_text[:600]}\n"
             from orion_model.types import NormalizedMessage
             parts: list[str] = []
+            ledger = await self._get_ledger(sid)
             # gpt-5* 是 reasoning model,max_tokens 是「總 token」含 reasoning,
             # 設太小會被 reasoning 吃光、可見輸出為 0。給 1024 token 預算 +
             # reasoning_effort=minimal 讓它別花太多力氣思考(title 不值得)。
@@ -1218,7 +1339,12 @@ class Handlers:
                 if etype == "text_delta":
                     parts.append(getattr(ev, "text", ""))
                 elif etype == "message_stop":
+                    self._record_usage_from_event(
+                        ledger, ev, origin="title",
+                        provider_name=provider.name, model=provider.model,
+                    )
                     break
+            await self._persist_ledger(sid)
             title = _clean_llm_title("".join(parts))
             if not title:
                 return
@@ -1272,6 +1398,7 @@ class Handlers:
             )
             from orion_model.types import NormalizedMessage
             parts: list[str] = []
+            ledger = await self._get_ledger(sid)
             async for ev in provider.stream(
                 system=system,
                 messages=[NormalizedMessage(role="user", content=user_msg_text)],
@@ -1282,7 +1409,12 @@ class Handlers:
                 if etype == "text_delta":
                     parts.append(getattr(ev, "text", ""))
                 elif etype == "message_stop":
+                    self._record_usage_from_event(
+                        ledger, ev, origin="follow_ups",
+                        provider_name=provider.name, model=provider.model,
+                    )
                     break
+            await self._persist_ledger(sid)
             suggestions = _parse_follow_ups("".join(parts))
             if not suggestions:
                 return
@@ -1318,6 +1450,9 @@ class Handlers:
         sp_name = params.get("summary_provider")
         sp_model = params.get("summary_model")
         locale = params.get("locale") or "zh-TW"
+        # session_id 可選 — 帶就 attribute cost 到該 session 的 ledger,沒帶
+        # cost 算丟失(舊版 renderer 沒傳 / banner 點時剛好 sid 為 null 等)。
+        session_id = params.get("session_id")
         if not isinstance(tool_name, str) or not tool_name:
             yield {"event": "error", "data": {
                 "code": "BAD_PARAMS",
@@ -1396,6 +1531,11 @@ class Handlers:
         try:
             from orion_model.types import NormalizedMessage
             parts: list[str] = []
+            ledger = (
+                await self._get_ledger(session_id)
+                if isinstance(session_id, str) and session_id
+                else None
+            )
             async for ev in provider.stream(
                 system=system,
                 messages=[NormalizedMessage(role="user", content=user_msg_text)],
@@ -1406,7 +1546,14 @@ class Handlers:
                 if etype == "text_delta":
                     parts.append(getattr(ev, "text", ""))
                 elif etype == "message_stop":
+                    if ledger is not None:
+                        self._record_usage_from_event(
+                            ledger, ev, origin="explain",
+                            provider_name=provider.name, model=provider.model,
+                        )
                     break
+            if ledger is not None and isinstance(session_id, str):
+                await self._persist_ledger(session_id)
             # Describe 模式只要一行 ≤80 字;error 模式可保留 2-3 句 ≤400 字。
             full = "".join(parts).strip()
             if has_error:
@@ -1452,6 +1599,7 @@ class Handlers:
         sp_name = params.get("summary_provider")
         sp_model = params.get("summary_model")
         locale = params.get("locale") or "zh-TW"
+        session_id = params.get("session_id") # 可選 — 帶就算進該 session ledger
         if not isinstance(text, str) or not text.strip():
             yield {"event": "error", "data": {
                 "code": "BAD_PARAMS",
@@ -1494,6 +1642,11 @@ class Handlers:
         try:
             from orion_model.types import NormalizedMessage
             parts: list[str] = []
+            ledger = (
+                await self._get_ledger(session_id)
+                if isinstance(session_id, str) and session_id
+                else None
+            )
             async for ev in provider.stream(
                 system=system,
                 messages=[NormalizedMessage(role="user", content=user_msg_text)],
@@ -1504,7 +1657,14 @@ class Handlers:
                 if etype == "text_delta":
                     parts.append(getattr(ev, "text", ""))
                 elif etype == "message_stop":
+                    if ledger is not None:
+                        self._record_usage_from_event(
+                            ledger, ev, origin="summarize",
+                            provider_name=provider.name, model=provider.model,
+                        )
                     break
+            if ledger is not None and isinstance(session_id, str):
+                await self._persist_ledger(session_id)
             summary = "".join(parts).strip()
             if not summary:
                 yield {"event": "error", "data": {
@@ -1812,9 +1972,15 @@ class Handlers:
                 6,
             )
 
-        cumulative_cost = _cost(
-            s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens
-        )
+        # Cumulative cost 改從 ledger 算 — 含主對話 + 所有 cheap LLM(title /
+        # follow_ups / explain / summarize / subagent),跟 cost_breakdown RPC
+        # 的 total 對齊。Ledger 空 fallback 用 conv.stats(legacy session)。
+        cumulative_cost = await self._cumulative_cost_usd(sid, conv)
+        if cumulative_cost == 0.0:
+            cumulative_cost = _cost(
+                s.input_tokens, s.output_tokens,
+                s.cache_read_tokens, s.cache_creation_tokens,
+            )
         last_cost = _cost(
             s.last_input_tokens,
             s.last_output_tokens,
@@ -2246,7 +2412,7 @@ class Handlers:
         cap = info["budget_usd_cap"]
         if cap is None:
             return
-        current = _compute_cumulative_cost(conv)
+        current = await self._cumulative_cost_usd(sid, conv)
         if current >= cap and not info["exceeded"]:
             await storage.mark_budget_exceeded(engine, sid, True)
             await self.notify({
@@ -2257,6 +2423,34 @@ class Handlers:
                     "budget_usd_cap": cap,
                 },
             })
+
+    async def conversation_cost_breakdown(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀 session cost breakdown — 按 origin 拆細。給 RightSidebar 展開顯示。
+
+        Origin 分類:chat / subagent / compact / title / follow_ups / explain / summarize。
+        每個 bucket 含 cost_usd / count / tokens / provider / model。
+        """
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        await self.ensure_engine()
+        ledger = await self._get_ledger(sid)
+        yield {
+            "event": "cost_breakdown",
+            "data": {
+                "session_id": sid,
+                "total_usd": ledger.total_usd(),
+                "by_origin": ledger.breakdown(),
+            },
+            "final": True,
+        }
 
     async def conversation_get_budget(
         self, params: dict[str, Any]
@@ -2272,9 +2466,10 @@ class Handlers:
             return
         engine = await self.ensure_engine()
         info = await storage.get_session_budget(engine, sid)
-        # 算當前累積 cost — 若 conv 不在 memory 就 0(沒跑過 turn,沒花到錢)
+        # 算當前累積 cost — 從 ledger 算(含主對話 + 所有 cheap LLM call),
+        # legacy session ledger 空就 fallback conv.stats
         conv = self._conversations.get(sid)
-        current = _compute_cumulative_cost(conv) if conv is not None else 0.0
+        current = await self._cumulative_cost_usd(sid, conv)
         yield {
             "event": "budget",
             "data": {
@@ -3323,6 +3518,35 @@ class Handlers:
         conv = Conversation(**conv_kwargs)
         if state_messages is not None:
             conv.state_messages = state_messages
+        # Subagent cost attribution — AgentTool 跑完 fire SubagentStopEvent,
+        # 我們接住把 usage 寫進 parent session ledger origin="subagent"。
+        # AgentTool 已在 tools 內(line ~3410),mutate 它的 parent_hooks 指向
+        # conv.hooks,SDK fire 時就會到 callback。
+        sid_for_hook = str(conv.session_id) if conv.session_id else None
+        if sid_for_hook:
+            async def _on_subagent_stop(event: Any) -> None:
+                try:
+                    ledger = await self._get_ledger(sid_for_hook)
+                    ledger.record(
+                        "subagent",
+                        provider=getattr(event, "provider", "") or "",
+                        model=getattr(event, "model", "") or "",
+                        input_tokens=getattr(event, "input_tokens", 0) or 0,
+                        output_tokens=getattr(event, "output_tokens", 0) or 0,
+                        cache_read_tokens=getattr(event, "cache_read_tokens", 0) or 0,
+                        cache_creation_tokens=getattr(event, "cache_creation_tokens", 0) or 0,
+                    )
+                    await self._persist_ledger(sid_for_hook)
+                except Exception as e: # noqa: BLE001
+                    import sys
+                    print(
+                        f"[ledger] subagent record failed sid={sid_for_hook[:8]}: {e}",
+                        file=sys.stderr, flush=True,
+                    )
+            conv.hooks.register("SubagentStop", _on_subagent_stop)
+            for tool in conv.tools:
+                if isinstance(tool, AgentTool):
+                    tool.parent_hooks = conv.hooks
         return conv, effective_workspace
 
     async def _resume_from_db(
