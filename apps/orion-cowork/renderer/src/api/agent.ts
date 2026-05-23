@@ -792,6 +792,47 @@ export async function sendToolApproval(
   )
 }
 
+/**
+ * 把 tool name + input 翻成自然語言一句話,給 ApprovalBanner「不懂?」按鈕用。
+ * 用 user 在 Settings 設的「摘要 model」(小、便宜)。沒設或 LLM 失敗時拋 error,
+ * caller 顯示 fallback 訊息(e.g. 提示去 Settings 設摘要 model)。
+ */
+export async function explainToolInput(opts: {
+  toolName: string
+  toolInput: Record<string, unknown>
+  summaryProvider: string | null
+  summaryModel: string | null
+  locale: string
+}): Promise<string> {
+  let explanation = ''
+  let errMessage = ''
+  let errCode = ''
+  await window.agent.call(
+    'tool.explain',
+    {
+      tool_name: opts.toolName,
+      tool_input: opts.toolInput,
+      summary_provider: opts.summaryProvider ?? undefined,
+      summary_model: opts.summaryModel ?? undefined,
+      locale: opts.locale,
+    },
+    (frame) => {
+      if (frame.event === 'tool_explained') {
+        const d = (frame.data ?? {}) as { explanation?: string }
+        explanation = d.explanation ?? ''
+      } else if (frame.event === 'error') {
+        const d = (frame.data ?? {}) as { code?: string; message?: string }
+        errCode = d.code ?? 'ERROR'
+        errMessage = d.message ?? ''
+      }
+    },
+  )
+  if (!explanation) {
+    throw new Error(`${errCode}: ${errMessage || 'no explanation'}`)
+  }
+  return explanation
+}
+
 /** 回 AskUserQuestion 答案 — answers map question text → chosen label / free text。 */
 export async function sendAskUserReply(
   requestId: string,

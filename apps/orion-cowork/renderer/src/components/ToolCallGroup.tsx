@@ -31,9 +31,10 @@ import {
   X,
 } from 'lucide-react'
 
-import { getPermissions, sendToolApproval, setPermissions } from '../api/agent'
+import { explainToolInput, getPermissions, sendToolApproval, setPermissions } from '../api/agent'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type ToolCallState } from '../store/agent'
+import { useSettingsStore } from '../store/settings'
 
 type Display = {
   icon: LucideIcon
@@ -209,6 +210,89 @@ function suggestAllowPattern(toolName: string, input: Record<string, unknown> | 
   }
 }
 
+/** 拿 path 的 basename(不依賴 path module — renderer 沒 node 環境)。 */
+function basename(p: string): string {
+  if (!p) return ''
+  const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const idx = norm.lastIndexOf('/')
+  return idx >= 0 ? norm.slice(idx + 1) : norm
+}
+
+/** 從 URL 抽 hostname,失敗就回原字串。 */
+function hostFromUrl(u: string): string {
+  try {
+    return new URL(u).hostname || u
+  } catch {
+    return u
+  }
+}
+
+/**
+ * 把 tool name + input 翻成自然語言動詞片語,給 ApprovalBanner 用。
+ * 非工程使用者也看得懂。回 null 表示沒對應翻譯,banner 退回舊「tool: pattern」格式。
+ */
+function humanAction(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string | null {
+  const i = (input ?? {}) as Record<string, unknown>
+  const s = (k: string): string => (typeof i[k] === 'string' ? (i[k] as string) : '')
+  switch (toolName) {
+    case 'Read': {
+      const p = s('path')
+      return p ? t('approval.action.read', { name: basename(p) }) : null
+    }
+    case 'Write': {
+      const p = s('path')
+      return p ? t('approval.action.write', { name: basename(p) }) : null
+    }
+    case 'Edit': {
+      const p = s('path')
+      return p ? t('approval.action.edit', { name: basename(p) }) : null
+    }
+    case 'NotebookEdit': {
+      const p = s('notebook_path') || s('path')
+      return p ? t('approval.action.notebookEdit', { name: basename(p) }) : null
+    }
+    case 'Bash':
+      return t('approval.action.bash')
+    case 'Glob': {
+      const p = s('pattern')
+      if (!p) return null
+      return p === '*' || p === '**/*'
+        ? t('approval.action.globAll')
+        : t('approval.action.glob', { pattern: p })
+    }
+    case 'Grep': {
+      const p = s('pattern')
+      return p ? t('approval.action.grep', { pattern: p }) : null
+    }
+    case 'WebFetch': {
+      const u = s('url')
+      return u ? t('approval.action.webFetch', { host: hostFromUrl(u) }) : null
+    }
+    case 'WebSearch': {
+      const q = s('query')
+      return q ? t('approval.action.webSearch', { query: q }) : null
+    }
+    case 'open_url': {
+      const u = s('url')
+      return u ? t('approval.action.openUrl', { host: hostFromUrl(u) }) : null
+    }
+    case 'open_path': {
+      const p = s('path')
+      return p ? t('approval.action.openPath', { name: basename(p) }) : null
+    }
+    case 'TodoWrite':
+      return t('approval.action.todoWrite')
+    case 'AskUserQuestion':
+      return t('approval.action.askUserQuestion')
+    default:
+      return null
+  }
+}
+
 /**
  * 對重點 tool 給「人話」摘要(banner 上方一行讓 user 一眼看懂在做什麼)。
  * 不在這 switch 內的 tool fallback 顯 describe() title。
@@ -250,12 +334,39 @@ function ToolApprovalBanner({
   toolName: string
   input: Record<string, unknown> | undefined
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
+  const [explainState, setExplainState] = useState<
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'done'; text: string }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' })
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
   const d = describe(toolName, input)
+  const action = humanAction(toolName, input, t)
   const summary = humanSummary(toolName, input)
   const allowPattern = suggestAllowPattern(toolName, input)
+
+  async function handleExplain() {
+    if (explainState.status === 'loading') return
+    setExplainState({ status: 'loading' })
+    try {
+      const text = await explainToolInput({
+        toolName,
+        toolInput: input ?? {},
+        summaryProvider,
+        summaryModel,
+        locale,
+      })
+      setExplainState({ status: 'done', text })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setExplainState({ status: 'error', message })
+    }
+  }
   const rawJson =
     input && Object.keys(input).length > 0
       ? JSON.stringify(input, null, 2)
@@ -303,15 +414,43 @@ function ToolApprovalBanner({
     <div className="border-y border-warning/30 bg-warning/5 px-4 py-3">
       <div className="mb-2 flex items-center gap-2 text-xs text-warning">
         <Hand size={12} />
-        <span>{t('approval.banner.title', { tool: d.title })}</span>
+        <span>
+          {action
+            ? t('approval.banner.titleAction', { action })
+            : t('approval.banner.title', { tool: d.title })}
+        </span>
       </div>
       {summary && (
         <pre className="scrollbar-thin mb-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-bg-base/60 px-2 py-1.5 font-mono text-[11px] text-fg-base">
           {summary}
         </pre>
       )}
-      {rawJson && (
-        <div className="mb-2">
+      {explainState.status === 'done' && (
+        <div className="mb-2 flex items-start gap-1.5 rounded-md bg-info/10 px-2 py-1.5 text-[11px] text-fg-base">
+          <Sparkles size={12} className="mt-0.5 shrink-0 text-info" />
+          <span>{explainState.text}</span>
+        </div>
+      )}
+      {explainState.status === 'error' && (
+        <div className="mb-2 text-[10px] text-danger">
+          {t('approval.banner.explainError', { message: explainState.message })}
+        </div>
+      )}
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {explainState.status !== 'done' && (
+          <button
+            type="button"
+            onClick={handleExplain}
+            disabled={explainState.status === 'loading'}
+            className="flex items-center gap-1 text-[10px] text-fg-subtle hover:text-fg-muted disabled:opacity-50"
+          >
+            <Sparkles size={10} />
+            {explainState.status === 'loading'
+              ? t('approval.banner.explainLoading')
+              : t('approval.banner.explain')}
+          </button>
+        )}
+        {rawJson && (
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
@@ -319,12 +458,12 @@ function ToolApprovalBanner({
           >
             {showRaw ? t('approval.banner.hideRaw') : t('approval.banner.viewRaw')}
           </button>
-          {showRaw && (
-            <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-bg-base/60 px-2 py-1.5 font-mono text-[10px] text-fg-muted">
-              {rawJson}
-            </pre>
-          )}
-        </div>
+        )}
+      </div>
+      {rawJson && showRaw && (
+        <pre className="scrollbar-thin mb-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-bg-base/60 px-2 py-1.5 font-mono text-[10px] text-fg-muted">
+          {rawJson}
+        </pre>
       )}
       <div className="flex flex-wrap items-center gap-2">
         <button
