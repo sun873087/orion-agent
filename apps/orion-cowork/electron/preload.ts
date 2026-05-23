@@ -107,6 +107,17 @@ const planApi = {
   },
 }
 
+type SessionTitleUpdatedPayload = { session_id: string; title: string }
+
+const sessionApi = {
+  /** 訂閱 sidecar 推的 session.title_updated 事件(LLM 後補完自然標題後觸發)。 */
+  onTitleUpdated: (cb: (data: SessionTitleUpdatedPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: SessionTitleUpdatedPayload) => cb(data)
+    ipcRenderer.on('session:title_updated', listener)
+    return () => ipcRenderer.removeListener('session:title_updated', listener)
+  },
+}
+
 type UpdaterAvailablePayload = { version: string; releaseDate?: string }
 type UpdaterProgressPayload = { percent?: number; transferred?: number; total?: number }
 
@@ -238,6 +249,7 @@ contextBridge.exposeInMainWorld('planApi', planApi)
 contextBridge.exposeInMainWorld('budgetApi', budgetApi)
 contextBridge.exposeInMainWorld('backupApi', backupApi)
 contextBridge.exposeInMainWorld('updaterApi', updaterApi)
+contextBridge.exposeInMainWorld('sessionApi', sessionApi)
 
 declare global {
   interface Window {
@@ -249,5 +261,6 @@ declare global {
     budgetApi: typeof budgetApi
     backupApi: typeof backupApi
     updaterApi: typeof updaterApi
+    sessionApi: typeof sessionApi
   }
 }

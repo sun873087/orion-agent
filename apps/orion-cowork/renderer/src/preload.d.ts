@@ -63,6 +63,16 @@ interface OrionSchedulerApi {
   onFired: (cb: (data: OrionSchedulerFiredPayload) => void) => () => void
 }
 
+interface OrionSessionTitleUpdatedPayload {
+  session_id: string
+  title: string
+}
+
+interface OrionSessionApi {
+  /** 訂閱 session.title_updated — LLM 後補完自然標題後 push。 */
+  onTitleUpdated: (cb: (data: OrionSessionTitleUpdatedPayload) => void) => () => void
+}
+
 interface OrionPlanModeAwaitingPayload {
   session_id: string
   plan_id: string | null
@@ -150,6 +160,8 @@ declare global {
     backupApi: OrionBackupApi
     /** Auto-update(electron-updater)通道。 */
     updaterApi: OrionUpdaterApi
+    /** Session 通知通道(title 後補等)。 */
+    sessionApi: OrionSessionApi
   }
 }
 

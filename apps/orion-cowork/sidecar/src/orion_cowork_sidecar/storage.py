@@ -395,6 +395,26 @@ async def update_title_if_empty(engine: AsyncEngine, session_id: str, title: str
         await s.commit()
 
 
+async def update_title_if_matches(
+    engine: AsyncEngine,
+    session_id: str,
+    expected_title: str,
+    new_title: str,
+) -> bool:
+    # LLM 補生 title 用:只在當前 title 仍是 expected_title(規則臨時 title)時覆蓋。
+    # 避免 race(user 同時手動 rename)時把使用者的名字蓋掉。
+    cleaned = new_title.strip()[:60]
+    if not cleaned:
+        return False
+    async with db_session(engine) as s:
+        meta = await s.get(MetaRow, session_id)
+        if meta is None or meta.title != expected_title:
+            return False
+        meta.title = cleaned
+        await s.commit()
+        return True
+
+
 async def list_sessions(engine: AsyncEngine) -> list[SessionMeta]:
     """List sessions ordered by 最近活動(latest message 或 session 建立)倒序。
 

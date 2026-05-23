@@ -127,6 +127,7 @@ app.whenReady().then(async () => {
     else if (evt === 'plan_mode.rejected') broadcast('plan_mode:rejected')
     else if (evt === 'budget.exceeded') broadcast('budget:exceeded')
     else if (evt === 'backup.restart_required') broadcast('backup:restart_required')
+    else if (evt === 'session.title_updated') broadcast('session:title_updated')
   })
 
   // 2. 註冊 IPC

@@ -178,6 +178,8 @@ type AgentState = {
   setError: (sid: string, err: string | null) => void
   setBusy: (sid: string, b: boolean) => void
   setSessions: (s: SessionSummary[]) => void
+  /** Patch 單一 session 的 title — sidecar LLM 後補完自然標題後 push 過來。 */
+  patchSessionTitle: (sid: string, title: string) => void
   /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
    * 舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
@@ -277,6 +279,12 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   setBusy: (sid, b) =>
     set((s) => updateSession(s, 'busyBySession', sid, () => b)),
   setSessions: (s) => set({ sessions: s }),
+  patchSessionTitle: (sid, title) =>
+    set((s) => ({
+      sessions: s.sessions.map((row) =>
+        row.session_id === sid ? { ...row, title } : row,
+      ),
+    })),
   switchToSession: (sid) => set({ sessionId: sid }),
 
   hydrateMessages: (sid, messages) =>

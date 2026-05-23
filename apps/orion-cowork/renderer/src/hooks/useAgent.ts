@@ -93,6 +93,21 @@ export function useScheduleNotifications() {
 }
 
 /**
+ * 訂閱 sidecar 推的 session.title_updated — 第一個 turn 結束後 LLM 後補
+ * 出自然標題,直接 patch sidebar 內該 session 的 title,不必整個 refresh。
+ */
+export function useSessionTitleUpdates(): void {
+  useEffect(() => {
+    if (!window.sessionApi?.onTitleUpdated) return
+    const off = window.sessionApi.onTitleUpdated((data) => {
+      if (!data.session_id || !data.title) return
+      useAgentStore.getState().patchSessionTitle(data.session_id, data.title)
+    })
+    return off
+  }, [])
+}
+
+/**
  * Session 切換時呼 conversation.plan_status,re-hydrate plan mode UI。
  * 用於 crash recovery / 切回有 AWAITING_APPROVAL 的 session。
  */

@@ -264,6 +264,12 @@ class Handlers:
         self._engine_lock = asyncio.Lock()
         # in-mem cache for fast title-on-first-prompt(避免每 turn 都打 DB select)
         self._title_done: set[str] = set()
+        # 規則臨時 title — 第一個 turn 結束後背景跑 LLM 生自然 title 覆蓋。
+        # value 是寫進 DB 的 quick title,LLM 覆蓋時用來判定「user 沒手動改」。
+        self._title_pending_llm: dict[str, str] = {}
+        # Fire-and-forget background task 必須持有 reference,否則 Python 3.11+
+        # GC 會把沒人引用的 task 中途收掉(尤其在 generator close cleanup 時)。
+        self._bg_tasks: set[asyncio.Task[Any]] = set()
         # D 下:MCP manager(lazy start)
         self._mcp = CoworkMcpManager()
         self._mcp_started = False
@@ -807,13 +813,16 @@ class Handlers:
             }
             return
 
-        # 首次 prompt → 設 title
+        # 首次 prompt → 設 title(規則臨時版)
+        # 兩段式:這邊先寫 quick title 讓 sidebar 立刻有東西顯,turn 結束後
+        # 背景跑 LLM 摘要覆蓋成更自然的標題(claude.ai 同樣做法)。
         if sid not in self._title_done:
-            # 用 prompt 文字當 title,empty 時退到「(attachment)」
-            title_seed = prompt.strip() or ("(attachment)" if raw_attachments else "")
-            if title_seed:
-                await storage.update_title_if_empty(engine, sid, title_seed)
+            quick_title = _quick_title_from_prompt(prompt, raw_attachments)
+            if quick_title:
+                await storage.update_title_if_empty(engine, sid, quick_title)
                 self._title_done.add(sid)
+                # 標記為「等 LLM 後補」— turn 結束 finally 段 fire-and-forget
+                self._title_pending_llm[sid] = quick_title
 
         # 把 attachments 轉成 ImageBlock(預期格式:[{media_type, data: base64}])
         images = []
@@ -1126,6 +1135,87 @@ class Handlers:
                     f"[stats] persist failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
+            # ─── LLM 後補 session title─────────────────────
+            # 規則 quick title 只是「使用者第一句剪一段」,讀起來呆。turn 結束
+            # 後背景跑一次 LLM 摘要,寫出像 ChatGPT/Claude.ai 那種自然標題。
+            # 失敗 silent,quick title 留著 fallback。
+            quick = self._title_pending_llm.pop(sid, None)
+            if quick is not None:
+                task = asyncio.create_task(
+                    self._generate_llm_title(sid, conv, locale_raw, quick)
+                )
+                # 保住 reference 防 GC 中途收掉(Python 3.11+ 行為)
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
+
+    async def _generate_llm_title(
+        self,
+        sid: str,
+        conv: Conversation,
+        locale: str | None,
+        quick_title: str,
+    ) -> None:
+        # 後台 task — 抽第一個 user prompt + 第一個 assistant text,丟給
+        # summary provider 寫個 ~15 字標題。寫 DB 時用 if-matches CAS 避免
+        # 覆蓋 user 同時手動 rename 的結果。完成後推 notification 讓 sidebar
+        # 立刻更新標題。
+        import sys
+        try:
+            user_text, assistant_text = _extract_first_turn_text(conv.state_messages)
+            if not user_text:
+                return
+            provider = conv.compact_summary_provider or conv.provider
+            if provider is None:
+                return
+            locale_label = _LOCALE_LABEL.get(locale or "zh-TW", "繁體中文")
+            system = (
+                f"You write one short, natural conversation title in {locale_label}. "
+                "Output only the title — no quotes, no prefix, no trailing punctuation."
+            )
+            user_msg_text = (
+                f"以下是一段對話開頭。請用 {locale_label} 寫一個約 15 字以內、"
+                "概括「使用者想做什麼」的自然標題。只回標題本身,不要前綴 / 引號 / 句號。\n\n"
+                f"--- 使用者第一句 ---\n{user_text[:600]}\n"
+            )
+            if assistant_text:
+                user_msg_text += f"\n--- 助理第一句回覆 ---\n{assistant_text[:600]}\n"
+            from orion_model.types import NormalizedMessage
+            parts: list[str] = []
+            # gpt-5* 是 reasoning model,max_tokens 是「總 token」含 reasoning,
+            # 設太小會被 reasoning 吃光、可見輸出為 0。給 1024 token 預算 +
+            # reasoning_effort=minimal 讓它別花太多力氣思考(title 不值得)。
+            # 不帶 temperature — gpt-5 系列拒收這參數;non-reasoning model 用
+            # default 也沒問題。
+            async for ev in provider.stream(
+                system=system,
+                messages=[NormalizedMessage(role="user", content=user_msg_text)],
+                max_tokens=1024,
+                reasoning_effort="minimal",
+            ):
+                etype = getattr(ev, "type", None)
+                if etype == "text_delta":
+                    parts.append(getattr(ev, "text", ""))
+                elif etype == "message_stop":
+                    break
+            title = _clean_llm_title("".join(parts))
+            if not title:
+                return
+            engine = self._engine
+            if engine is None:
+                return
+            ok = await storage.update_title_if_matches(
+                engine, sid, expected_title=quick_title, new_title=title,
+            )
+            if ok:
+                await self.notify({
+                    "event": "session.title_updated",
+                    "data": {"session_id": sid, "title": title},
+                })
+        except Exception as e: # noqa: BLE001
+            print(
+                f"[title] LLM gen failed sid={sid[:8]}: {e}",
+                file=sys.stderr, flush=True,
+            )
 
     def _build_can_use_tool(
         self,
@@ -4400,6 +4490,88 @@ def _apply_summary_provider(conv: Conversation, params: dict[str, Any]) -> None:
             f"[sidecar] summary provider build failed ({sp_name}/{sp_model}): {e}",
             file=sys.stderr, flush=True,
         )
+
+
+_LOCALE_LABEL: dict[str, str] = {
+    "zh-TW": "繁體中文",
+    "zh-CN": "简体中文",
+    "en": "English",
+    "ja": "日本語",
+}
+
+
+def _quick_title_from_prompt(prompt: str, attachments: list[Any]) -> str:
+    """規則臨時 title — 取 prompt 第一行 strip,空就退到「(attachment)」。
+
+    這只是 LLM 自然標題寫好前的 placeholder,讓 sidebar 不要空白。
+    LLM 後補 task 跑完會用 update_title_if_matches 蓋掉。
+    """
+    first_line = ""
+    for raw_line in prompt.splitlines():
+        if raw_line.strip():
+            first_line = raw_line.strip()
+            break
+    if first_line:
+        return first_line[:60]
+    return "(attachment)" if attachments else ""
+
+
+def _extract_text_from_content(content: Any) -> str:
+    """從 NormalizedMessage.content(str 或 list[ContentBlock])抽純文字。
+
+    Tool use / image / tombstone 略過,只串連 TextBlock。給 LLM 摘要用。
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            parts.append(getattr(block, "text", "") or "")
+    return "\n".join(p for p in parts if p)
+
+
+def _extract_first_turn_text(messages: list[Any]) -> tuple[str, str]:
+    """抓 state_messages 內第一個 user prompt + 第一個 assistant text reply。
+
+    Plan-mode 起手會 inject 一條 `[System: User enabled Plan Mode...]` user msg —
+    跳過該訊息,找到真正使用者輸入的那條。Assistant reply 只挑第一條有 text block 的。
+    """
+    user_text = ""
+    assistant_text = ""
+    for msg in messages:
+        role = getattr(msg, "role", None)
+        content = getattr(msg, "content", None)
+        if role == "user" and not user_text:
+            text = _extract_text_from_content(content).strip()
+            if not text:
+                continue
+            # 跳過 sidecar inject 的 Plan Mode system-as-user 注入
+            if text.startswith("[System:"):
+                continue
+            user_text = text
+        elif role == "assistant" and user_text and not assistant_text:
+            text = _extract_text_from_content(content).strip()
+            if text:
+                assistant_text = text
+                break
+    return user_text, assistant_text
+
+
+def _clean_llm_title(raw: str) -> str:
+    """清 LLM 偶爾帶的引號 / 句尾標點 / 多行 / 過長。"""
+    title = raw.strip()
+    # 第一個非空行(LLM 可能多寫一段解釋)
+    for line in title.splitlines():
+        if line.strip():
+            title = line.strip()
+            break
+    # 去前後常見引號 / 標點
+    strip_chars = '"\'「」『』《》()【】[] 、。.!?:;~'
+    title = title.strip(strip_chars)
+    return title[:30]
 
 
 def _is_user_prompt_row(content_json: Any) -> bool:

@@ -22,6 +22,7 @@ import {
   usePlanStatusRehydrate,
   useScheduleNotifications,
   useSendPrompt,
+  useSessionTitleUpdates,
 } from './hooks/useAgent'
 import { useAgentStore } from './store/agent'
 import { useSettingsStore } from './store/settings'
@@ -32,6 +33,7 @@ export function App() {
   usePlanModeNotifications()
   usePlanStatusRehydrate()
   useBudgetNotifications()
+  useSessionTitleUpdates()
   useLoadCollaborations()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
