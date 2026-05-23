@@ -502,6 +502,83 @@ function ToolApprovalBanner({
   )
 }
 
+/**
+ * 在 tool error row 展開區塊內提供「✨ 看不懂這個錯誤?讓 AI 解釋」按鈕。
+ * 點下去 call tool.explain RPC 帶上 error_text,sidecar 用 Settings 的「摘要
+ * model」生 2-3 句人話。沒設摘要 model 或 LLM 失敗 → 顯紅色小字,可重試。
+ *
+ * Component state(idle/loading/done/error)綁在 row 上 — row collapse 時整個
+ * component unmount,結果 cache 不跨 collapse 保留(同 row 多次展開要重點)。
+ * 想跨 collapse cache 之後可以拉到 ToolCallGroup 層級。
+ */
+function ToolErrorExplain({
+  toolName,
+  input,
+  errorText,
+}: {
+  toolName: string
+  input: Record<string, unknown> | undefined
+  errorText: string
+}) {
+  const { t, locale } = useTranslation()
+  const [state, setState] = useState<
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'done'; text: string }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' })
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+
+  async function handleExplain() {
+    if (state.status === 'loading') return
+    setState({ status: 'loading' })
+    try {
+      const text = await explainToolInput({
+        toolName,
+        toolInput: input ?? {},
+        summaryProvider,
+        summaryModel,
+        locale,
+        errorText,
+      })
+      setState({ status: 'done', text })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setState({ status: 'error', message })
+    }
+  }
+
+  return (
+    <div className="mb-2">
+      {state.status === 'done' && (
+        <div className="mb-1.5 flex items-start gap-1.5 rounded-md bg-info/10 px-2 py-1.5 text-[11px] text-fg-base">
+          <Sparkles size={12} className="mt-0.5 shrink-0 text-info" />
+          <span className="whitespace-pre-wrap">{state.text}</span>
+        </div>
+      )}
+      {state.status === 'error' && (
+        <div className="mb-1 text-[10px] text-danger">
+          {t('tool.error.explainError', { message: state.message })}
+        </div>
+      )}
+      {state.status !== 'done' && (
+        <button
+          type="button"
+          onClick={handleExplain}
+          disabled={state.status === 'loading'}
+          className="flex items-center gap-1 rounded text-[10px] text-fg-subtle hover:text-fg-muted disabled:opacity-50"
+        >
+          <Sparkles size={10} />
+          {state.status === 'loading'
+            ? t('tool.error.explainLoading')
+            : t('tool.error.explain')}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
   const [open, setOpen] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -597,6 +674,13 @@ export function ToolCallGroup({ toolCalls }: { toolCalls: ToolCallState[] }) {
                       <pre className="scrollbar-thin mb-2 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-subtle">
                         {JSON.stringify(t.input, null, 2)}
                       </pre>
+                    )}
+                    {isError && detailText && (
+                      <ToolErrorExplain
+                        toolName={t.toolName}
+                        input={t.input}
+                        errorText={detailText}
+                      />
                     )}
                     {isRunning && !detailText ? (
                       <div className="text-[11px] italic text-fg-muted">running…</div>

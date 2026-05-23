@@ -795,7 +795,12 @@ export async function sendToolApproval(
 }
 
 /**
- * 把 tool name + input 翻成自然語言一句話,給 ApprovalBanner「不懂?」按鈕用。
+ * 把 tool name + input(+ optional error)翻成自然語言。
+ *
+ * 兩種觸發場景:
+ * - ApprovalBanner「不懂?」按鈕 — 不帶 errorText,解釋 tool 「在做什麼」(一句)
+ * - Tool error row「不懂?」按鈕 — 帶 errorText,解釋「為什麼失敗 + 怎麼解」(2-3 句)
+ *
  * 用 user 在 Settings 設的「摘要 model」(小、便宜)。沒設或 LLM 失敗時拋 error,
  * caller 顯示 fallback 訊息(e.g. 提示去 Settings 設摘要 model)。
  */
@@ -805,6 +810,8 @@ export async function explainToolInput(opts: {
   summaryProvider: string | null
   summaryModel: string | null
   locale: string
+  /** 帶這個就走 error explain mode(2-3 句,解釋失敗原因 + 建議) */
+  errorText?: string
 }): Promise<string> {
   let explanation = ''
   let errMessage = ''
@@ -817,6 +824,7 @@ export async function explainToolInput(opts: {
       summary_provider: opts.summaryProvider ?? undefined,
       summary_model: opts.summaryModel ?? undefined,
       locale: opts.locale,
+      error_text: opts.errorText ?? undefined,
     },
     (frame) => {
       if (frame.event === 'tool_explained') {
