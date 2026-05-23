@@ -296,6 +296,10 @@ async function fileToBase64Bytes(f: File): Promise<string> {
   })
 }
 
+// Module-level 空陣列常數 — 給 zustand selector 當 stable fallback,避免每次
+// inline `[]` 被當 snapshot 變動而 infinite re-render。
+const EMPTY_FOLLOW_UPS: readonly string[] = []
+
 /** 多行輸入 + paperclip 上傳 + send / abort 切換。Enter 送出,Shift+Enter 換行。 */
 export function InputBox({ onSend, onAbort }: Props) {
   const { t } = useTranslation()
@@ -323,6 +327,17 @@ export function InputBox({ onSend, onAbort }: Props) {
     s.sessionId ? (s.messagesBySession[s.sessionId] ?? []).length : 0,
   )
   const isEmpty = messageCount === 0
+  // Follow-up suggestions — 每 turn 完 sidecar 背景生 3 條使用者可能想接著問
+  // 的話,顯在 textarea 上方一排 chip。user 開始打字 / 採用 / 送出後清空。
+  // selector 內 fallback 不能用 inline `[]` — 每次新 ref 會被 zustand 判定
+  // snapshot 變動 → 無限 re-render。改用 module-level 常數穩定 ref。
+  const followUps = useAgentStore((s) =>
+    s.sessionId ? s.followUpsBySession[s.sessionId] ?? EMPTY_FOLLOW_UPS : EMPTY_FOLLOW_UPS,
+  )
+  const clearFollowUpsForSession = (): void => {
+    const sid = useAgentStore.getState().sessionId
+    if (sid) useAgentStore.getState().clearFollowUps(sid)
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // IME composition tracking — 注音 / 拼音中 Enter 確認候選詞時不要送出。
@@ -674,6 +689,7 @@ export function InputBox({ onSend, onAbort }: Props) {
     setTextAttachments([])
     setAttachError(null)
     setMention(null)
+    clearFollowUpsForSession()
     if (textareaRef.current) {
       textareaRef.current.value = ''
     }
@@ -909,6 +925,45 @@ export function InputBox({ onSend, onAbort }: Props) {
               })}
             </div>
           </>
+        )}
+
+        {/* Follow-up suggestion chips — 對話有內容、user 還沒開始打字時顯示。
+            點 chip 採用、按 Tab 採用第一個。 */}
+        {!isEmpty && followUps.length > 0 && text.length === 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {followUps.map((sug, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  setText(sug)
+                  clearFollowUpsForSession()
+                  requestAnimationFrame(() => {
+                    textareaRef.current?.focus()
+                    textareaRef.current?.setSelectionRange(sug.length, sug.length)
+                    autoResize()
+                  })
+                }}
+                // 寬度上限避免長句把 row 撐爆;第一條(Tab 採用主角)給寬一點。
+                // 超長 chip 自動 truncate + ellipsis,hover 用 title 看完整。
+                className={`group inline-flex items-center gap-1 rounded-full border border-bg-hover bg-bg-panel px-3 py-1 text-xs text-fg-muted hover:border-accent/40 hover:bg-bg-hover hover:text-fg-base ${
+                  i === 0 ? 'max-w-[20rem]' : 'max-w-[14rem]'
+                }`}
+                title={
+                  i === 0
+                    ? `${sug}\n\n${t('input.followUp.tabHint')}`
+                    : sug
+                }
+              >
+                {i === 0 && (
+                  <span className="shrink-0 rounded bg-bg-base px-1 py-0.5 font-mono text-[9px] text-fg-subtle group-hover:text-fg-muted">
+                    Tab
+                  </span>
+                )}
+                <span className="truncate">{sug}</span>
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Attachment thumbnails */}
@@ -1228,6 +1283,19 @@ export function InputBox({ onSend, onAbort }: Props) {
               }
               // Popover 沒開 — IME guard 用於 Enter 送出
               if (e.nativeEvent.isComposing || composingRef.current) return
+              // Tab 接受第一條 follow-up 建議句(input 空時才作用,避免擾人)
+              if (e.key === 'Tab' && !e.shiftKey && text.length === 0 && followUps.length > 0) {
+                e.preventDefault()
+                const first = followUps[0]
+                setText(first)
+                clearFollowUpsForSession()
+                requestAnimationFrame(() => {
+                  textareaRef.current?.focus()
+                  textareaRef.current?.setSelectionRange(first.length, first.length)
+                  autoResize()
+                })
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()
@@ -1277,6 +1345,7 @@ export function InputBox({ onSend, onAbort }: Props) {
             />
 
             <PermissionModePill />
+            <FollowUpsPill />
 
             <div className="flex-1" />
 
@@ -1330,6 +1399,29 @@ export function InputBox({ onSend, onAbort }: Props) {
         </p>
       </div>
     </div>
+  )
+}
+
+/** Follow-up 建議句快捷 toggle — 跟 Settings 的 followUpsEnabled 同步,點一下 ON/OFF。
+ * 不開 popup,因為只有一個 boolean state,點擊直接切。OFF 時 icon 偏淡,ON 時亮起。 */
+function FollowUpsPill() {
+  const { t } = useTranslation()
+  const enabled = useSettingsStore((s) => s.followUpsEnabled)
+  const setEnabled = useSettingsStore((s) => s.setFollowUpsEnabled)
+  return (
+    <button
+      type="button"
+      onClick={() => setEnabled(!enabled)}
+      title={enabled ? t('input.followUps.on.tooltip') : t('input.followUps.off.tooltip')}
+      className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors ${
+        enabled
+          ? 'bg-accent/15 text-accent hover:bg-accent/25'
+          : 'bg-bg-hover/60 text-fg-muted hover:bg-bg-hover hover:text-fg-base'
+      }`}
+    >
+      <Sparkles size={13} />
+      <span>{t('input.followUps.pill')}</span>
+    </button>
   )
 }
 

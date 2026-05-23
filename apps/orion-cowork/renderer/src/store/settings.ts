@@ -139,6 +139,11 @@ type SettingsState = {
   setAutoCompactEnabled: (v: boolean) => void
   setAutoCompactThreshold: (v: number) => void
 
+  /** 對話後生 3 條「使用者可能想接著問」的建議句(走 [[摘要 model]],每 turn
+   * 多一次小 LLM call)。預設 OFF — 因為會增加 token 開銷,user 自己權衡。 */
+  followUpsEnabled: boolean
+  setFollowUpsEnabled: (v: boolean) => void
+
   /** 同時 in-flight 的 conversation 上限— 避免一次 spawn N 個
    * session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
   maxConcurrentSessions: number
@@ -257,6 +262,7 @@ export const useSettingsStore = create<SettingsState>()(
       rightSidebarOpen: false,
       autoCompactEnabled: true,
       autoCompactThreshold: 0.8,
+      followUpsEnabled: false,
       maxConcurrentSessions: 5,
       defaultBudgetUsd: 0,
       collapsedForkParents: [],
@@ -328,6 +334,7 @@ export const useSettingsStore = create<SettingsState>()(
         const clamped = Math.min(0.99, Math.max(0.1, v))
         set({ autoCompactThreshold: Math.round(clamped * 100) / 100 })
       },
+      setFollowUpsEnabled: (v) => set({ followUpsEnabled: v }),
       setMaxConcurrentSessions: (v) =>
         set({ maxConcurrentSessions: Math.max(1, Math.min(20, Math.round(v))) }),
       setDefaultBudgetUsd: (v) => {
@@ -377,6 +384,7 @@ export const useSettingsStore = create<SettingsState>()(
         rightSidebarOpen: s.rightSidebarOpen,
         autoCompactEnabled: s.autoCompactEnabled,
         autoCompactThreshold: s.autoCompactThreshold,
+        followUpsEnabled: s.followUpsEnabled,
         compactSummaryProvider: s.compactSummaryProvider,
         compactSummaryModel: s.compactSummaryModel,
         maxConcurrentSessions: s.maxConcurrentSessions,

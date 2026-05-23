@@ -270,6 +270,9 @@ class Handlers:
         # Fire-and-forget background task 必須持有 reference,否則 Python 3.11+
         # GC 會把沒人引用的 task 中途收掉(尤其在 generator close cleanup 時)。
         self._bg_tasks: set[asyncio.Task[Any]] = set()
+        # Per-sid follow-up gen task — 同 sid 連發新 turn 時 cancel 舊 task
+        # 避免兩次 LLM call race,只留最新一輪的建議。
+        self._followup_tasks: dict[str, asyncio.Task[Any]] = {}
         # D 下:MCP manager(lazy start)
         self._mcp = CoworkMcpManager()
         self._mcp_started = False
@@ -1148,6 +1151,23 @@ class Handlers:
                 # 保住 reference 防 GC 中途收掉(Python 3.11+ 行為)
                 self._bg_tasks.add(task)
                 task.add_done_callback(self._bg_tasks.discard)
+            # ─── Follow-up suggestions(可選,預設 OFF)─────
+            # User 在 Settings 開啟才跑 — 每個 assistant turn 結束後背景一次 LLM,
+            # 猜 user 下一句可能想問什麼。費 token 所以預設關。同 sid 已有
+            # in-flight task → cancel 舊的,避免連發 turn 時 race。
+            if bool(params.get("follow_ups_enabled", False)):
+                prev_fu_task = self._followup_tasks.pop(sid, None)
+                if prev_fu_task is not None and not prev_fu_task.done():
+                    prev_fu_task.cancel()
+                fu_task = asyncio.create_task(
+                    self._generate_follow_ups(sid, conv, locale_raw)
+                )
+                self._followup_tasks[sid] = fu_task
+                def _cleanup(t: asyncio.Task[Any], _sid: str = sid) -> None:
+                    # 只在 dict 仍指向 this task 時清,避免清掉後續新 task
+                    if self._followup_tasks.get(_sid) is t:
+                        self._followup_tasks.pop(_sid, None)
+                fu_task.add_done_callback(_cleanup)
 
     async def _generate_llm_title(
         self,
@@ -1215,6 +1235,65 @@ class Handlers:
         except Exception as e: # noqa: BLE001
             print(
                 f"[title] LLM gen failed sid={sid[:8]}: {e}",
+                file=sys.stderr, flush=True,
+            )
+
+    async def _generate_follow_ups(
+        self,
+        sid: str,
+        conv: Conversation,
+        locale: str | None,
+    ) -> None:
+        # 背景生 follow-up 建議句 — 抽最近 user/assistant 各一條,丟給
+        # summary provider 生 3 句使用者可能想接著問的話,推 notification 給
+        # renderer 顯 chip。失敗 / 被 cancel silent。
+        import sys
+        try:
+            user_text, assistant_text = _extract_last_turn_text(conv.state_messages)
+            if not assistant_text:
+                # 沒 assistant reply(可能 tool call 中、turn 中斷)— 跳過
+                return
+            provider = conv.compact_summary_provider or conv.provider
+            if provider is None:
+                return
+            locale_label = _LOCALE_LABEL.get(locale or "zh-TW", "繁體中文")
+            system = (
+                f"You suggest 3 short follow-up questions in {locale_label} that the "
+                "user might naturally want to ask next, based on the latest exchange. "
+                "Each question must be ≤20 字, concrete, and directly continue the "
+                "conversation. Output **only** a JSON array of 3 strings, nothing else. "
+                "Example: [\"...\",\"...\",\"...\"]"
+            )
+            user_msg_text = (
+                f"--- 使用者剛剛說 ---\n{user_text[:600]}\n\n"
+                f"--- 助理剛回覆 ---\n{assistant_text[:1200]}\n\n"
+                "請用上述語言給 3 個自然的後續問句。"
+            )
+            from orion_model.types import NormalizedMessage
+            parts: list[str] = []
+            async for ev in provider.stream(
+                system=system,
+                messages=[NormalizedMessage(role="user", content=user_msg_text)],
+                max_tokens=1024,
+                reasoning_effort="minimal",
+            ):
+                etype = getattr(ev, "type", None)
+                if etype == "text_delta":
+                    parts.append(getattr(ev, "text", ""))
+                elif etype == "message_stop":
+                    break
+            suggestions = _parse_follow_ups("".join(parts))
+            if not suggestions:
+                return
+            await self.notify({
+                "event": "session.follow_ups_updated",
+                "data": {"session_id": sid, "suggestions": suggestions},
+            })
+        except asyncio.CancelledError:
+            raise
+        except Exception as e: # noqa: BLE001
+            print(
+                f"[follow_ups] gen failed sid={sid[:8]}: {e}",
                 file=sys.stderr, flush=True,
             )
 
@@ -4661,6 +4740,84 @@ def _extract_first_turn_text(messages: list[Any]) -> tuple[str, str]:
                 assistant_text = text
                 break
     return user_text, assistant_text
+
+
+def _extract_last_turn_text(messages: list[Any]) -> tuple[str, str]:
+    """從尾巴回找:最後一個 assistant text reply,跟它前面最近一個真 user prompt。
+
+    Plan-mode inject 的 `[System:...]` user msg、純 tool_result user msg 都跳過。
+    用於 follow-up suggestion(根據剛剛的對話猜下一句)。
+    """
+    user_text = ""
+    assistant_text = ""
+    # 先從尾抓最後 assistant text
+    last_assistant_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if getattr(msg, "role", None) != "assistant":
+            continue
+        text = _extract_text_from_content(getattr(msg, "content", None)).strip()
+        if text:
+            assistant_text = text
+            last_assistant_idx = i
+            break
+    if last_assistant_idx < 0:
+        return "", ""
+    # 往前找最近一個真 user prompt
+    for i in range(last_assistant_idx - 1, -1, -1):
+        msg = messages[i]
+        if getattr(msg, "role", None) != "user":
+            continue
+        text = _extract_text_from_content(getattr(msg, "content", None)).strip()
+        if not text or text.startswith("[System:"):
+            continue
+        user_text = text
+        break
+    return user_text, assistant_text
+
+
+def _parse_follow_ups(raw: str) -> list[str]:
+    """解 LLM 回的 follow-up suggestions。期望 JSON array;LLM 偶爾包 ```json
+    block 或多寫一行解釋,容錯處理。最多回 3 條,各條截 40 字。
+    """
+    import json as _json
+    import re as _re
+    if not raw:
+        return []
+    # 抽出第一個 JSON array(可能被 ```json fence 包住或前後有解釋字)
+    match = _re.search(r"\[\s*(?:\"|')", raw)
+    if not match:
+        return []
+    start = match.start()
+    # naive bracket match — LLM 通常給乾淨 array,夠用
+    depth = 0
+    end = -1
+    for i in range(start, len(raw)):
+        c = raw[i]
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end < 0:
+        return []
+    try:
+        arr = _json.loads(raw[start:end])
+    except Exception: # noqa: BLE001
+        return []
+    if not isinstance(arr, list):
+        return []
+    out: list[str] = []
+    for item in arr:
+        if isinstance(item, str):
+            cleaned = item.strip().strip('"\'「」「」 ').replace("\n", " ")
+            if cleaned:
+                out.append(cleaned[:40])
+        if len(out) >= 3:
+            break
+    return out
 
 
 def _clean_llm_title(raw: str) -> str:

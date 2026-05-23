@@ -108,6 +108,21 @@ export function useSessionTitleUpdates(): void {
 }
 
 /**
+ * 訂閱 sidecar 推的 session.follow_ups_updated — 每 turn 完背景生 3 條
+ * 後續建議句,寫進 followUpsBySession,輸入框上方 chip 列訂閱顯示。
+ */
+export function useFollowUpsUpdates(): void {
+  useEffect(() => {
+    if (!window.sessionApi?.onFollowUpsUpdated) return
+    const off = window.sessionApi.onFollowUpsUpdated((data) => {
+      if (!data.session_id || !Array.isArray(data.suggestions)) return
+      useAgentStore.getState().setFollowUps(data.session_id, data.suggestions)
+    })
+    return off
+  }, [])
+}
+
+/**
  * Session 切換時呼 conversation.plan_status,re-hydrate plan mode UI。
  * 用於 crash recovery / 切回有 AWAITING_APPROVAL 的 session。
  */
@@ -360,6 +375,7 @@ export function useSendPrompt() {
   const locale = useSettingsStore((s) => s.locale)
   const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
   const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+  const followUpsEnabled = useSettingsStore((s) => s.followUpsEnabled)
   const maxConcurrent = useSettingsStore((s) => s.maxConcurrentSessions)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
@@ -425,6 +441,7 @@ export function useSendPrompt() {
           locale,
           summaryProvider,
           summaryModel,
+          followUpsEnabled,
         },
       )
     } catch (e) {
@@ -463,7 +480,7 @@ export function useSendPrompt() {
         }
       }
     }
-  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, maxConcurrent])
+  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, followUpsEnabled, maxConcurrent])
 }
 
 export function useAbort() {

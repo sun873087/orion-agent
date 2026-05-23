@@ -68,9 +68,16 @@ interface OrionSessionTitleUpdatedPayload {
   title: string
 }
 
+interface OrionSessionFollowUpsUpdatedPayload {
+  session_id: string
+  suggestions: string[]
+}
+
 interface OrionSessionApi {
   /** 訂閱 session.title_updated — LLM 後補完自然標題後 push。 */
   onTitleUpdated: (cb: (data: OrionSessionTitleUpdatedPayload) => void) => () => void
+  /** 訂閱 session.follow_ups_updated — 每 turn 完背景生的後續建議句。 */
+  onFollowUpsUpdated: (cb: (data: OrionSessionFollowUpsUpdatedPayload) => void) => () => void
 }
 
 interface OrionPlanModeAwaitingPayload {

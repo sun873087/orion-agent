@@ -636,6 +636,7 @@ export async function sendPrompt(
     locale?: string
     summaryProvider?: string | null
     summaryModel?: string | null
+    followUpsEnabled?: boolean
   },
 ): Promise<void> {
   await window.agent.call(
@@ -649,6 +650,7 @@ export async function sendPrompt(
       locale: opts?.locale,
       summary_provider: opts?.summaryProvider ?? undefined,
       summary_model: opts?.summaryModel ?? undefined,
+      follow_ups_enabled: opts?.followUpsEnabled ?? false,
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,

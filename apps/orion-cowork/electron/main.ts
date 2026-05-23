@@ -128,6 +128,7 @@ app.whenReady().then(async () => {
     else if (evt === 'budget.exceeded') broadcast('budget:exceeded')
     else if (evt === 'backup.restart_required') broadcast('backup:restart_required')
     else if (evt === 'session.title_updated') broadcast('session:title_updated')
+    else if (evt === 'session.follow_ups_updated') broadcast('session:follow_ups_updated')
   })
 
   // 2. 註冊 IPC

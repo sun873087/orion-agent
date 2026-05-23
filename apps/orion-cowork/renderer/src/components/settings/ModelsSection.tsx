@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Layers, Mic } from 'lucide-react'
+import { AlertCircle, Check, Layers, Mic, Sparkles } from 'lucide-react'
 
 import {
   fetchModels,
@@ -104,6 +104,7 @@ export function ModelsSection() {
       <SttPicker />
       <TtsPicker />
       <AutoCompactPicker />
+      <FollowUpsPicker />
       <ConcurrentLimitPicker />
       <BudgetPicker />
     </div>
@@ -405,6 +406,35 @@ function AutoCompactPicker() {
             )}
         </select>
       </div>
+    </div>
+  )
+}
+
+/** 對話後續建議句 — 每 turn 完背景生 3 條使用者可能想接著問的話,輸入框上方
+ * 顯 chip,點 / Tab 採用。每 turn 多一次小 LLM call(走「摘要 model」),所以
+ * 預設關。 */
+function FollowUpsPicker() {
+  const enabled = useSettingsStore((s) => s.followUpsEnabled)
+  const setEnabled = useSettingsStore((s) => s.setFollowUpsEnabled)
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-fg-muted">
+        <Sparkles size={14} />
+        對話後續建議
+      </h3>
+      <p className="text-[11px] text-fg-subtle">
+        每個 AI 回覆結束後,用「摘要 model」猜 3 條你可能想接著問的話,顯在輸入框上方,
+        點或按 Tab 採用。預設關,因為每 turn 多一次 LLM call,有 token 成本。
+      </p>
+      <label className="mt-1 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-bg-hover bg-bg-panel px-3 py-1.5 text-sm hover:border-accent/40 hover:bg-bg-hover">
+        <input
+          type="checkbox"
+          className="accent-accent"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>顯示後續建議句</span>
+      </label>
     </div>
   )
 }

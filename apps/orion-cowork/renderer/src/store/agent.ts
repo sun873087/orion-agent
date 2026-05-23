@@ -180,6 +180,11 @@ type AgentState = {
   setSessions: (s: SessionSummary[]) => void
   /** Patch 單一 session 的 title — sidecar LLM 後補完自然標題後 push 過來。 */
   patchSessionTitle: (sid: string, title: string) => void
+  /** 對話 follow-up 建議句 — 每 turn 完 sidecar 生 3 條,user 開始打字或送出
+   * 訊息時就清掉。Per-session,切走的 session 仍保留自己的建議。 */
+  followUpsBySession: Record<string, string[]>
+  setFollowUps: (sid: string, suggestions: string[]) => void
+  clearFollowUps: (sid: string) => void
   /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
    * 舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
@@ -271,6 +276,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   forkRequest: null,
   sidebarSelectionMode: false,
   selectedSessionIds: [],
+  followUpsBySession: {},
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -285,6 +291,17 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         row.session_id === sid ? { ...row, title } : row,
       ),
     })),
+  setFollowUps: (sid, suggestions) =>
+    set((s) => ({
+      followUpsBySession: { ...s.followUpsBySession, [sid]: suggestions },
+    })),
+  clearFollowUps: (sid) =>
+    set((s) => {
+      if (s.followUpsBySession[sid] === undefined) return s
+      const next = { ...s.followUpsBySession }
+      delete next[sid]
+      return { followUpsBySession: next }
+    }),
   switchToSession: (sid) => set({ sessionId: sid }),
 
   hydrateMessages: (sid, messages) =>
@@ -311,6 +328,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         lastLoopStatusBySession: drop(s.lastLoopStatusBySession),
         pendingQuestionBySession: drop(s.pendingQuestionBySession),
         compactingBySession: drop(s.compactingBySession),
+        followUpsBySession: drop(s.followUpsBySession),
       }
     }),
 

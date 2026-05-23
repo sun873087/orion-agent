@@ -108,6 +108,7 @@ const planApi = {
 }
 
 type SessionTitleUpdatedPayload = { session_id: string; title: string }
+type SessionFollowUpsUpdatedPayload = { session_id: string; suggestions: string[] }
 
 const sessionApi = {
   /** 訂閱 sidecar 推的 session.title_updated 事件(LLM 後補完自然標題後觸發)。 */
@@ -115,6 +116,12 @@ const sessionApi = {
     const listener = (_: unknown, data: SessionTitleUpdatedPayload) => cb(data)
     ipcRenderer.on('session:title_updated', listener)
     return () => ipcRenderer.removeListener('session:title_updated', listener)
+  },
+  /** 訂閱 follow-up suggestions(每 turn 完背景生 3 條使用者可能想接著問的話)。 */
+  onFollowUpsUpdated: (cb: (data: SessionFollowUpsUpdatedPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: SessionFollowUpsUpdatedPayload) => cb(data)
+    ipcRenderer.on('session:follow_ups_updated', listener)
+    return () => ipcRenderer.removeListener('session:follow_ups_updated', listener)
   },
 }
 

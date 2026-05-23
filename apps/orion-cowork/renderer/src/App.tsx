@@ -19,6 +19,7 @@ import {
   useBudgetNotifications,
   useInitConversation,
   usePlanModeNotifications,
+  useFollowUpsUpdates,
   usePlanStatusRehydrate,
   useScheduleNotifications,
   useSendPrompt,
@@ -34,6 +35,7 @@ export function App() {
   usePlanStatusRehydrate()
   useBudgetNotifications()
   useSessionTitleUpdates()
+  useFollowUpsUpdates()
   useLoadCollaborations()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
