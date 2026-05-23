@@ -185,6 +185,13 @@ type AgentState = {
   followUpsBySession: Record<string, string[]>
   setFollowUps: (sid: string, suggestions: string[]) => void
   clearFollowUps: (sid: string) => void
+
+  /** 輸入框草稿 — 切走 session 仍保留打到一半的文字,切回 hydrate。Per-session,
+   * 送出 / 顯式清空後就清。In-memory only,sidecar 重啟 / Cowork 關閉再開會
+   * 透過 localStorage hydrate(InputBox 自己處理) */
+  draftsBySession: Record<string, string>
+  setDraft: (sid: string, text: string) => void
+  clearDraft: (sid: string) => void
   /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
    * 舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
@@ -277,6 +284,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   sidebarSelectionMode: false,
   selectedSessionIds: [],
   followUpsBySession: {},
+  draftsBySession: {},
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -301,6 +309,18 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       const next = { ...s.followUpsBySession }
       delete next[sid]
       return { followUpsBySession: next }
+    }),
+  setDraft: (sid, text) =>
+    set((s) => {
+      if (s.draftsBySession[sid] === text) return s
+      return { draftsBySession: { ...s.draftsBySession, [sid]: text } }
+    }),
+  clearDraft: (sid) =>
+    set((s) => {
+      if (s.draftsBySession[sid] === undefined) return s
+      const next = { ...s.draftsBySession }
+      delete next[sid]
+      return { draftsBySession: next }
     }),
   switchToSession: (sid) => set({ sessionId: sid }),
 
@@ -329,6 +349,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         pendingQuestionBySession: drop(s.pendingQuestionBySession),
         compactingBySession: drop(s.compactingBySession),
         followUpsBySession: drop(s.followUpsBySession),
+        draftsBySession: drop(s.draftsBySession),
       }
     }),
 

@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { useSyncExternalStore } from 'react'
 import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
-import { loadAttachment } from '../api/agent'
+import { loadAttachment, summarizeMessage } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
 import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
 import { getPlayingMessageId, isPlaying as isMsgPlaying, play as ttsPlay, stop as ttsStop, subscribe as ttsSubscribe } from '../utils/ttsPlayer'
@@ -73,7 +73,42 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  // 摘要 state lift 到這層(原本放 sub-component 內,但結果 block 跟按鈕要 render
+  // 在兩處 — card 在 action row 上方獨立 block、button 嵌進 action row 內)。
+  // expanded 旗標:收起時保留 text 不丟,user 重展開不必再花一次 LLM 錢。
+  const [summaryState, setSummaryState] = useState<
+    | { status: 'idle' }
+    | { status: 'loading' }
+    | { status: 'done'; text: string; expanded: boolean }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' })
+  const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
+  const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+  async function handleSummarize() {
+    // 已有結果只是收起 → 直接展開,不重打 LLM
+    if (summaryState.status === 'done') {
+      setSummaryState({ ...summaryState, expanded: true })
+      return
+    }
+    if (summaryState.status === 'loading') return
+    if (!message.text) return
+    setSummaryState({ status: 'loading' })
+    try {
+      const text = await summarizeMessage({
+        messageText: message.text,
+        summaryProvider,
+        summaryModel,
+        locale,
+      })
+      setSummaryState({ status: 'done', text, expanded: true })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setSummaryState({ status: 'error', message: msg })
+    }
+  }
+  const showSummarizeAction =
+    !isUser && !!message.text && !message.streaming && message.text.length >= 500
   const busy = useAgentStore((s) => (s.sessionId ? s.busyBySession[s.sessionId] ?? false : false))
   const currentSid = useAgentStore((s) => s.sessionId)
   const openForkRequest = useAgentStore((s) => s.openForkRequest)
@@ -188,6 +223,29 @@ export function MessageBubble({
             messageText={message.text}
           />
         )}
+        {/* 摘要結果 card — 只在 done + expanded 時 render;摘要按鈕本身嵌到下方
+            action row 內,user 觀感跟「複製 / 編輯 / 分叉 / 念出」是一排。 */}
+        {summaryState.status === 'done' && summaryState.expanded && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-info/20 bg-info/5 px-3 py-2 text-xs text-fg-base">
+            <Sparkles size={12} className="mt-0.5 shrink-0 text-info" />
+            <div className="prose-orion flex-1 [&_p]:my-1 [&_ul]:my-1">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{summaryState.text}</ReactMarkdown>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSummaryState({ ...summaryState, expanded: false })}
+              title={t('message.summary.hide')}
+              className="shrink-0 rounded p-0.5 text-fg-subtle hover:bg-bg-hover hover:text-fg-muted"
+            >
+              <XIcon size={12} />
+            </button>
+          </div>
+        )}
+        {summaryState.status === 'error' && (
+          <div className="mt-1 text-[10px] text-danger">
+            {t('message.summarizeError', { message: summaryState.message })}
+          </div>
+        )}
         {/* Action row(Copy + Edit + Delete + 可能 Regenerate)— streaming 中 / 編輯中不顯 */}
         {message.text && !message.streaming && !editing && (
           <div className={`mt-1 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -230,6 +288,35 @@ export function MessageBubble({
             )}
             {/* TTS 念出 — assistant 訊息才顯,且要有文字。 */}
             {!isUser && message.text && <TtsButton messageId={message.id} text={message.text} />}
+            {/* ✨ 摘要這則 — 長 assistant 訊息(>=500 字)才顯。已有結果時點是
+                免費展開,沒結果或要重摘才打 LLM。 */}
+            {showSummarizeAction && (
+              <ActionButton
+                icon={
+                  summaryState.status === 'loading' ? (
+                    <Sparkles size={12} className="animate-pulse" />
+                  ) : (
+                    <Sparkles size={12} />
+                  )
+                }
+                label={
+                  summaryState.status === 'loading'
+                    ? t('message.summarizeLoading')
+                    : summaryState.status === 'done' && !summaryState.expanded
+                      ? t('message.summary.show')
+                      : summaryState.status === 'done' && summaryState.expanded
+                        ? t('message.summary.hide')
+                        : t('message.summarize')
+                }
+                onClick={() => {
+                  if (summaryState.status === 'done' && summaryState.expanded) {
+                    setSummaryState({ ...summaryState, expanded: false })
+                  } else {
+                    void handleSummarize()
+                  }
+                }}
+              />
+            )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>

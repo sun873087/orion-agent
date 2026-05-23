@@ -843,6 +843,45 @@ export async function explainToolInput(opts: {
   return explanation
 }
 
+/**
+ * 對單則 assistant 訊息文字生 3 行 bullet 摘要,給 MessageBubble「摘要這則」
+ * 按鈕用。用 user Settings 設的「摘要 model」。LLM 失敗 / 沒設摘要 model
+ * 拋 error,caller 顯 fallback。
+ */
+export async function summarizeMessage(opts: {
+  messageText: string
+  summaryProvider: string | null
+  summaryModel: string | null
+  locale: string
+}): Promise<string> {
+  let summary = ''
+  let errMessage = ''
+  let errCode = ''
+  await window.agent.call(
+    'message.summarize',
+    {
+      message_text: opts.messageText,
+      summary_provider: opts.summaryProvider ?? undefined,
+      summary_model: opts.summaryModel ?? undefined,
+      locale: opts.locale,
+    },
+    (frame) => {
+      if (frame.event === 'message_summarized') {
+        const d = (frame.data ?? {}) as { summary?: string }
+        summary = d.summary ?? ''
+      } else if (frame.event === 'error') {
+        const d = (frame.data ?? {}) as { code?: string; message?: string }
+        errCode = d.code ?? 'ERROR'
+        errMessage = d.message ?? ''
+      }
+    },
+  )
+  if (!summary) {
+    throw new Error(`${errCode}: ${errMessage || 'no summary'}`)
+  }
+  return summary
+}
+
 /** 回 AskUserQuestion 答案 — answers map question text → chosen label / free text。 */
 export async function sendAskUserReply(
   requestId: string,

@@ -16,6 +16,9 @@ session title 寫整段原 prompt、tool error 是 stack trace)。這份 doc 收
 | ✅ | **Session title 改 LLM 自然摘要** | 第一個 turn 寫規則 quick title,turn 結束背景跑 LLM 改成 ~15 字自然摘要。仿 claude.ai 兩段式。CAS 更新避免覆掉 user 手動 rename。 |
 | ✅ | **Banner 翻譯規則化 + LLM 解釋按鈕** | 「允許 Orion 執行:Glob *」→「允許 Orion 列出此資料夾的所有檔案」(13 個常見 tool 規則翻譯)。Bash 等規則 cover 不到的場景:加「✨ 看不懂?讓 AI 解釋」按鈕,點才 LLM call,prompt injection 防護用 `<untrusted>` tag。 |
 | ✅ | **Follow-up 建議句 chip(Tab 採用)** | 每 turn 完背景跑 LLM 猜 3 條使用者可能想接著問的話,輸入框上方顯 chip。Tab / 點採用第一個。Settings + 輸入框 toolbar pill 雙開關控制(預設 OFF,有 token 成本)。chip 寬度上限 + truncate + tooltip 避免長句撐爆 row。 |
+| ✅ | **Tool error 也加「不懂?讓 AI 解釋」** | 沿用 `tool.explain` RPC 擴 `error_text` 參數。Error mode 下 LLM 出 2-3 句「Orion 試著 X,但因為 Y 失敗,你可以試試 Z」,顯在 tool row 展開區域,原 stack trace 保留下方。 |
+| ✅ | **訊息超長一鍵摘要** | Assistant 訊息 `text.length >= 500` 時 action row 多一個「✨ 摘要這則」按鈕,點下去走 `message.summarize` RPC 出 3 行 bullet,結果 card cache 在 state — 收起再展開**免費**,只「重新摘要」才打 LLM。 |
+| ✅ | **輸入框草稿自動保存** | 切走 session 時把 textarea 內容寫進 store + localStorage(per-sid),切回 hydrate,送出 / 顯式清空才清。app 重啟也保留。Attachments 不 persist(blob 太大,簡化先不做)。 |
 
 > 共用技術 channel:`compact_summary_provider`(user Settings 的「摘要
 > model」)+ `reasoning_effort=minimal` + `max_tokens=1024` + 不帶
@@ -27,18 +30,6 @@ session title 寫整段原 prompt、tool error 是 stack trace)。這份 doc 收
 ## 接下來方向
 
 按「投入 / 痛點」排序,推薦的優先在前。
-
-### A. Tool error 也加「不懂?讓 AI 解釋」(推薦先做)
-
-**痛點**:Tool 跑失敗時,error 通常是 stack trace / shell exit code /
-JSON parse error,非工程使用者看不懂,只知道「壞了」。
-
-**做法**:沿用 `tool.explain` RPC 同模式,在 ToolCallGroup 的 error state
-旁加按鈕「✨ 看不懂?讓 AI 解釋」。LLM 收 tool name + input + error 訊息,
-吐一句人話「為什麼失敗 + 該怎麼處理」。
-
-**預期實作**:~70% 已有(RPC 通道、UI pattern、prompt injection 防護)。
-擴 RPC `tool.explain` 接 `error?: string` 參數即可。
 
 ### B. vague prompt 補問
 
@@ -54,30 +45,6 @@ user 點 chip 補資訊再送。
 - 預設 OFF(額外 LLM call)
 - 對於明顯具體的 prompt(>30 字、含程式碼、含 path)自動 skip 不打
 - 跟 slash command / `@` mention 互斥(那些是明確指令)
-
-### C. 訊息超長一鍵摘要
-
-**痛點**:Assistant 回 800+ 字的長 reply,user 只想知道結論。
-
-**做法**:訊息頂端 chip「✨ 摘要這則」,點下去 LLM 給 3 行 bullet。摘要結果
-cache 在訊息 metadata,不重複 call。
-
-**設計考量**:
-- User 主動觸發,零預設成本
-- 用 cheap model(同 Settings 摘要 model)
-- 摘要結果可摺疊隱藏 / 重新生
-
-### D. 輸入框草稿自動保存
-
-**痛點**:user 打到一半切去看別的 session,回來輸入框內容丟了。
-
-**做法**:Per-session 輸入框 text 寫進 zustand store(persisted localStorage),
-切回 session textarea 自動 hydrate。送出 / 顯式清空才 drop。
-
-**設計考量**:
-- 不寫 SQLite,localStorage 即可(不必跨機器同步;切了 machine 草稿丟了不痛)
-- Attachments / textAttachments 是否 persist?暫不(blob 太大 / 複雜)
-- 跟 follow-up chip 互動:有草稿時 chip 不顯(沿用現邏輯 `text.length === 0`)
 
 ### E. assistant 訊息「再答一次」(regenerate variant)
 

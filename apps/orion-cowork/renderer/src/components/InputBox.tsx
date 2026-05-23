@@ -343,6 +343,87 @@ export function InputBox({ onSend, onAbort }: Props) {
   // IME composition tracking — 注音 / 拼音中 Enter 確認候選詞時不要送出。
   const composingRef = useRef(false)
 
+  // ─── 草稿自動保存 ──────────────────────────────────────────────────
+  // 切走 session 草稿不丟,回來 hydrate;app 重啟也保留(走 localStorage)。
+  // sessionId 切換時 sync:把目前 text 存進 store + localStorage(屬於舊 sid),
+  // 然後從新 sid 讀草稿放進 text。attachments 不 persist(blob 太大,簡化先不做)。
+  const sid = useAgentStore((s) => s.sessionId)
+  const prevSidRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevSidRef.current
+    // Sid 切換時:先保存舊 sid 草稿,再 hydrate 新 sid 草稿
+    if (prev && prev !== sid) {
+      const cur = text
+      if (cur) {
+        useAgentStore.getState().setDraft(prev, cur)
+        try {
+          localStorage.setItem(`orion:draft:${prev}`, cur)
+        } catch { /* localStorage 滿 / 私密模式 — 不致命 */ }
+      } else {
+        useAgentStore.getState().clearDraft(prev)
+        try { localStorage.removeItem(`orion:draft:${prev}`) } catch { /* noop */ }
+      }
+    }
+    if (sid && prev !== sid) {
+      // Hydrate 新 sid 草稿:優先 store(in-session 真相),再 fallback localStorage
+      const fromStore = useAgentStore.getState().draftsBySession[sid]
+      let draft = fromStore ?? ''
+      if (!draft) {
+        try { draft = localStorage.getItem(`orion:draft:${sid}`) ?? '' } catch { /* noop */ }
+        if (draft) useAgentStore.getState().setDraft(sid, draft)
+      }
+      setText(draft)
+      // textarea autoresize 在下個 frame 跑(textareaRef 已有 value 才量得到)
+      requestAnimationFrame(() => autoResize())
+    }
+    prevSidRef.current = sid
+    // 故意只依 sid — text / setText 不要進 deps,避免每打一字就跑這 effect
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid])
+
+  // text 變動時 debounce 300ms 寫 store + localStorage(避免每按鍵都 IO)
+  useEffect(() => {
+    if (!sid) return
+    const timer = setTimeout(() => {
+      if (text) {
+        useAgentStore.getState().setDraft(sid, text)
+        try { localStorage.setItem(`orion:draft:${sid}`, text) } catch { /* noop */ }
+      } else {
+        useAgentStore.getState().clearDraft(sid)
+        try { localStorage.removeItem(`orion:draft:${sid}`) } catch { /* noop */ }
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [text, sid])
+
+  function clearDraftStorage(): void {
+    const s = sid
+    if (!s) return
+    useAgentStore.getState().clearDraft(s)
+    try { localStorage.removeItem(`orion:draft:${s}`) } catch { /* noop */ }
+  }
+
+  // 清空輸入框(button + Esc 雙擊共用)— 清 text / attachments / mention,
+  // 也清 draft localStorage,讓「整個重新開始」乾淨。
+  function clearInputAll(): void {
+    setText('')
+    setAttachments([])
+    setTextAttachments([])
+    setAttachError(null)
+    setMention(null)
+    clearDraftStorage()
+    if (textareaRef.current) {
+      textareaRef.current.value = ''
+    }
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      autoResize()
+    })
+  }
+
+  // Esc 雙擊防誤觸 — 1 秒內第二次才真清。超時 reset,變回「第一次」。
+  const lastEscAtRef = useRef<number>(0)
+
   // ─── Slash command autocomplete ────────────────────────────────────
   // popover 開條件:單行 / 開頭(text 內無換行),user 還在打或文字仍以 / 開頭。
   // Bundled / user skills 動態載入後也一併出現在 popover(cowork_visible=false 過濾掉)。
@@ -690,6 +771,7 @@ export function InputBox({ onSend, onAbort }: Props) {
     setAttachError(null)
     setMention(null)
     clearFollowUpsForSession()
+    clearDraftStorage()
     if (textareaRef.current) {
       textareaRef.current.value = ''
     }
@@ -1283,6 +1365,19 @@ export function InputBox({ onSend, onAbort }: Props) {
               }
               // Popover 沒開 — IME guard 用於 Enter 送出
               if (e.nativeEvent.isComposing || composingRef.current) return
+              // Esc 雙擊清空(1 秒內第二次才真清,避免單擊誤觸)— 只在 text
+              // 非空時起作用,空輸入時 Esc 留給其他 handler / blur
+              if (e.key === 'Escape' && text.length > 0) {
+                e.preventDefault()
+                const now = Date.now()
+                if (now - lastEscAtRef.current < 1000) {
+                  lastEscAtRef.current = 0
+                  clearInputAll()
+                } else {
+                  lastEscAtRef.current = now
+                }
+                return
+              }
               // Tab 接受第一條 follow-up 建議句(input 空時才作用,避免擾人)
               if (e.key === 'Tab' && !e.shiftKey && text.length === 0 && followUps.length > 0) {
                 e.preventDefault()
@@ -1343,6 +1438,18 @@ export function InputBox({ onSend, onAbort }: Props) {
               onChange={(e) => handleFiles(e.target.files)}
               className="hidden"
             />
+
+            {text.length > 0 && (
+              <button
+                type="button"
+                onClick={clearInputAll}
+                disabled={!inputReady || busy}
+                title={t('input.clear.tooltip')}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-hover hover:text-fg-base disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={14} />
+              </button>
+            )}
 
             <PermissionModePill />
             <FollowUpsPill />
