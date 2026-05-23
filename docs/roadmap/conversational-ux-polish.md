@@ -21,6 +21,7 @@ session title 寫整段原 prompt、tool error 是 stack trace)。這份 doc 收
 | ✅ | **輸入框草稿自動保存** | 切走 session 時把 textarea 內容寫進 store + localStorage(per-sid),切回 hydrate,送出 / 顯式清空才清。app 重啟也保留。Attachments 不 persist(blob 太大,簡化先不做)。 |
 | ✅ | **Cost ledger + breakdown UI** | Per-session ledger 收集 7 個 origin(chat / subagent / title / follow_ups / explain / summarize / soul)的 LLM call usage,計 USD 拆細顯給 user。原本只算主對話,現在所有 cheap LLM feature + AgentTool 子 agent 都算進。SDK 加 `SubagentStopEvent` 讓子 agent cost 能 attribute 回 parent。 |
 | ✅ | **Soul.md — Orion 對你的人格認識** | 取自 [soul.md](https://soul.md/) 概念,第一人稱 reflect「我認識的這個人」。寫進 `~/.orion/users/<u>/memory/soul.md`,開新對話自動 inject 進 system_prompt 讓 LLM 像認識久的朋友開口。每 10 turn 背景更新(預設 OFF)+ Settings → 靈魂 手動觸發。走摘要 model,cost 進 ledger `soul` origin。 |
+| ✅ | **`?` 快速鍵 cheat sheet** | 全域按 `?` 跳 modal 列分組快捷鍵(輸入框 / 彈窗 / 全域),每行 label + `<kbd>` 鍵渲染,連按用「× 2」標、組合用「+」。textarea/input focus 時不觸發。Settings → 一般也加入口按鈕。Esc / 外面點 / X 關。 |
 
 > 共用技術 channel:`compact_summary_provider`(user Settings 的「摘要
 > model」)+ `reasoning_effort=minimal` + `max_tokens=1024` + 不帶
@@ -61,15 +62,6 @@ user 點 chip 補資訊再送。
 - 跟現有「重新生成」按鈕區別清楚(目前是 `regenerate`,但好像沒在所有
   訊息上 surface — 要先 audit)
 - variant 模式可選「more concise / more detail / 換個 model」
-
-### F. `?` 快速鍵 cheat sheet
-
-**痛點**:Enter / Shift+Enter / Tab / Cmd+K 等鍵綁定 user 不知道。
-
-**做法**:按 `?` 鍵跳 modal,列出所有快捷鍵分組顯示。`?` 在輸入框輸入時
-不要觸發(只在無 focus / 在 sidebar focus 時)。
-
-**預期實作**:純 React 元件,~100 行內。沒 LLM call,純 polish。
 
 ### G. 全域 Command Bar(Cmd+K)
 

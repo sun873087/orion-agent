@@ -5,6 +5,7 @@ import { AddPaneModal } from './components/AddPaneModal'
 import { ForkPromptModal } from './components/ForkPromptModal'
 import { Header } from './components/Header'
 import { InputBox } from './components/InputBox'
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal'
 import { MessageList } from './components/MessageList'
 import { MultiPaneView } from './components/MultiPaneView'
 import { NewCollaborationModal } from './components/NewCollaborationModal'
@@ -18,6 +19,7 @@ import {
   useAbort,
   useBudgetNotifications,
   useInitConversation,
+  useKeyboardShortcutsHotkey,
   usePlanModeNotifications,
   useFollowUpsUpdates,
   usePlanStatusRehydrate,
@@ -37,12 +39,15 @@ export function App() {
   useSessionTitleUpdates()
   useFollowUpsUpdates()
   useLoadCollaborations()
+  useKeyboardShortcutsHotkey()
   const sendPrompt = useSendPrompt()
   const abort = useAbort()
   const settingsOpen = useSettingsStore((s) => s.settingsOpen)
   const editingProjectId = useSettingsStore((s) => s.editingProjectId)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const rightSidebarOpen = useSettingsStore((s) => s.rightSidebarOpen)
+  const shortcutsOpen = useSettingsStore((s) => s.shortcutsOpen)
+  const closeShortcuts = useSettingsStore((s) => s.closeShortcuts)
   const isEmpty = useAgentStore((s) => {
     const sid = s.sessionId
     if (!sid) return true
@@ -50,9 +55,25 @@ export function App() {
   })
   const collaborationId = useAgentStore((s) => s.currentCollaborationId)
 
-  // 全頁 views 優先(取代 chat layout)
-  if (settingsOpen) return <SettingsPage />
-  if (editingProjectId) return <ProjectSettingsPage />
+  // 全頁 views 優先(取代 chat layout)— 但 cheat sheet modal 任何 view
+  // 開時都該能彈出(全域 ? 快捷鍵 + Settings 入口),用 Fragment 包讓 modal
+  // 在 SettingsPage / ProjectSettingsPage 之上也能 render。
+  if (settingsOpen) {
+    return (
+      <>
+        <SettingsPage />
+        <KeyboardShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
+      </>
+    )
+  }
+  if (editingProjectId) {
+    return (
+      <>
+        <ProjectSettingsPage />
+        <KeyboardShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
+      </>
+    )
+  }
 
   // 頂端 toolbar 跨整個 window(macOS 嵌入紅綠燈),底下 content row
   return (
@@ -91,6 +112,7 @@ export function App() {
       <AddPaneModal />
       <PlanApprovalModal />
       <ForkPromptModal />
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
     </div>
   )
 }

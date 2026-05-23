@@ -123,6 +123,31 @@ export function useFollowUpsUpdates(): void {
 }
 
 /**
+ * 全域 `?` 快捷鍵 — 開鍵盤 cheat sheet。User focus 在輸入框 / textarea / input
+ * 時不觸發(那邊「?」本來就是普通字元)。Shift + / 才是 `?`,所以監聽 Shift+/。
+ */
+export function useKeyboardShortcutsHotkey(): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 只認 Shift+/ → '?',不認其他組合
+      if (e.key !== '?') return
+      // 在 editable 元素內(textarea / input / contentEditable)不攔截
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+      }
+      // Modal 已開不重複觸發(open state toggle 由 close 處理)
+      if (useSettingsStore.getState().shortcutsOpen) return
+      e.preventDefault()
+      useSettingsStore.getState().openShortcuts()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+}
+
+/**
  * Session 切換時呼 conversation.plan_status,re-hydrate plan mode UI。
  * 用於 crash recovery / 切回有 AWAITING_APPROVAL 的 session。
  */

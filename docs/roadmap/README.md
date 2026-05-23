@@ -182,8 +182,8 @@ channel(`compact_summary_provider`),accumulate 一系列「看不懂才付費」
 title 自動摘要、banner 翻譯、tool 解釋、tool error 解釋、follow-up 建議句、
 訊息一鍵摘要、輸入框草稿保存、cost ledger + breakdown UI(所有 cheap LLM call
 都算進累積,UI 拆 7 個 origin 顯給 user)、soul.md(Orion 對你的人格認識,
-取自 [soul.md](https://soul.md/) 概念)已完成,接下來想做 vague prompt 補問、
-訊息「再答一次」、`?` cheat sheet、Cmd+K command bar 等。
+取自 [soul.md](https://soul.md/) 概念)、`?` 快捷鍵 cheat sheet 已完成,接下來
+想做 vague prompt 補問、訊息「再答一次」、Cmd+K command bar 等。
 **設計原則**:0 預設成本、LLM 失敗 silent fallback、prompt injection 防護、
 沿用單一 cheap model channel。
 

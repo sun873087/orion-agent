@@ -175,6 +175,11 @@ type SettingsState = {
   /** 當前選中的 project filter。null = 不 filter(顯所有 sessions)。 */
   activeProjectId: string | null
   /** New Project modal 開關。 */
+  /** Keyboard shortcuts cheat sheet modal — 按 `?` 鍵或 Settings 入口開。 */
+  shortcutsOpen: boolean
+  openShortcuts: () => void
+  closeShortcuts: () => void
+
   newProjectOpen: boolean
   /** 編輯 project 的 id;null = 沒在編。 */
   editingProjectId: string | null
@@ -278,6 +283,7 @@ export const useSettingsStore = create<SettingsState>()(
       compactSummaryProvider: 'anthropic',
       compactSummaryModel: 'claude-haiku-4-5',
       activeProjectId: null,
+      shortcutsOpen: false,
       newProjectOpen: false,
       editingProjectId: null,
       newCollabOpen: false,
@@ -362,6 +368,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ compactSummaryProvider: provider, compactSummaryModel: model }),
 
       setActiveProjectId: (id) => set({ activeProjectId: id }),
+      openShortcuts: () => set({ shortcutsOpen: true }),
+      closeShortcuts: () => set({ shortcutsOpen: false }),
       openNewProject: () => set({ newProjectOpen: true }),
       closeNewProject: () => set({ newProjectOpen: false }),
       openEditProject: (id) => set({ editingProjectId: id }),

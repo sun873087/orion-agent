@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Folder, Moon, Sun, User, X } from 'lucide-react'
+import { Folder, Keyboard, Moon, Sun, User, X } from 'lucide-react'
 
 import { getPrefs, setPref } from '../../api/agent'
 import { useTranslation } from '../../i18n'
@@ -94,6 +94,7 @@ export function GeneralSection() {
           </button>
         </div>
       </div>
+      <KeyboardShortcutsRow />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-fg-muted">
           {t('general.defaultWorkspace')}
@@ -244,6 +245,30 @@ function ThemeToggle() {
         {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
         <span>{theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light')}</span>
         <span className="text-xs text-fg-subtle">{t('settings.theme.toggleHint')}</span>
+      </button>
+    </div>
+  )
+}
+
+/** 鍵盤快捷鍵入口 — 點下去開全域 cheat sheet modal(也可以直接按 `?`)。
+ * 放這讓不知道有快捷鍵的 user 也能發現。 */
+function KeyboardShortcutsRow() {
+  const { t } = useTranslation()
+  const openShortcuts = useSettingsStore((s) => s.openShortcuts)
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-fg-muted">{t('general.shortcuts')}</label>
+      <p className="text-[11px] text-fg-subtle">{t('general.shortcutsHint')}</p>
+      <button
+        type="button"
+        onClick={openShortcuts}
+        className="mt-2 flex w-fit items-center gap-2 rounded-md border border-bg-hover bg-bg-panel px-4 py-1.5 text-sm hover:bg-bg-hover"
+      >
+        <Keyboard size={14} />
+        <span>{t('general.viewShortcuts')}</span>
+        <kbd className="rounded border border-bg-hover bg-bg-base px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
+          ?
+        </kbd>
       </button>
     </div>
   )
