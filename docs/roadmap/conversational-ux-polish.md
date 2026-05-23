@@ -19,6 +19,8 @@ session title 寫整段原 prompt、tool error 是 stack trace)。這份 doc 收
 | ✅ | **Tool error 也加「不懂?讓 AI 解釋」** | 沿用 `tool.explain` RPC 擴 `error_text` 參數。Error mode 下 LLM 出 2-3 句「Orion 試著 X,但因為 Y 失敗,你可以試試 Z」,顯在 tool row 展開區域,原 stack trace 保留下方。 |
 | ✅ | **訊息超長一鍵摘要** | Assistant 訊息 `text.length >= 500` 時 action row 多一個「✨ 摘要這則」按鈕,點下去走 `message.summarize` RPC 出 3 行 bullet,結果 card cache 在 state — 收起再展開**免費**,只「重新摘要」才打 LLM。 |
 | ✅ | **輸入框草稿自動保存** | 切走 session 時把 textarea 內容寫進 store + localStorage(per-sid),切回 hydrate,送出 / 顯式清空才清。app 重啟也保留。Attachments 不 persist(blob 太大,簡化先不做)。 |
+| ✅ | **Cost ledger + breakdown UI** | Per-session ledger 收集 7 個 origin(chat / subagent / title / follow_ups / explain / summarize / soul)的 LLM call usage,計 USD 拆細顯給 user。原本只算主對話,現在所有 cheap LLM feature + AgentTool 子 agent 都算進。SDK 加 `SubagentStopEvent` 讓子 agent cost 能 attribute 回 parent。 |
+| ✅ | **Soul.md — Orion 對你的人格認識** | 取自 [soul.md](https://soul.md/) 概念,第一人稱 reflect「我認識的這個人」。寫進 `~/.orion/users/<u>/memory/soul.md`,開新對話自動 inject 進 system_prompt 讓 LLM 像認識久的朋友開口。每 10 turn 背景更新(預設 OFF)+ Settings → 靈魂 手動觸發。走摘要 model,cost 進 ledger `soul` origin。 |
 
 > 共用技術 channel:`compact_summary_provider`(user Settings 的「摘要
 > model」)+ `reasoning_effort=minimal` + `max_tokens=1024` + 不帶
@@ -88,45 +90,6 @@ Enter 跳 / 執行。
 - Skill / slash 已有 popover,Cmd+K 是「跨類型」的合一入口
 - 不取代既有 sidebar 搜尋(Cmd+F 搜對話內容),Cmd+K 是「跳到 X」、
   Cmd+F 是「在這找 X」
-
-### H. 成本 breakdown
-
-**痛點**:User 開了 follow-up / tool explain / title gen 之後,看不到
-「這些功能各佔多少 cost」。只看 total 不夠透明。
-
-**做法**:右側 panel 累積 cost 改成可展開,拆細:
-```
-本 session 累計  $0.0234
-├ 主對話       $0.0210
-├ 摘要         $0.0008(auto-compact × 1)
-├ Follow-up    $0.0012(× 6 turns)
-├ Title 生成   $0.0002(× 1)
-└ Tool explain $0.0002(× 1)
-```
-
-**設計考量**:
-- 需要 sidecar `_track_usage` 標 origin label(`chat` / `summary` /
-  `follow_ups` / `title` / `explain`)
-- 預設摺疊,user 點才展開(避免吵)
-- 跟 Budget cap 整合 — exceeded 時提示「主對話超 cap,但 follow-up 只佔 5%
-  可繼續開」
-
-### I. 自動 user profile 學習
-
-**痛點**:多次對話後,LLM 還是不知 user 偏好的技術棧 / 語氣 / 回覆長度,
-每次都要重提醒。
-
-**做法**:Sidecar 觀察對話模式(常用語言 / framework / 偏好的 reply 長度
-/ tone),寫進 reference memory(`~/.orion/users/<u>/memory/profile.md`)。
-LLM 對話自動帶 inject。
-
-**設計考量**:
-- **侵犯感大**,必須:
-  1. 預設 OFF
-  2. UI 顯示「Orion 觀察到你...」可審閱 / 拒絕 / 編輯
-  3. 觀察前要 N turns(避免單次對話偏誤)
-- 寫進 memory 後走既有 ranker,LLM 看上下文時自動 retrieve
-- 跟 manual memory edit 不衝突(user 改了 profile.md sidecar 不蓋掉)
 
 ---
 

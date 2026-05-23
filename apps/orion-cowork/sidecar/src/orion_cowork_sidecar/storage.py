@@ -64,6 +64,42 @@ def _db_url() -> str:
     return f"sqlite+aiosqlite:///{sessions_dir / 'cowork.db'}"
 
 
+def soul_md_path(user_id: str = LOCAL_USER_ID) -> Path:
+    """Soul markdown 檔位置:`~/.orion/users/<u>/memory/soul.md`。
+
+    一份 Orion 跨對話對該 user 的「人格認識」— 第一人稱寫,LLM 開新對話自動
+    inject 進 system prompt(像「跟認識久的朋友聊天」的語感)。
+
+    跟 SDK 既有 memory 系統共資料夾(users/<u>/memory/),但檔名特殊不參與
+    一般 memory ranker — sidecar 在 _build_conversation 內顯式 inject,不
+    走 memory retrieval pipeline,確保「永遠帶」而非「ranker 篩」。
+    """
+    return data_dir() / "users" / user_id / "memory" / "soul.md"
+
+
+def read_soul_md(user_id: str = LOCAL_USER_ID) -> str:
+    """讀 soul.md 內容。檔不存在 / 讀失敗回空字串。"""
+    p = soul_md_path(user_id)
+    try:
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+    except OSError:
+        return ""
+
+
+def write_soul_md(content: str, user_id: str = LOCAL_USER_ID) -> None:
+    """寫 soul.md。空內容 = 刪檔(重置)。caller 已 sanitize 過 markdown。"""
+    p = soul_md_path(user_id)
+    if not content.strip():
+        if p.exists():
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content.strip() + "\n", encoding="utf-8")
+
+
 def get_blob_store() -> BlobStore:
     """Singleton blob store。跟 CLI 共用 ~/.orion/blobs/(blob_id 是 hash 不會撞)。"""
     return BlobStore(data_dir() / "blobs")

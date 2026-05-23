@@ -637,6 +637,7 @@ export async function sendPrompt(
     summaryProvider?: string | null
     summaryModel?: string | null
     followUpsEnabled?: boolean
+    soulAutoUpdateEnabled?: boolean
   },
 ): Promise<void> {
   await window.agent.call(
@@ -651,6 +652,7 @@ export async function sendPrompt(
       summary_provider: opts?.summaryProvider ?? undefined,
       summary_model: opts?.summaryModel ?? undefined,
       follow_ups_enabled: opts?.followUpsEnabled ?? false,
+      soul_auto_update_enabled: opts?.soulAutoUpdateEnabled ?? false,
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,
@@ -844,6 +846,51 @@ export async function explainToolInput(opts: {
     throw new Error(`${errCode}: ${errMessage || 'no explanation'}`)
   }
   return explanation
+}
+
+/** 讀 Orion 對使用者的 soul.md(第一人稱「我認識的這個人」)。檔不存在回空字串。 */
+export async function getSoul(): Promise<string> {
+  let out = ''
+  await window.agent.call('soul.get', {}, (frame) => {
+    const f = frame as { event?: string; data?: { content?: string } }
+    if (f.event === 'soul' && f.data) out = String(f.data.content ?? '')
+  })
+  return out
+}
+
+/** 手動觸發 soul.md 更新 — 帶 sessionId 讓 sidecar 抓對話歷史。 */
+export async function updateSoul(opts: {
+  sessionId: string
+  summaryProvider: string | null
+  summaryModel: string | null
+  locale: string
+}): Promise<string> {
+  let out = ''
+  let errMsg = ''
+  await window.agent.call(
+    'soul.update',
+    {
+      session_id: opts.sessionId,
+      summary_provider: opts.summaryProvider ?? undefined,
+      summary_model: opts.summaryModel ?? undefined,
+      locale: opts.locale,
+    },
+    (frame) => {
+      const f = frame as {
+        event?: string
+        data?: { content?: string; code?: string; message?: string }
+      }
+      if (f.event === 'soul_updated' && f.data) out = String(f.data.content ?? '')
+      else if (f.event === 'error' && f.data) errMsg = String(f.data.message ?? 'failed')
+    },
+  )
+  if (!out) throw new Error(errMsg || 'no content')
+  return out
+}
+
+/** 清空 soul.md(重置 Orion 對使用者的認識)。 */
+export async function clearSoul(): Promise<void> {
+  await window.agent.call('soul.clear', {}, () => {})
 }
 
 /**

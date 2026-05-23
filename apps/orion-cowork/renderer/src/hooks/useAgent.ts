@@ -376,6 +376,7 @@ export function useSendPrompt() {
   const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
   const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
   const followUpsEnabled = useSettingsStore((s) => s.followUpsEnabled)
+  const soulAutoUpdateEnabled = useSettingsStore((s) => s.soulAutoUpdateEnabled)
   const maxConcurrent = useSettingsStore((s) => s.maxConcurrentSessions)
   return useCallback(async (text: string, attachments?: Attachment[]) => {
     const store = useAgentStore.getState()
@@ -442,6 +443,7 @@ export function useSendPrompt() {
           summaryProvider,
           summaryModel,
           followUpsEnabled,
+          soulAutoUpdateEnabled,
         },
       )
     } catch (e) {
@@ -480,7 +482,7 @@ export function useSendPrompt() {
         }
       }
     }
-  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, followUpsEnabled, maxConcurrent])
+  }, [provider, model, activeProjectId, permissionMode, autoCompactEnabled, autoCompactThreshold, locale, summaryProvider, summaryModel, followUpsEnabled, soulAutoUpdateEnabled, maxConcurrent])
 }
 
 export function useAbort() {

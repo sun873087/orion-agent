@@ -144,6 +144,12 @@ type SettingsState = {
   followUpsEnabled: boolean
   setFollowUpsEnabled: (v: boolean) => void
 
+  /** Soul.md 自動更新 — 每 10 turn 背景 LLM 看對話歷史寫 soul.md(Orion 對
+   * 該 user 的第一人稱認識,inject 進每對話的 system_prompt)。預設 OFF,因為
+   * 隱私感 + 額外 token 成本。Settings 仍可手動「立即更新」單次觸發。 */
+  soulAutoUpdateEnabled: boolean
+  setSoulAutoUpdateEnabled: (v: boolean) => void
+
   /** 同時 in-flight 的 conversation 上限— 避免一次 spawn N 個
    * session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
   maxConcurrentSessions: number
@@ -263,6 +269,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoCompactEnabled: true,
       autoCompactThreshold: 0.8,
       followUpsEnabled: false,
+      soulAutoUpdateEnabled: false,
       maxConcurrentSessions: 5,
       defaultBudgetUsd: 0,
       collapsedForkParents: [],
@@ -335,6 +342,7 @@ export const useSettingsStore = create<SettingsState>()(
         set({ autoCompactThreshold: Math.round(clamped * 100) / 100 })
       },
       setFollowUpsEnabled: (v) => set({ followUpsEnabled: v }),
+      setSoulAutoUpdateEnabled: (v) => set({ soulAutoUpdateEnabled: v }),
       setMaxConcurrentSessions: (v) =>
         set({ maxConcurrentSessions: Math.max(1, Math.min(20, Math.round(v))) }),
       setDefaultBudgetUsd: (v) => {
@@ -385,6 +393,7 @@ export const useSettingsStore = create<SettingsState>()(
         autoCompactEnabled: s.autoCompactEnabled,
         autoCompactThreshold: s.autoCompactThreshold,
         followUpsEnabled: s.followUpsEnabled,
+        soulAutoUpdateEnabled: s.soulAutoUpdateEnabled,
         compactSummaryProvider: s.compactSummaryProvider,
         compactSummaryModel: s.compactSummaryModel,
         maxConcurrentSessions: s.maxConcurrentSessions,
