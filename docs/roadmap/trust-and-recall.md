@@ -19,26 +19,15 @@ cost ledger + breakdown、soul.md、`?` cheat sheet。
 
 ---
 
+## 已完成
+
+| # | 功能 | 概念 |
+|---|---|---|
+| ✅ | **A1. 訊息「為什麼這樣回答」追溯** | 每個 turn 末 assistant message 加「🔎 為什麼?」按鈕,modal 顯本 turn 的 system_prompt(完整段落)+ tools list + model + token / cost。Sidecar `AuditStore` per-session ring buffer 100 turns,**content-addressed dedup**(prompts / tool_sets 各自 hash 表 + entries ref)— 同 session 內 system_prompt 跨 turn 幾乎不變,100 turn 從 ~1MB 壓到 ~30KB。持久化 DB JSON 跨 sidecar 重啟。已知 limitation:SDK 自動 inject 的 memory ranker / git status / per_turn_text 暫不在 audit 顯(需要 SDK 暴露 hook 才能 capture)。 |
+
+---
+
 ## A. Trust — 透明度三件套(主推)
-
-### A1. 訊息「為什麼這樣回答」追溯
-
-**痛點**:Orion 回答後 user 沒法知道它**用了什麼**作答 — 哪些 memory / soul.md /
-tool result / 系統指令。LLM 回答看起來合理但實際根據不明,信任難建立。
-
-**做法**:Assistant message 加一個小 icon 入口(例如 `🔎` 或「為什麼?」),點下去
-顯一個 panel 列出本次 turn 的:
-- System prompt 段落(分組:base / user instructions / soul.md / paths / tools available)
-- Inject 進去的 memory entries(從 ranker 拿到的 top-N)
-- 看過的 tool results(本 turn LLM 真實見到的 content)
-- LLM 用的 model / token / 推理 effort
-
-**設計考量**:
-- 純 read-only,不再打 LLM
-- 需要 sidecar 把 conv 在那 turn 的 system_prompt + memory snapshot 留下 — 目前 SDK
-  有 `final_messages`,但 system prompt 沒持久化。要加 transient cache:per-turn
-  系統 prompt snapshot(memory 上限放幾條就好)
-- 顯示時 collapse 預設(細節多,user 想看才展開)
 
 ### A2. 「我送了什麼給 LLM」隱私 audit
 
@@ -189,10 +178,9 @@ Hover 顯 tooltip 預覽,click 跳該 tool row。
 
 ## 推薦優先順序
 
-1. **A1 + A2 + A3**(透明度三件套)— 最值得做。soul.md 已建,user 自然會想看
-   「Orion 真的看到我什麼」。三個一起有累積 narrative
-2. **B1**(recap chip)— 跨 session 體驗大躍進,沿用既有 cheap LLM channel
-3. **A3** 可獨立先做(純 regex,投入最小,防護效果立即)
+1. ~~**A1**~~ ✅ — 已完成,基礎建設(AuditStore + dedup + DB persistence)後續 A2 也可直接沿用
+2. **A2 + A3**(透明度剩兩件)— A2 共用 audit 基礎建設容易;A3 純 regex 防護
+3. **B1**(recap chip)— 跨 session 體驗大躍進,沿用既有 cheap LLM channel
 4. **B2**(semantic search)— 投入較大(需 embedding 基礎建設),長期使用者價值高
 5. **D1** / **C1** — 純 polish,有空再做
 
