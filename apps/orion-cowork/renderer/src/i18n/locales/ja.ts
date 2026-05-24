@@ -276,6 +276,10 @@ export default {
   'privacy.wireAudit.modeDefault': '直近 1 turn のみ保持(デフォルト)— 「直前に何が送られたか」が見られれば OK。容量増加は微小。',
   'privacy.wireAudit.modeFew': '直近 {n} turn の wire を保持 — debug / 短期 audit 向け。',
   'privacy.wireAudit.modeMany': '直近 {n} turn の wire を保持 — 容量増加大、通常 audit / エンジニア向け。',
+  'privacy.dispatchOptOut.title': 'Multi-pane DispatchPane を拒否',
+  'privacy.dispatchOptOut.desc': 'Multi-pane 協作中、pane A は DispatchPane ツールで pane B に新規 turn を実行させられます(例:「@frontend にジョークを言わせて」)。\nここに記載した pane 名は受信 DispatchPane を hard 拒否し、リクエスト側に reject を返します。AskPane(read-only)は引き続き使えます。',
+  'privacy.dispatchOptOut.placeholder': '例:reviewer, doc-writer',
+  'privacy.dispatchOptOut.hint': 'カンマ区切り。空 = 全 pane 許可(デフォルト)。',
   'approval.action.read': 'ファイル {name} を読む',
   'approval.action.write': 'ファイル {name} を作成',
   'approval.action.edit': 'ファイル {name} を編集',
@@ -532,6 +536,7 @@ export default {
   'message.forkConfirm': '分岐',
   'message.copy': 'コピー',
   'message.copied': 'コピーしました',
+  'message.dispatch.from': '{pane} から派遣',
 
   // Error banner(InputBox footer)
   'error.expand': '展開',

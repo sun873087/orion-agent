@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSyncExternalStore } from 'react'
-import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Search, Square, ThumbsDown, ThumbsUp, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Search, Send, Square, ThumbsDown, ThumbsUp, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment, setMessageFeedback as rpcSetFeedback, summarizeMessage } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
@@ -162,8 +162,17 @@ export function MessageBubble({
       className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${compactedClass}`}
       title={message.compacted ? '此訊息已被壓縮,LLM 看不到原文(只看到上方摘要)' : undefined}
     >
-      <Avatar role={message.role} />
+      <Avatar role={message.role} fromPane={isUser ? message.fromPane : undefined} />
       <div className={`flex min-w-0 max-w-[85%] flex-1 flex-col ${isUser ? 'items-end' : 'items-stretch'}`}>
+        {/* Dispatch chip — user message 由 sibling pane 派工觸發時取代正常 USER 標籤 */}
+        {isUser && message.fromPane && (
+          <div className="mb-1 flex items-center gap-1 text-[11px] text-fg-muted">
+            <Send size={11} className="text-accent" />
+            <span>
+              {t('message.dispatch.from', { pane: message.fromPane })}
+            </span>
+          </div>
+        )}
         {/* 附件圖(只 user 訊息會帶) — 歷史 attachment 用 ref lazy load。 */}
         {!!message.attachments?.length && (
           <div className={`mb-2 flex flex-wrap gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -841,8 +850,19 @@ function ContextReportCard({ report }: { report: ContextBreakdown }) {
   )
 }
 
-function Avatar({ role }: { role: 'user' | 'assistant' }) {
+function Avatar({ role, fromPane }: { role: 'user' | 'assistant'; fromPane?: string }) {
   const userAvatar = useSettingsStore((s) => s.userAvatar)
+  // Dispatched user message → 用 Send 圖示而非 user avatar,視覺一眼分得出
+  if (role === 'user' && fromPane) {
+    return (
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/70 text-white"
+        title={`from @${fromPane}`}
+      >
+        <Send size={14} />
+      </div>
+    )
+  }
   if (role === 'user' && userAvatar) {
     return (
       <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full">

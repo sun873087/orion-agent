@@ -96,6 +96,52 @@ A 的 LLM 看 status 自己決定行為:
 `pane_name=X` 的另一個 session → 讀那 session 的 messages 表。**不需要 sidecar
 RPC call B**,純 DB 查詢,B 跑得多慢都不影響。
 
+### 2b. Cross-pane dispatch:`DispatchPane`(push 互補 AskPane 的 pull)
+
+AskPane 只能 **讀** 對方 pane 的 transcript;但實際使用情境常常是「叫
+@frontend 說笑話」、「請 reviewer 看一下這段」— user 期待目標 pane 真的
+**跑** 一個新 turn 做事。
+
+`DispatchPane(pane_name, prompt)` builtin tool:
+
+| | AskPane | DispatchPane |
+|---|---|---|
+| 方向 | A 拉 B 已做的(pull) | A 推工作給 B(push) |
+| 對 B 的影響 | 0(讀 state) | 觸發 B 跑新 turn |
+| 使用情境 | 「reviewer 剛說什麼」 | 「叫 frontend 說笑話」 |
+
+**運作**:
+
+1. A 的 LLM 呼 `DispatchPane(@b, prompt)`
+2. Sidecar validate:不可 self / 不可形成 loop / chain depth ≤ 10 / 目標 pane 沒 opt-out
+3. 寫進 `cowork_pane_dispatch_queue` 表(SQLite 持久化,sidecar 重啟不掉)
+4. 若 B idle → 立即 spawn background drain task
+5. B busy 中 → enqueue,B 當前 turn 結束的 turn-end hook 會 drain queue
+6. Drain 時把 prompt 包成 `<from-pane name="@a">...</from-pane>` 當 user message 灌進 B 的 conv,跑 turn
+7. Turn 結束更新該 user message metadata(`from_pane`, `chain_path`)、emit `dispatch.completed` notification
+
+**Renderer**:訂閱 `dispatch.completed`,若目標 session 是當前可見 pane → reload messages 顯示新 turn。從 DB hydrate 帶 `from_pane` meta,MessageBubble 把該 user message 的 USER 頭像改成 Send 圖示 + 「由 @backend 派工觸發」chip。
+
+**防環設計**:
+
+- `chain_path = [所有 dispatch chain 上的 pane]`。User 觸發的 turn chain 空。
+- A → B 時,B 收到 chain `[A]`;B → C 時,C 收到 chain `[A, B]`
+- 同 pane 在 chain 出現 2 次 → reject(loop)
+- chain 長度 ≥ 10 → reject(max depth)
+
+**Opt-out**:`cowork_prefs.dispatch_disabled_panes`(CSV),Settings → 隱私 / 資料
+有 text input。列在內的 pane 名稱 hard-拒收任何 DispatchPane,reject 訊息回給呼叫
+方,對方仍可用 AskPane 純讀。
+
+**Prompt injection 防護**:系統 prompt 明示 `<from-pane>` 內容來自其他 pane,
+當 task 參考但 **user 的安全 / scope 規則永遠優先**;LLM 不該因 sibling pane
+的指令繞過 user 的限制。
+
+**v1 已知 limitation**(留 phase 2):
+- 不 live-stream dispatched turn 到 renderer(只 notify completed 後 reload)
+- Resend / regenerate 路徑沒 mark streaming(理論上 race window,但實務罕見)
+- chain depth 10 是硬編碼,沒有 Settings UI 可調
+
 ### 3. Workspace:per-pane 設定,同檔走 optimistic concurrency
 
 **per-pane `workspace_dir`,可繼承 window 預設**:

@@ -151,6 +151,19 @@ interface OrionBackupApi {
   relaunch: () => Promise<void>
 }
 
+interface OrionDispatchPayload {
+  target_session_id: string
+  dispatch_id: string
+  from_pane?: string
+  error?: string
+}
+
+interface OrionDispatchApi {
+  onStarted: (cb: (data: OrionDispatchPayload) => void) => () => void
+  onCompleted: (cb: (data: OrionDispatchPayload) => void) => () => void
+  onFailed: (cb: (data: OrionDispatchPayload) => void) => () => void
+}
+
 declare global {
   interface Window {
     agent: OrionAgentApi
@@ -169,6 +182,8 @@ declare global {
     updaterApi: OrionUpdaterApi
     /** Session 通知通道(title 後補等)。 */
     sessionApi: OrionSessionApi
+    /** Multi-pane DispatchPane 通知通道。 */
+    dispatchApi: OrionDispatchApi
   }
 }
 

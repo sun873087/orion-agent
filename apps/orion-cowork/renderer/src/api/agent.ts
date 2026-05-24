@@ -1976,6 +1976,9 @@ export type LoadedMessage = {
   kind?: 'compact-summary'
   /** Compact summary card 才有:壓縮前的概略 token 數。 */
   before_tokens?: number
+  /** Multi-pane DispatchPane:此 user message 由 sibling pane 派工觸發,
+   * 不是 user 自己打的。Renderer 用來顯「from @backend (dispatch)」chip。 */
+  from_pane?: string
 }
 
 export async function loadMessages(sessionId: string): Promise<LoadedMessage[]> {

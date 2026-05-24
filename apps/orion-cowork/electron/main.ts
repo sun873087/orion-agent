@@ -129,6 +129,12 @@ app.whenReady().then(async () => {
     else if (evt === 'backup.restart_required') broadcast('backup:restart_required')
     else if (evt === 'session.title_updated') broadcast('session:title_updated')
     else if (evt === 'session.follow_ups_updated') broadcast('session:follow_ups_updated')
+    // Multi-pane DispatchPane:其他 pane 推工作給某 session 跑完了。renderer
+    // 若該 session 可見就 reload messages,顯示新 turn。
+    else if (evt === 'dispatch.started') broadcast('dispatch:started')
+    else if (evt === 'dispatch.completed') broadcast('dispatch:completed')
+    else if (evt === 'dispatch.failed') broadcast('dispatch:failed')
+    // dispatch.delta 暫不 forward — 量大,v1 先 polling reload on completed
   })
 
   // 2. 註冊 IPC

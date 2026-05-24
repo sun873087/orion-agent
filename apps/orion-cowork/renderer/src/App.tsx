@@ -18,6 +18,7 @@ import { Sidebar } from './components/Sidebar'
 import {
   useAbort,
   useBudgetNotifications,
+  useDispatchUpdates,
   useInitConversation,
   useKeyboardShortcutsHotkey,
   usePlanModeNotifications,
@@ -38,6 +39,7 @@ export function App() {
   useBudgetNotifications()
   useSessionTitleUpdates()
   useFollowUpsUpdates()
+  useDispatchUpdates()
   useLoadCollaborations()
   useKeyboardShortcutsHotkey()
   const sendPrompt = useSendPrompt()

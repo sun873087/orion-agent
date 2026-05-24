@@ -288,6 +288,10 @@ export default {
   'privacy.wireAudit.modeDefault': '只留最近 1 個 turn 的 wire(預設)— 看「上次送了什麼」就好。儲存增加極少。',
   'privacy.wireAudit.modeFew': '保留最近 {n} 個 turn 的 wire — 適合 debug / 短期 audit。',
   'privacy.wireAudit.modeMany': '保留最近 {n} 個 turn 的 wire — 儲存增加明顯,通常 audit / 工程使用者才需要這麼多。',
+  'privacy.dispatchOptOut.title': '拒絕被其他 pane 派工',
+  'privacy.dispatchOptOut.desc': 'Multi-pane 協作時,A pane 可用 DispatchPane 工具叫 B pane 跑新 turn(類似:「叫 @frontend 說笑話」)。\n列在這裡的 pane 名稱會 hard-拒絕收任何 DispatchPane,reject 訊息回給來源 pane。對方可改用 AskPane 純讀內容。',
+  'privacy.dispatchOptOut.placeholder': '例:reviewer, doc-writer',
+  'privacy.dispatchOptOut.hint': '逗號分隔。空 = 允許所有 pane 派工進來(預設)。',
   'approval.action.read': '讀取檔案 {name}',
   'approval.action.write': '建立檔案 {name}',
   'approval.action.edit': '修改檔案 {name}',
@@ -550,6 +554,7 @@ export default {
   'message.forkConfirm': '分叉',
   'message.copy': '複製',
   'message.copied': '已複製',
+  'message.dispatch.from': '由 {pane} 派工觸發',
 
   // Error banner(InputBox footer)
   'error.expand': '展開',

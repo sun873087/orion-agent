@@ -21,6 +21,7 @@ Public API:
 from __future__ import annotations
 
 import base64
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -689,6 +690,29 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
         await conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS cowork_session_ext_collab_idx "
             "ON cowork_session_ext(collaboration_id)"
+        )
+        # Multi-pane DispatchPane — A pane 派工給 B pane 的訊息 queue。
+        # B 正在 streaming 時 enqueue,turn end drain。chain_path 記呼叫鏈,防環
+        # (同 pane 不可在 chain 出現 2 次 / max depth 10)。
+        # 持久化進 SQLite 跨 sidecar 重啟仍有效(對齊 schedule pattern)。
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_pane_dispatch_queue (
+                id TEXT PRIMARY KEY,
+                target_session_id TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                from_pane TEXT NOT NULL,
+                chain_path_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at REAL NOT NULL,
+                fired_at REAL,
+                error TEXT
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_dispatch_queue_target_idx "
+            "ON cowork_pane_dispatch_queue(target_session_id, status, created_at)"
         )
         await conn.commit()
 
@@ -2284,6 +2308,183 @@ async def find_collaboration_pane(
         session_id=r[0], collaboration_id=r[1], pane_name=r[2] or "",
         pane_role=r[3], pane_position=_parse_pane_position(r[4]),
     )
+
+
+# ─── DispatchPane queue ──────────────────────────────────────────────
+
+
+# Per-session in-memory「目前是否 streaming」flag — handlers 在 turn 開始 set,
+# turn 結束 clear。Dispatch enqueue 時讀這個決定立即 fire 還是 queue。
+# 沒走 SQL(高頻 read,且 sidecar restart 後本來就無 in-flight turn)。
+_active_streaming_sessions: set[str] = set()
+
+
+def mark_session_streaming(session_id: str, active: bool) -> None:
+    if active:
+        _active_streaming_sessions.add(session_id)
+    else:
+        _active_streaming_sessions.discard(session_id)
+
+
+def is_session_streaming(session_id: str) -> bool:
+    return session_id in _active_streaming_sessions
+
+
+async def enqueue_dispatch(
+    engine: AsyncEngine,
+    *,
+    target_session_id: str,
+    from_pane: str,
+    prompt: str,
+    chain_path: list[str],
+) -> str:
+    """Insert 一筆 dispatch → status='pending'。回 row id。"""
+    from uuid import uuid4
+    did = str(uuid4())
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_pane_dispatch_queue
+                (id, target_session_id, prompt, from_pane, chain_path_json,
+                 status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (did, target_session_id, prompt, from_pane,
+             json.dumps(chain_path, ensure_ascii=False), time.time()),
+        )
+        await conn.commit()
+    return did
+
+
+async def list_pending_dispatch(
+    engine: AsyncEngine, target_session_id: str,
+) -> list[dict[str, Any]]:
+    """撈 target 全部 pending dispatch,按 created_at asc。drain 用。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT id, prompt, from_pane, chain_path_json, created_at
+            FROM cowork_pane_dispatch_queue
+            WHERE target_session_id = ? AND status = 'pending'
+            ORDER BY created_at ASC
+            """,
+            (target_session_id,),
+        )
+        rows = result.all()
+    return [
+        {
+            "id": r[0], "prompt": r[1], "from_pane": r[2],
+            "chain_path": json.loads(r[3] or "[]"),
+            "created_at": r[4],
+        }
+        for r in rows
+    ]
+
+
+async def mark_dispatch_fired(engine: AsyncEngine, dispatch_id: str) -> None:
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            "UPDATE cowork_pane_dispatch_queue SET status='fired', fired_at=? "
+            "WHERE id = ?",
+            (time.time(), dispatch_id),
+        )
+        await conn.commit()
+
+
+async def mark_dispatch_rejected(
+    engine: AsyncEngine, dispatch_id: str, error: str,
+) -> None:
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            "UPDATE cowork_pane_dispatch_queue SET status='rejected', error=? "
+            "WHERE id = ?",
+            (error, dispatch_id),
+        )
+        await conn.commit()
+
+
+async def tag_latest_user_message_meta(
+    engine: AsyncEngine,
+    session_id: str,
+    meta_patch: dict[str, Any],
+) -> bool:
+    """找該 session 最近一筆含 `<from-pane` 的 user message,merge meta_patch
+    進 metadata_json。Dispatch fire 完用,給 renderer 拿出來顯 chip。
+
+    用 content LIKE '%<from-pane%' 過濾,避免撞到一般 user input。
+    """
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT id, metadata_json FROM messages
+            WHERE session_id = ? AND role = 'user'
+            AND content_json LIKE '%<from-pane%'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (session_id,),
+        )
+        row = result.first()
+        if row is None:
+            return False
+        mid = row[0]
+        existing_raw = row[1]
+        existing: dict[str, Any] = {}
+        if isinstance(existing_raw, str):
+            try:
+                existing = json.loads(existing_raw)
+            except Exception: # noqa: BLE001
+                existing = {}
+        elif isinstance(existing_raw, dict):
+            existing = dict(existing_raw)
+        existing.update(meta_patch)
+        await conn.exec_driver_sql(
+            "UPDATE messages SET metadata_json = ? WHERE id = ?",
+            (json.dumps(existing, ensure_ascii=False), mid),
+        )
+        await conn.commit()
+        return True
+
+
+async def count_pending_dispatch(
+    engine: AsyncEngine, target_session_id: str,
+) -> int:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM cowork_pane_dispatch_queue "
+            "WHERE target_session_id = ? AND status = 'pending'",
+            (target_session_id,),
+        )
+        return int(result.scalar() or 0)
+
+
+# ─── Dispatch opt-out pref ──────────────────────────────────────────
+
+
+async def get_dispatch_disabled_panes(engine: AsyncEngine) -> set[str]:
+    """讀 dispatch_disabled_panes pref(CSV),回 pane_name set。
+
+    pref 走 cowork_prefs 表的 'dispatch_disabled_panes' key,內容是 CSV(對齊
+    既有 disabled_tools / disabled_roles pattern)。
+    """
+    raw = await get_pref(engine, "dispatch_disabled_panes") or ""
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
+async def set_dispatch_disabled_panes(
+    engine: AsyncEngine, panes: set[str],
+) -> None:
+    """Upsert pref。空 set → 寫空字串(視為「全允許」)。"""
+    csv = ",".join(sorted(panes))
+    await set_pref(engine, "dispatch_disabled_panes", csv)
+
+
+async def is_pane_dispatch_disabled(
+    engine: AsyncEngine, pane_name: str,
+) -> bool:
+    return pane_name in await get_dispatch_disabled_panes(engine)
+
+
+# ─── update_pane_position(下方原 helper)─────────────────────────────
 
 
 async def update_pane_position(

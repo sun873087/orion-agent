@@ -1,5 +1,7 @@
-import { Info, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Info, ShieldCheck, Send } from 'lucide-react'
 
+import { getPrefs, setPref } from '../../api/agent'
 import { useTranslation } from '../../i18n'
 import { useSettingsStore } from '../../store/settings'
 
@@ -19,6 +21,39 @@ export function PrivacySection() {
   const { t } = useTranslation()
   const n = useSettingsStore((s) => s.auditWirePayloadHistory)
   const setN = useSettingsStore((s) => s.setAuditWirePayloadHistory)
+  // Multi-pane DispatchPane opt-out — 走 sidecar prefs CSV(dispatch_disabled_panes)。
+  // 不放 settings store(全 cowork 共用 prefs 不是 per-user-settings)。
+  const [dispatchDisabledCsv, setDispatchDisabledCsv] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const prefs = await getPrefs()
+        setDispatchDisabledCsv(prefs.dispatch_disabled_panes ?? '')
+      } catch {
+        // noop — 沒設過 pref 也 OK
+      }
+    })()
+  }, [])
+  async function saveDispatchDisabled(next: string) {
+    setSaving(true)
+    try {
+      // normalize:trim 每個 entry,去空 entry,排序 + 去重
+      const items = Array.from(
+        new Set(
+          next
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        ),
+      ).sort()
+      const csv = items.join(',')
+      setDispatchDisabledCsv(csv)
+      await setPref('dispatch_disabled_panes', csv || null)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -61,6 +96,29 @@ export function PrivacySection() {
           {n === 1 && t('privacy.wireAudit.modeDefault')}
           {n > 1 && n <= 5 && t('privacy.wireAudit.modeFew', { n: String(n) })}
           {n > 5 && t('privacy.wireAudit.modeMany', { n: String(n) })}
+        </div>
+      </section>
+
+      {/* Multi-pane DispatchPane opt-out — 列哪些 pane 不接受別 pane 派工 */}
+      <section className="space-y-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-medium text-fg-muted">
+          <Send size={13} className="text-accent" />
+          {t('privacy.dispatchOptOut.title')}
+        </h3>
+        <p className="text-[11px] text-fg-subtle whitespace-pre-line">
+          {t('privacy.dispatchOptOut.desc')}
+        </p>
+        <input
+          type="text"
+          value={dispatchDisabledCsv}
+          onChange={(e) => setDispatchDisabledCsv(e.target.value)}
+          onBlur={(e) => saveDispatchDisabled(e.target.value)}
+          placeholder={t('privacy.dispatchOptOut.placeholder')}
+          className="w-full rounded-md border border-bg-hover bg-bg-input px-3 py-2 text-sm font-mono focus:border-accent focus:outline-none"
+          disabled={saving}
+        />
+        <div className="text-[11px] text-fg-subtle">
+          {t('privacy.dispatchOptOut.hint')}
         </div>
       </section>
     </div>

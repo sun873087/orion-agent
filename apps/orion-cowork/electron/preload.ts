@@ -125,6 +125,34 @@ const sessionApi = {
   },
 }
 
+type DispatchPayload = {
+  target_session_id: string
+  dispatch_id: string
+  from_pane?: string
+  error?: string
+}
+
+const dispatchApi = {
+  /** Multi-pane DispatchPane:其他 pane 把工作 push 給 target session,該
+   * session 的 turn 結束(成功 / 失敗)會推這事件。renderer 若該 session
+   * 可見就 reload messages,顯示新 turn。 */
+  onStarted: (cb: (data: DispatchPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: DispatchPayload) => cb(data)
+    ipcRenderer.on('dispatch:started', listener)
+    return () => ipcRenderer.removeListener('dispatch:started', listener)
+  },
+  onCompleted: (cb: (data: DispatchPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: DispatchPayload) => cb(data)
+    ipcRenderer.on('dispatch:completed', listener)
+    return () => ipcRenderer.removeListener('dispatch:completed', listener)
+  },
+  onFailed: (cb: (data: DispatchPayload) => void): (() => void) => {
+    const listener = (_: unknown, data: DispatchPayload) => cb(data)
+    ipcRenderer.on('dispatch:failed', listener)
+    return () => ipcRenderer.removeListener('dispatch:failed', listener)
+  },
+}
+
 type UpdaterAvailablePayload = { version: string; releaseDate?: string }
 type UpdaterProgressPayload = { percent?: number; transferred?: number; total?: number }
 
@@ -257,6 +285,7 @@ contextBridge.exposeInMainWorld('budgetApi', budgetApi)
 contextBridge.exposeInMainWorld('backupApi', backupApi)
 contextBridge.exposeInMainWorld('updaterApi', updaterApi)
 contextBridge.exposeInMainWorld('sessionApi', sessionApi)
+contextBridge.exposeInMainWorld('dispatchApi', dispatchApi)
 
 declare global {
   interface Window {
@@ -269,5 +298,6 @@ declare global {
     backupApi: typeof backupApi
     updaterApi: typeof updaterApi
     sessionApi: typeof sessionApi
+    dispatchApi: typeof dispatchApi
   }
 }

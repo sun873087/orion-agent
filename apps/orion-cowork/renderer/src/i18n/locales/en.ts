@@ -276,6 +276,10 @@ export default {
   'privacy.wireAudit.modeDefault': "Keep only the most recent turn's wire (default) — enough to see «what just got sent». Storage cost negligible.",
   'privacy.wireAudit.modeFew': 'Keep the last {n} turns of wire — suitable for debug / short-term audit.',
   'privacy.wireAudit.modeMany': 'Keep the last {n} turns of wire — noticeable storage increase, usually needed by audit / engineering users.',
+  'privacy.dispatchOptOut.title': 'Refuse inbound DispatchPane',
+  'privacy.dispatchOptOut.desc': 'In a multi-pane collaboration, pane A can use the DispatchPane tool to push a task to pane B (e.g. "tell @frontend to crack a joke").\nPanes listed here will hard-refuse any DispatchPane targeting them; the requesting pane gets a reject message. Other panes can still use AskPane (read-only).',
+  'privacy.dispatchOptOut.placeholder': 'e.g. reviewer, doc-writer',
+  'privacy.dispatchOptOut.hint': 'Comma-separated. Empty = allow all (default).',
   'approval.action.read': 'read {name}',
   'approval.action.write': 'create file {name}',
   'approval.action.edit': 'edit {name}',
@@ -532,6 +536,7 @@ export default {
   'message.forkConfirm': 'Fork',
   'message.copy': 'Copy',
   'message.copied': 'Copied',
+  'message.dispatch.from': 'dispatched by {pane}',
 
   // Error banner (InputBox footer)
   'error.expand': 'Expand',

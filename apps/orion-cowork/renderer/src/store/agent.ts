@@ -71,6 +71,9 @@ export type Message = {
   compacted?: boolean
   /** Backfilled message_index(history reload 後 attachment ref / regenerate / delete-from 用)。 */
   messageIndex?: number
+  /** Multi-pane DispatchPane:這條 user message 由 sibling pane 觸發(不是 user)。
+   * MessageBubble 顯「from @backend (dispatch)」chip 取代 USER avatar。 */
+  fromPane?: string
   createdAt: number
 }
 

@@ -124,6 +124,39 @@ export function useFollowUpsUpdates(): void {
 }
 
 /**
+ * 訂閱 Multi-pane DispatchPane 完成事件。某 pane push 工作給另一 pane,target
+ * pane 的 turn 跑完(成功 / 失敗)後 sidecar 推 dispatch.completed —
+ * 若 target session 是當前正在顯示的 session,reload messages 顯示新 turn。
+ * 不顯示時 (user 沒在看)就跳過,等 user 切過去再從 DB hydrate(已含 from_pane meta)。
+ */
+export function useDispatchUpdates(): void {
+  useEffect(() => {
+    if (!window.dispatchApi?.onCompleted) return
+    const handle = async (data: { target_session_id?: string }) => {
+      const sid = data.target_session_id
+      if (!sid) return
+      // Multi-pane mode:N 個 pane 同時 render,store.sessionId 只指焦點。
+      // Dispatch 進非焦點 pane 時要強制 reload 那個 sid 的 messages,不能
+      // 只看 visible sessionId(會 miss)。直接 loadMessages + _hydrateMessages
+      // 對 store 覆寫,該 pane 訂閱 messagesBySession[sid] 自動 re-render。
+      try {
+        const loaded = await loadMessages(sid)
+        _hydrateMessages(sid, loaded)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        useAgentStore.getState().setError(sid, `dispatch reload failed: ${msg}`)
+      }
+    }
+    const offDone = window.dispatchApi.onCompleted(handle)
+    const offFail = window.dispatchApi.onFailed?.(handle)
+    return () => {
+      offDone?.()
+      offFail?.()
+    }
+  }, [])
+}
+
+/**
  * 全域 `?` 快捷鍵 — 開鍵盤 cheat sheet。User focus 在輸入框 / textarea / input
  * 時不觸發(那邊「?」本來就是普通字元)。Shift + / 才是 `?`,所以監聽 Shift+/。
  */
@@ -344,6 +377,7 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
     kind: m.kind,
     beforeTokens: m.before_tokens,
     messageIndex: m.message_index,
+    fromPane: m.from_pane,
     createdAt: Date.now(),
   }))
   useAgentStore.getState().hydrateMessages(sessionId, messages)
