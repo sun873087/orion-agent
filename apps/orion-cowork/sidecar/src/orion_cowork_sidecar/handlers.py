@@ -35,6 +35,7 @@ from orion_sdk.tools.builtin_set import build_default_tool_set
 from orion_sdk.tools.special.enter_plan_mode import EnterPlanModeTool
 from orion_sdk.tools.special.exit_plan_mode import ExitPlanModeTool
 
+from orion_cowork_sidecar.audit import AuditStore, build_tool_entries
 from orion_cowork_sidecar.cost_ledger import CostLedger
 from orion_cowork_sidecar import (
     backup_handlers,
@@ -274,6 +275,10 @@ class Handlers:
         # Per-session cost ledger — 主對話 + 子 agent + 所有 cheap LLM call 都
         # record 進來,UI 可拆 breakdown 顯示。Lazy hydrate from DB on first access。
         self._ledgers: dict[str, CostLedger] = {}
+        # Per-session audit store — 每 turn 的 system_prompt / tools / model
+        # snapshot,給 A1「為什麼這樣回答」UI 用。Dedup 表 + ring buffer 100 turns,
+        # 持久化 DB JSON 跨重啟。
+        self._audits: dict[str, AuditStore] = {}
         # Per-sid follow-up gen task — 同 sid 連發新 turn 時 cancel 舊 task
         # 避免兩次 LLM call race,只留最新一輪的建議。
         self._followup_tasks: dict[str, asyncio.Task[Any]] = {}
@@ -541,6 +546,44 @@ class Handlers:
         self._ledgers[sid] = ledger
         return ledger
 
+    async def _get_audit_store(self, sid: str) -> AuditStore:
+        """取 sid 的 audit store;in-memory miss 從 DB JSON hydrate 一次。
+        重啟後仍可拿到舊 turn 的 audit。"""
+        store = self._audits.get(sid)
+        if store is not None:
+            return store
+        engine = self._engine
+        if engine is None:
+            store = AuditStore()
+        else:
+            try:
+                raw = await storage.get_audit_entries_json(engine, sid)
+                store = AuditStore.from_json(raw)
+            except Exception as e: # noqa: BLE001
+                print(
+                    f"[audit] hydrate failed sid={sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
+                store = AuditStore()
+        self._audits[sid] = store
+        return store
+
+    async def _persist_audit_store(self, sid: str) -> None:
+        """寫 in-memory audit store 進 DB。每 turn record 完呼叫。"""
+        store = self._audits.get(sid)
+        if store is None:
+            return
+        engine = self._engine
+        if engine is None:
+            return
+        try:
+            await storage.persist_audit_entries(engine, sid, store.to_json())
+        except Exception as e: # noqa: BLE001
+            print(
+                f"[audit] persist failed sid={sid[:8]}: {e}",
+                file=__import__('sys').stderr, flush=True,
+            )
+
     async def _persist_ledger(self, sid: str) -> None:
         """寫 in-memory ledger 進 DB。Turn 結束 / cheap LLM call 完成時呼叫。"""
         ledger = self._ledgers.get(sid)
@@ -683,6 +726,7 @@ class Handlers:
             "tool.explain": self.tool_explain,
             "message.summarize": self.message_summarize,
             "conversation.cost_breakdown": self.conversation_cost_breakdown,
+            "conversation.turn_audit": self.conversation_turn_audit,
             "soul.get": self.soul_get,
             "soul.update": self.soul_update,
             "soul.clear": self.soul_clear,
@@ -1261,6 +1305,74 @@ class Handlers:
             except Exception as e: # noqa: BLE001
                 print(
                     f"[ledger] chat record failed for {sid[:8]}: {e}",
+                    file=__import__('sys').stderr, flush=True,
+                )
+            # ─── Audit snapshot — 給 A1「為什麼這樣回答」UI 用 ──
+            # 抓本 turn 的 system_prompt / tools / model / token delta,寫進
+            # per-session ring buffer。Assistant message_index 用 turn 結束時
+            # state_messages 內最後一個 assistant 的位置。
+            # 條件只看「有 assistant message」— 即使 delta=0(全 cache hit 等
+            # 異常情況)還是要記 audit,讓 user 點按鈕拿得到。
+            try:
+                import sys as _sys_a
+                last_assistant_idx = -1
+                for i in range(len(conv.state_messages) - 1, -1, -1):
+                    if getattr(conv.state_messages[i], "role", None) == "assistant":
+                        last_assistant_idx = i
+                        break
+                # 變數 delta_* 在 ledger try 內定義 — 那 try 可能 early-exception,
+                # 這裡 fallback 用 conv.stats 直算(不依賴 ledger try 成功)
+                try:
+                    cur_in = stats.input_tokens - before_input
+                    cur_out = stats.output_tokens - before_output
+                    cur_cr = stats.cache_read_tokens - before_cache_read
+                    cur_cc = stats.cache_creation_tokens - before_cache_creation
+                except NameError:
+                    cur_in = cur_out = cur_cr = cur_cc = 0
+                print(
+                    f"[audit] turn end sid={sid[:8]} last_asst_idx={last_assistant_idx} "
+                    f"delta={cur_in}/{cur_out}/{cur_cr}/{cur_cc}",
+                    file=_sys_a.stderr, flush=True,
+                )
+                if last_assistant_idx >= 0:
+                    store = await self._get_audit_store(sid)
+                    # 算本 turn cost(同 ledger pricing)
+                    try:
+                        from orion_model.pricing import get_pricing
+                        pricing = get_pricing(conv.provider.name, conv.provider.model)
+                        ip = pricing.get("input", 0.0)
+                        op = pricing.get("output", 0.0)
+                        crp = pricing.get("cache_read", ip)
+                        ccp = pricing.get("cache_creation", ip)
+                        turn_cost = (
+                            cur_in * ip + cur_out * op
+                            + cur_cr * crp + cur_cc * ccp
+                        ) / 1_000_000
+                    except Exception: # noqa: BLE001
+                        turn_cost = 0.0
+                    store.record(
+                        turn_index=stats.turns,
+                        message_index=last_assistant_idx,
+                        system_prompt=conv.system_prompt or "",
+                        tools=build_tool_entries(list(conv.tools)),
+                        provider=conv.provider.name,
+                        model=conv.provider.model,
+                        input_tokens=cur_in,
+                        output_tokens=cur_out,
+                        cache_read_tokens=cur_cr,
+                        cache_creation_tokens=cur_cc,
+                        cost_usd=turn_cost,
+                    )
+                    print(
+                        f"[audit] recorded sid={sid[:8]} turn={stats.turns} "
+                        f"msg_idx={last_assistant_idx} entries={len(store.entries)} "
+                        f"prompts_dedup={len(store.prompts)} tools_dedup={len(store.tool_sets)}",
+                        file=_sys_a.stderr, flush=True,
+                    )
+                    await self._persist_audit_store(sid)
+            except Exception as e: # noqa: BLE001
+                print(
+                    f"[audit] snapshot failed for {sid[:8]}: {e}",
                     file=__import__('sys').stderr, flush=True,
                 )
             # ─── LLM 後補 session title─────────────────────
@@ -2624,6 +2736,50 @@ class Handlers:
             },
             "final": True,
         }
+
+    async def conversation_turn_audit(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀某 turn 的 audit snapshot,給 A1「為什麼這樣回答」UI 用。
+
+        params:
+          session_id(必填)
+          turn_index(優先):依該 turn 跨 message 對齊找(renderer 用 user msg
+            計數算出)
+          message_index(legacy):state_messages 內 position,renderer 端對應有
+            mismatch,有 turn_index 時優先用 turn_index
+          沒給回最近一次
+        """
+        sid = params.get("session_id")
+        turn_index = params.get("turn_index")
+        message_index = params.get("message_index")
+        if not isinstance(sid, str) or not sid:
+            yield {
+                "event": "error",
+                "data": {"code": "BAD_PARAMS", "message": "session_id required"},
+                "final": True,
+            }
+            return
+        await self.ensure_engine()
+        store = await self._get_audit_store(sid)
+        audit = None
+        if isinstance(turn_index, int):
+            audit = store.find_by_turn_index(turn_index)
+        elif isinstance(message_index, int):
+            audit = store.find_by_message_index(message_index)
+        else:
+            audit = store.latest_expanded()
+        if audit is None:
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "NOT_FOUND",
+                    "message": "no audit snapshot for this turn (sidecar restarted, ring buffer evicted, or never tracked)",
+                },
+                "final": True,
+            }
+            return
+        yield {"event": "turn_audit", "data": audit, "final": True}
 
     async def conversation_get_budget(
         self, params: dict[str, Any]

@@ -848,6 +848,80 @@ export async function explainToolInput(opts: {
   return explanation
 }
 
+export type TurnAuditTool = { name: string; description: string }
+
+export type TurnAudit = {
+  turnIndex: number
+  timestamp: number
+  messageIndex: number
+  systemPrompt: string
+  tools: TurnAuditTool[]
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  costUsd: number
+}
+
+/**
+ * 讀某 assistant message 對應 turn 的 audit snapshot,給「為什麼這樣回答」
+ * modal 用。messageIndex 沒指定回最近一次。Sidecar 重啟後 ring buffer 失效,
+ * 拿不到就 throw,caller 顯示「audit 已過期」提示。
+ */
+export async function getTurnAudit(opts: {
+  sessionId: string
+  /** 對某 turn 找對應 audit(renderer 從 user msg 計數算出)。優先於 messageIndex。 */
+  turnIndex?: number
+  /** Legacy:state_messages 內 position。renderer 端對應有 mismatch */
+  messageIndex?: number
+}): Promise<TurnAudit> {
+  let out: TurnAudit | null = null
+  let errMsg = ''
+  await window.agent.call(
+    'conversation.turn_audit',
+    {
+      session_id: opts.sessionId,
+      turn_index: opts.turnIndex ?? undefined,
+      message_index: opts.messageIndex ?? undefined,
+    },
+    (frame) => {
+      const f = frame as {
+        event?: string
+        data?: Record<string, unknown>
+      }
+      if (f.event === 'turn_audit' && f.data) {
+        const d = f.data
+        const n = (k: string): number => (typeof d[k] === 'number' ? (d[k] as number) : 0)
+        const s = (k: string): string => (typeof d[k] === 'string' ? (d[k] as string) : '')
+        const rawTools = Array.isArray(d.tools) ? (d.tools as Array<Record<string, unknown>>) : []
+        out = {
+          turnIndex: n('turn_index'),
+          timestamp: n('timestamp'),
+          messageIndex: n('message_index'),
+          systemPrompt: s('system_prompt'),
+          tools: rawTools.map((t) => ({
+            name: typeof t.name === 'string' ? t.name : '',
+            description: typeof t.description === 'string' ? t.description : '',
+          })),
+          provider: s('provider'),
+          model: s('model'),
+          inputTokens: n('input_tokens'),
+          outputTokens: n('output_tokens'),
+          cacheReadTokens: n('cache_read_tokens'),
+          cacheCreationTokens: n('cache_creation_tokens'),
+          costUsd: n('cost_usd'),
+        }
+      } else if (f.event === 'error' && f.data) {
+        errMsg = String(f.data.message ?? 'failed')
+      }
+    },
+  )
+  if (!out) throw new Error(errMsg || 'no audit')
+  return out
+}
+
 /** 讀 Orion 對使用者的 soul.md(第一人稱「我認識的這個人」)。檔不存在回空字串。 */
 export async function getSoul(): Promise<string> {
   let out = ''

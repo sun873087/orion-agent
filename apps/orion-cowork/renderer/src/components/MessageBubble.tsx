@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSyncExternalStore } from 'react'
-import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Search, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
 import { loadAttachment, summarizeMessage } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
 import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
+import { TurnAuditModal } from './TurnAuditModal'
 import { getPlayingMessageId, isPlaying as isMsgPlaying, play as ttsPlay, stop as ttsStop, subscribe as ttsSubscribe } from '../utils/ttsPlayer'
 import { useTranslation } from '../i18n'
 import { useAgentStore, type AttachmentPreview, type Message } from '../store/agent'
@@ -22,9 +23,15 @@ import { ToolCallGroup } from './ToolCallGroup'
 export function MessageBubble({
   message,
   isLastAssistant,
+  isTurnEndAssistant,
+  turnIndex,
 }: {
   message: Message
   isLastAssistant?: boolean
+  /** 該 turn 末的 assistant 訊息(下一條是 user / 沒下一條)— 顯「為什麼?」按鈕 */
+  isTurnEndAssistant?: boolean
+  /** 該訊息對應的 turn_index(1-based,user msg 累計) */
+  turnIndex?: number
 }) {
   if (message.role === 'system' && message.kind === 'context-report' && message.contextReport) {
     return <ContextReportCard report={message.contextReport} />
@@ -73,6 +80,7 @@ export function MessageBubble({
     ? 'opacity-60 grayscale transition-opacity hover:opacity-95'
     : ''
   const [editing, setEditing] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
   const { t, locale } = useTranslation()
   // 摘要 state lift 到這層(原本放 sub-component 內,但結果 block 跟按鈕要 render
   // 在兩處 — card 在 action row 上方獨立 block、button 嵌進 action row 內)。
@@ -318,11 +326,26 @@ export function MessageBubble({
                 }}
               />
             )}
+            {/* 🔎 為什麼這樣回答 — turn 末 assistant message 才顯。Audit ring buffer
+                100 turns,持久化 DB JSON,跨 sidecar 重啟仍可看舊 turn。 */}
+            {!isUser && !message.compacted && message.text && isTurnEndAssistant && (
+              <ActionButton
+                icon={<Search size={12} />}
+                label={t('audit.whyButton')}
+                onClick={() => setAuditOpen(true)}
+              />
+            )}
             {/* Regenerate 只在「最後一個 assistant」且未被 compact 的情況下顯示。 */}
             {!isUser && isLastAssistant && !message.compacted && <RegenerateButton />}
           </div>
         )}
       </div>
+      <TurnAuditModal
+        open={auditOpen}
+        sessionId={currentSid}
+        turnIndex={turnIndex ?? null}
+        onClose={() => setAuditOpen(false)}
+      />
     </div>
   )
 }

@@ -254,6 +254,10 @@ async def _ensure_cowork_ext_tables(engine: AsyncEngine) -> None:
             # 不需要逐筆 audit;查詢只在 turn 結束 / cost_breakdown RPC 時讀,
             # 不會被高頻 join。Schema 演進加新 origin 也不必 migration。
             "cost_breakdown_json TEXT",
+            # A1 「為什麼這樣回答」 audit ring buffer 持久化 — 最近 N turn
+            # 的 system_prompt / tools / model / token snapshot JSON。Sidecar
+            # 重啟 hydrate 回 in-memory cache,user 點舊訊息也看得到 audit。
+            "audit_entries_json TEXT",
         ):
             try:
                 await conn.exec_driver_sql(
@@ -1586,6 +1590,40 @@ async def get_cost_breakdown_json(
     async with engine.connect() as conn:
         result = await conn.exec_driver_sql(
             "SELECT cost_breakdown_json FROM cowork_session_ext WHERE session_id = ?",
+            (session_id,),
+        )
+        row = result.first()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def persist_audit_entries(
+    engine: AsyncEngine,
+    session_id: str,
+    entries_json: str,
+) -> None:
+    """寫 audit entries JSON 進 cowork_session_ext。UPSERT 整段覆蓋。"""
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO cowork_session_ext (session_id, audit_entries_json)
+            VALUES (?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                audit_entries_json = excluded.audit_entries_json
+            """,
+            (session_id, entries_json),
+        )
+        await conn.commit()
+
+
+async def get_audit_entries_json(
+    engine: AsyncEngine, session_id: str,
+) -> str | None:
+    """讀 audit entries JSON。沒 row / 沒填 → None。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            "SELECT audit_entries_json FROM cowork_session_ext WHERE session_id = ?",
             (session_id,),
         )
         row = result.first()

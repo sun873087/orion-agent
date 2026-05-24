@@ -71,16 +71,30 @@ export function MessageList() {
             </span>
           </div>
         )}
-        {messages.map((m, i) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            isLastAssistant={
-              m.role === 'assistant' &&
-              !messages.slice(i + 1).some((later) => later.role === 'assistant')
-            }
-          />
-        ))}
+        {messages.map((m, i) => {
+          const next = messages[i + 1]
+          // turn-end assistant:下一條是 user 或沒下一條,代表這 turn 結束
+          const isTurnEndAssistant =
+            m.role === 'assistant' && (next === undefined || next.role !== 'assistant')
+          // turn_index = 此 message 之前(含自己這輪)的 user msg 數量。對齊
+          // sidecar 端 conv.stats.turns(每 user → 一輪 → +1)。
+          const turnIndex =
+            m.role === 'assistant'
+              ? messages.slice(0, i + 1).filter((mm) => mm.role === 'user').length
+              : 0
+          return (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isLastAssistant={
+                m.role === 'assistant' &&
+                !messages.slice(i + 1).some((later) => later.role === 'assistant')
+              }
+              isTurnEndAssistant={isTurnEndAssistant}
+              turnIndex={turnIndex}
+            />
+          )
+        })}
       </div>
     </div>
   )
