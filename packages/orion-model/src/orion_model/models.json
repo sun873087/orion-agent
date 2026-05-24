@@ -91,7 +91,7 @@
     {
       "id": "google",
       "label": "Google Gemini",
-      "_comment": "Google Gemini 走 OpenAI-compat 端點(generativelanguage.googleapis.com/v1beta/openai)。GEMINI_API_KEY 不要跟 GOOGLE_STT_API_KEY 混 — STT / LLM 是不同 API。Pricing 對齊 gemini-2.5-flash 現價(input $0.30 / output $2.50 per 1M)。",
+      "_comment": "Google Gemini 走 native API(generativelanguage.googleapis.com/v1beta/models/...:streamGenerateContent)— 不用 OpenAI-compat,以便 thought_signature 跨 turn echo,multi-turn tool use 不會 400。GEMINI_API_KEY 不要跟 GOOGLE_STT_API_KEY 混 — STT / LLM 是不同 API。",
       "models": [
         {
           "id": "gemini-3.5-flash",
@@ -103,6 +103,18 @@
             "input": 0.30,
             "output": 2.50,
             "cache_read": 0.075
+          }
+        },
+        {
+          "id": "gemini-3.1-flash-lite",
+          "label": "Gemini 3.1 Flash Lite",
+          "max_output_tokens": 65536,
+          "max_context_tokens": 1000000,
+          "supports_reasoning": true,
+          "pricing": {
+            "input": 0.25,
+            "output": 1.50,
+            "cache_read": 0.025
           }
         }
       ]
