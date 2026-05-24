@@ -431,6 +431,16 @@ export function useDeleteConversation() {
       // 清掉這 session 的 in-memory state(messages / busy / pendingQuestion 等)
       state.clearSessionLocalState(sid)
       await refreshSessions()
+      // Fork 子孫 cascade:sidecar 會把 sid 的 fork 子孫一併刪掉。若當前 sid
+      // 不在 refresh 後的 list,代表它本身被 cascade 刪 → 清右面板。
+      const after = useAgentStore.getState()
+      if (
+        after.sessionId &&
+        !after.sessions.some((s) => s.session_id === after.sessionId)
+      ) {
+        useAgentStore.setState({ sessionId: null })
+        after.clearSessionLocalState(after.sessionId)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(sid, msg)

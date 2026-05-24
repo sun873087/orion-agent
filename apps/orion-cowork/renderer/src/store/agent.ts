@@ -176,7 +176,7 @@ type AgentState = {
   setCompacting: (sid: string, v: boolean) => void
 
   // mutators
-  setSessionId: (sid: string) => void
+  setSessionId: (sid: string | null) => void
   setInitError: (err: string) => void
   setError: (sid: string, err: string | null) => void
   setBusy: (sid: string, b: boolean) => void

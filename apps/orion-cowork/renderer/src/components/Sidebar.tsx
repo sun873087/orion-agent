@@ -263,12 +263,29 @@ function SelectionToolbar({ visibleSessions }: { visibleSessions: SessionSummary
     if (!window.confirm(msg)) return
     try {
       await deleteConversations(selected)
+      // 若當前 active session 在刪除清單(或其 fork 子孫之一)→ 清右面板。
+      // 子孫的 sid 我們沒撈,但 sidecar refresh 完 listConversations 後若當前
+      // sid 不在新 list 內,代表已被 cascade 刪掉,一併 clear。
+      const state = useAgentStore.getState()
+      const selectedSet = new Set(selected)
+      if (state.sessionId && selectedSet.has(state.sessionId)) {
+        useAgentStore.setState({ sessionId: null })
+      }
+      // 清掉每個被選 session 的 in-memory state(messages / busy / draft 等)
+      for (const sid of selected) state.clearSessionLocalState(sid)
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e)
       window.alert(`刪除失敗:${err}`)
     }
     exit()
-    refreshSidebar(await listConversations())
+    const fresh = await listConversations()
+    refreshSidebar(fresh)
+    // 二保:若當前 sid 已不在 fresh list(被 cascade 刪),清 sessionId
+    const afterState = useAgentStore.getState()
+    if (afterState.sessionId && !fresh.some((s) => s.session_id === afterState.sessionId)) {
+      useAgentStore.setState({ sessionId: null })
+      afterState.clearSessionLocalState(afterState.sessionId)
+    }
   }
 
   if (!mode) {
@@ -835,8 +852,11 @@ function SidebarNavTabs() {
   const setActiveProjectId = useSettingsStore((s) => s.setActiveProjectId)
   const inCollab = useAgentStore((s) => s.currentCollaborationId !== null)
   const openCollaboration = useAgentStore((s) => s.openCollaboration)
+  const setSessionId = useAgentStore((s) => s.setSessionId)
+  const currentTab = tab
 
   function switchTo(next: 'chats' | 'projects' | 'collaborations') {
+    if (next === currentTab) return
     // 切「對話」= 個人對話 mode(no project,no collab)
     if (next === 'chats') {
       setActiveProjectId(null)
@@ -848,6 +868,10 @@ function SidebarNavTabs() {
     }
     // 切「協作」不動 project state(它被 collab view 覆蓋掉)
     setTab(next)
+    // 清右面板的 active session — 否則 user 看到「在新 tab 但右邊仍是上個 tab
+    // 的對話內容」很 confusing(看起來像 tab 沒生效)。要繼續看那 session 就
+    // 切回原 tab 點一下。
+    setSessionId(null)
   }
 
   return (
