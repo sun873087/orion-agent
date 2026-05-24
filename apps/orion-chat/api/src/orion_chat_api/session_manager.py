@@ -44,6 +44,8 @@ class SessionInfo:
     n_turns: int
     provider: str
     model: str
+    title: str | None = None
+    starred: bool = False
 
 
 @dataclass

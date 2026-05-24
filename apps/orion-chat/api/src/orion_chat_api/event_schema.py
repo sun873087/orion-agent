@@ -150,6 +150,38 @@ class ErrorEvent(BaseModel):
     message: str
 
 
+class SessionTitleUpdatedEvent(BaseModel):
+    """session 標題由首輪後的 side-query 自動生成 → 通知 client 更新 sidebar。"""
+
+    type: Literal["session_title_updated"] = "session_title_updated"
+    session_id: str
+    title: str
+
+
+class BudgetExceededEvent(BaseModel):
+    """session 成本達到上限 → 通知 client 顯示 banner、之後的 turn 會被拒。"""
+
+    type: Literal["budget_exceeded"] = "budget_exceeded"
+    session_id: str
+    total_cost_usd: float
+    cap: float | None = None
+
+
+class AutoCompactSuggestedEvent(BaseModel):
+    """context 逼近 model 上限 → 建議使用者 compact。"""
+
+    type: Literal["auto_compact_suggested"] = "auto_compact_suggested"
+    session_id: str
+
+
+class FollowUpsUpdatedEvent(BaseModel):
+    """每 turn 結束後 side-query 產生的後續問題建議。"""
+
+    type: Literal["follow_ups_updated"] = "follow_ups_updated"
+    session_id: str
+    suggestions: list[str]
+
+
 ServerEvent = Annotated[
     UserTextEvent
     | HistoryReplayDoneEvent
@@ -161,7 +193,11 @@ ServerEvent = Annotated[
     | AskUserQuestionAskEvent
     | TurnCompleteEvent
     | TerminalEvent
-    | ErrorEvent,
+    | ErrorEvent
+    | SessionTitleUpdatedEvent
+    | BudgetExceededEvent
+    | AutoCompactSuggestedEvent
+    | FollowUpsUpdatedEvent,
     Field(discriminator="type"),
 ]
 

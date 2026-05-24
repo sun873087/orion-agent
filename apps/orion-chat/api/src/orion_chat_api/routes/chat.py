@@ -38,10 +38,14 @@ from orion_chat_api.event_schema import (
     AskUserQuestionAskEvent,
     AssistantTextEvent,
     AssistantThinkingEvent,
+    AutoCompactSuggestedEvent,
+    BudgetExceededEvent,
     ErrorEvent,
+    FollowUpsUpdatedEvent,
     HistoryReplayDoneEvent,
     PermissionDecisionEvent,
     ServerEvent,
+    SessionTitleUpdatedEvent,
     TerminalEvent,
     ToolResultEvent,
     ToolUseEvent,
@@ -69,6 +73,7 @@ from orion_sdk.core.tool_execution import (
     ToolProgressUpdate,
     ToolResultUpdate,
 )
+from orion_sdk.permissions.decisions import PermissionDecision, PermissionResult
 from orion_model.provider import LLMProvider
 from orion_model.types import (
     TextBlock,
@@ -88,6 +93,17 @@ router = APIRouter()
 
 # 寫作 sentinel — None 進 queue → writer 結束
 _QUEUE_SENTINEL = object()
+
+
+async def _allow_all(
+    _tool: Any, _tool_input: dict[str, Any], _ctx: Any,
+) -> PermissionResult:
+    """act 模式的 can_use_tool — 全放行。
+
+    注意:SDK tool_execution 無條件 `await can_use_tool(...)`,所以 act 模式不能用
+    None(會 TypeError),必須給一個真的回 ALLOW 的 callable。
+    """
+    return PermissionResult(decision=PermissionDecision.ALLOW)
 
 
 _REPLAY_BATCH_SIZE = 100
@@ -240,6 +256,164 @@ async def _emit_tool_use_for_assistant_turn(
     return out
 
 
+def _msg_text(message: Any) -> str:
+    """取一則 message 的純文字(content 可能是 str 或 block list)。"""
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content if isinstance(content, list) else []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+    return " ".join(parts)
+
+
+def _first_exchange_text(messages: list[Any]) -> tuple[str, str]:
+    """取首個 user / assistant 文字(給標題 side-query 當輸入)。"""
+    user_text = next(
+        (_msg_text(m) for m in messages if getattr(m, "role", None) == "user"), "",
+    )
+    assistant_text = next(
+        (_msg_text(m) for m in messages if getattr(m, "role", None) == "assistant"),
+        "",
+    )
+    return user_text, assistant_text
+
+
+async def _maybe_generate_title(
+    conv: Conversation,
+    sm: SessionManager,
+    session_id: UUID,
+    outbound: anyio.abc.ObjectSendStream[Any],
+) -> None:
+    """首輪後若尚無標題,跑 mini-model side-query 生標題、寫 DB、推 WS event。
+
+    全程吞例外 — 標題生成失敗絕不影響對話。需 DB(in-memory manager 無 engine → 跳過)。
+    """
+    engine = getattr(sm, "engine", None)
+    if engine is None:
+        return
+    try:
+        from orion_chat_api.conversation_meta import fetch_meta_map, upsert_meta
+        from orion_chat_api.title_gen import (
+            generate_session_title,
+            mini_provider_for,
+        )
+
+        existing, _ = (await fetch_meta_map(engine, [str(session_id)])).get(
+            str(session_id), (None, False),
+        )
+        if existing:  # 已有標題,不重生
+            return
+        user_text, assistant_text = _first_exchange_text(conv.state_messages)
+        if not user_text:
+            return
+        provider = conv.compact_summary_provider or mini_provider_for(conv.provider)
+        title = await generate_session_title(provider, user_text, assistant_text)
+        if not title:
+            return
+        await upsert_meta(engine, str(session_id), title=title)
+        await outbound.send(
+            SessionTitleUpdatedEvent(session_id=str(session_id), title=title),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _budget_blocked(sm: SessionManager, session_id: UUID) -> bool:
+    """turn 開始前:該 session 是否已超預算(超了就不該再跑)。"""
+    engine = getattr(sm, "engine", None)
+    if engine is None:
+        return False
+    try:
+        from orion_chat_api.conversation_meta import fetch_budget
+
+        _, exceeded = await fetch_budget(engine, str(session_id))
+        return exceeded
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _check_budget_and_notify(
+    conv: Conversation,
+    sm: SessionManager,
+    session_id: UUID,
+    outbound: anyio.abc.ObjectSendStream[Any],
+) -> None:
+    """turn 結束後:累積成本達 cap → set exceeded + push BudgetExceededEvent。"""
+    engine = getattr(sm, "engine", None)
+    if engine is None:
+        return
+    try:
+        from orion_chat_api.conversation_meta import (
+            budget_is_exceeded,
+            fetch_budget,
+            upsert_meta,
+        )
+        from orion_sdk.telemetry.cost_tracker import get_session_summary
+
+        cap, already = await fetch_budget(engine, str(session_id))
+        if cap is None or already:
+            return
+        summary = get_session_summary(str(session_id))
+        total = float(summary["total_cost_usd"]) if summary else 0.0
+        if budget_is_exceeded(total, cap):
+            await upsert_meta(engine, str(session_id), budget_exceeded=True)
+            await outbound.send(
+                BudgetExceededEvent(
+                    session_id=str(session_id), total_cost_usd=total, cap=cap,
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _maybe_followups(
+    conv: Conversation,
+    session_id: UUID,
+    outbound: anyio.abc.ObjectSendStream[Any],
+) -> None:
+    """turn 結束後產 follow-up 建議(mini model)→ push WS。失敗吞掉。"""
+    try:
+        from orion_chat_api.title_gen import generate_followups, mini_provider_for
+
+        user_text, assistant_text = _first_exchange_text(
+            list(reversed(conv.state_messages)),
+        )
+        if not assistant_text:
+            return
+        provider = conv.compact_summary_provider or mini_provider_for(conv.provider)
+        suggestions = await generate_followups(provider, user_text, assistant_text)
+        if suggestions:
+            await outbound.send(
+                FollowUpsUpdatedEvent(
+                    session_id=str(session_id), suggestions=suggestions,
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _maybe_auto_compact(
+    conv: Conversation,
+    session_id: UUID,
+    outbound: anyio.abc.ObjectSendStream[Any],
+) -> None:
+    """context 逼近 model 上限(>=80%)→ push AutoCompactSuggestedEvent。"""
+    try:
+        max_ctx = getattr(conv.provider.capabilities, "max_context_tokens", 0) or 0
+        if max_ctx <= 0:
+            return
+        approx = sum(len(_msg_text(m)) for m in conv.state_messages) // 4
+        if approx >= max_ctx * 0.8:
+            await outbound.send(
+                AutoCompactSuggestedEvent(session_id=str(session_id)),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @router.websocket("/chat/stream/{session_id}")
 async def chat_stream(
     websocket: WebSocket,
@@ -262,6 +436,7 @@ async def chat_stream(
     # ─── lookup / auto-create conversation ──────────────────────────────
     conv = await sm.get(user_id, session_id)
     if conv is None:
+        from orion_chat_api.user_context import build_user_system_prefix
         from orion_sdk.core.conversation import pick_max_tokens_per_turn
         from orion_sdk.tools.builtin_set import build_default_tool_set
         conv = Conversation(
@@ -272,6 +447,8 @@ async def chat_stream(
             max_tokens_per_turn=pick_max_tokens_per_turn(
                 provider.name, provider.model,
             ),
+            # soul.md → system prompt 前綴(prepend,不覆蓋靜態段)
+            system_prompt=build_user_system_prefix(user_id),
             # Chat-api server,無 user-side cwd
             include_workspace_context=False,
         )
@@ -294,11 +471,13 @@ async def chat_stream(
     abort_event = anyio.Event()
     turn_lock = anyio.Lock()
 
-    # 注入 ws-based permission callback
-    conv.can_use_tool = make_can_use_tool_for_websocket(
+    # ws-based permission callback(ask 模式用);act 模式則設 None(全放行)。
+    # 每個 turn 開始時依 permission_mode 切換(見 runner)。
+    ws_can_use_tool = make_can_use_tool_for_websocket(
         outbound_queue=outbound_send,  # type: ignore[arg-type]
         pending=pending_perms,
     )
+    conv.can_use_tool = ws_can_use_tool
 
     # 把 ws asker 掛到 AskUserQuestionTool(per-connection late-bind)。
     # tool 本身在 build_default_tool_set 已註冊;這裡只設 callback,讓模型呼叫
@@ -332,12 +511,48 @@ async def chat_stream(
 
     async def runner(user_text: str) -> None:
         async with turn_lock:
+            if await _budget_blocked(sm, session_id):
+                await outbound_send.send(
+                    ErrorEvent(
+                        message="Budget cap reached for this conversation. "
+                        "Raise the cap in settings to continue.",
+                    ),
+                )
+                return
+            # 依 permission_mode 切換:act → 全放行(can_use_tool=None);ask → ws round-trip
+            # plan mode active/awaiting → 用 SDK plan_mode_aware 包(唯讀/全擋優先)。
+            plan_status = "inactive"
+            plan_content = ""
+            engine = getattr(sm, "engine", None)
+            if engine is not None:
+                from orion_chat_api.conversation_meta import (
+                    fetch_permission_mode,
+                    fetch_plan,
+                )
+
+                mode = await fetch_permission_mode(engine, str(session_id))
+                plan_status, plan_content = await fetch_plan(engine, str(session_id))
+                # act → 全放行 callable(不可用 None — SDK 會無條件呼叫);ask → ws round-trip
+                base = _allow_all if mode == "act" else ws_can_use_tool
+                if plan_status != "inactive":
+                    from orion_sdk.plan_mode import plan_mode_aware
+
+                    conv.can_use_tool = plan_mode_aware(base)
+                else:
+                    conv.can_use_tool = base
             ctx = AgentContext(
                 session_id=session_id,
                 user_id=user_id,
                 abort_event=abort_event,
                 cwd=sp.workspace_dir,
             )
+            if plan_status != "inactive":
+                from orion_sdk.plan_mode.state import PlanModeState, PlanModeStatus
+
+                ctx.plan_mode_state = PlanModeState(
+                    status=PlanModeStatus(plan_status),
+                    plan_content=plan_content,
+                )
 
             # Coalesce text/thinking deltas — 避免每 token 一個 ws frame
             # (Anthropic 50–100 tokens/s × frame overhead 在 vite proxy 後
@@ -382,6 +597,12 @@ async def chat_stream(
                         for tu_ev in await _emit_tool_use_for_assistant_turn(loop_ev):
                             await outbound_send.send(tu_ev)
                 await flush_text()
+                # 首輪後自動生成標題(內部 guard:已有標題 / 無 DB 則跳過)
+                await _maybe_generate_title(conv, sm, session_id, outbound_send)
+                # 成本治理 + context 將滿提示(內部 guard,失敗不影響對話)
+                await _check_budget_and_notify(conv, sm, session_id, outbound_send)
+                await _maybe_auto_compact(conv, session_id, outbound_send)
+                await _maybe_followups(conv, session_id, outbound_send)
             except Exception as e:  # noqa: BLE001
                 await flush_text()
                 await outbound_send.send(

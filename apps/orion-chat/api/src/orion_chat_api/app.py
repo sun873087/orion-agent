@@ -28,13 +28,22 @@ from fastapi.middleware.cors import CORSMiddleware # noqa: E402
 from orion_chat_api.deps import _provider_from_env # noqa: E402
 from orion_chat_api.routes import auth as auth_router # noqa: E402
 from orion_chat_api.routes import chat as chat_router # noqa: E402
+from orion_chat_api.routes import collaborations as collaborations_router # noqa: E402
 from orion_chat_api.routes import health as health_router # noqa: E402
+from orion_chat_api.routes import mcp as mcp_router # noqa: E402
 from orion_chat_api.routes import memories as memories_router # noqa: E402
 from orion_chat_api.routes import oauth as oauth_router # noqa: E402
+from orion_chat_api.routes import plan as plan_router # noqa: E402
 from orion_chat_api.routes import preferences as preferences_router # noqa: E402
+from orion_chat_api.routes import projects as projects_router # noqa: E402
+from orion_chat_api.routes import roles as roles_router # noqa: E402
+from orion_chat_api.routes import schedules as schedules_router # noqa: E402
 from orion_chat_api.routes import sessions as sessions_router # noqa: E402
+from orion_chat_api.routes import skills as skills_router # noqa: E402
+from orion_chat_api.routes import soul as soul_router # noqa: E402
 from orion_chat_api.routes import uploads as uploads_router # noqa: E402
 from orion_chat_api.routes import user_settings as user_settings_router # noqa: E402
+from orion_chat_api.routes import voice as voice_router # noqa: E402
 from orion_chat_api.session_manager import SessionManager # noqa: E402
 from orion_chat_api.session_manager_db import DbSessionManager # noqa: E402
 from orion_cli.commands.registry import register_builtins # noqa: E402
@@ -163,6 +172,15 @@ def create_app() -> FastAPI:
     app.include_router(preferences_router.router)
     app.include_router(user_settings_router.router)
     app.include_router(memories_router.router)
+    app.include_router(skills_router.router)
+    app.include_router(roles_router.router)
+    app.include_router(soul_router.router)
+    app.include_router(plan_router.router)
+    app.include_router(projects_router.router)
+    app.include_router(mcp_router.router)
+    app.include_router(schedules_router.router)
+    app.include_router(voice_router.router)
+    app.include_router(collaborations_router.router)
     app.include_router(oauth_router.router)
     app.include_router(chat_router.router)
 

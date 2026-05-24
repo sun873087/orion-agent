@@ -21,9 +21,18 @@ _bearer = HTTPBearer(auto_error=True)
 
 
 def _provider_from_env() -> LLMProvider:
-    """從環境變數選 provider + model;CLI 可由 ORION_PROVIDER / ORION_MODEL 覆蓋。"""
+    """從環境變數選 provider + model;CLI 可由 ORION_PROVIDER / ORION_MODEL 覆蓋。
+
+    `ORION_PROVIDER=mock` → 回 MockProvider(空 turns):讓 server 在**無 API key**
+    下也能啟動且 deterministic,給 Playwright 整合測試的 uvicorn 子行程用。
+    只在顯式設 mock 時觸發,production 永不進此分支。
+    """
     p = os.environ.get("ORION_PROVIDER", "anthropic")
     m = os.environ.get("ORION_MODEL", "claude-sonnet-4-6")
+    if p == "mock":
+        from orion_sdk._testing import MockProvider
+
+        return MockProvider(turns=[])
     return get_provider(p, m)
 
 

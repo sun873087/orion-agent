@@ -74,6 +74,63 @@
       "title": "AssistantThinkingEvent",
       "type": "object"
     },
+    "AutoCompactSuggestedEvent": {
+      "description": "context 逼近 model 上限 → 建議使用者 compact。",
+      "properties": {
+        "type": {
+          "const": "auto_compact_suggested",
+          "default": "auto_compact_suggested",
+          "title": "Type",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "AutoCompactSuggestedEvent",
+      "type": "object"
+    },
+    "BudgetExceededEvent": {
+      "description": "session 成本達到上限 → 通知 client 顯示 banner、之後的 turn 會被拒。",
+      "properties": {
+        "type": {
+          "const": "budget_exceeded",
+          "default": "budget_exceeded",
+          "title": "Type",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "total_cost_usd": {
+          "title": "Total Cost Usd",
+          "type": "number"
+        },
+        "cap": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cap"
+        }
+      },
+      "required": [
+        "session_id",
+        "total_cost_usd"
+      ],
+      "title": "BudgetExceededEvent",
+      "type": "object"
+    },
     "ErrorEvent": {
       "description": "通用 error(server 端 exception / unauthorized / etc.)。",
       "properties": {
@@ -92,6 +149,34 @@
         "message"
       ],
       "title": "ErrorEvent",
+      "type": "object"
+    },
+    "FollowUpsUpdatedEvent": {
+      "description": "每 turn 結束後 side-query 產生的後續問題建議。",
+      "properties": {
+        "type": {
+          "const": "follow_ups_updated",
+          "default": "follow_ups_updated",
+          "title": "Type",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "suggestions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Suggestions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "session_id",
+        "suggestions"
+      ],
+      "title": "FollowUpsUpdatedEvent",
       "type": "object"
     },
     "HistoryReplayDoneEvent": {
@@ -141,6 +226,31 @@
         "input"
       ],
       "title": "PermissionAskEvent",
+      "type": "object"
+    },
+    "SessionTitleUpdatedEvent": {
+      "description": "session 標題由首輪後的 side-query 自動生成 → 通知 client 更新 sidebar。",
+      "properties": {
+        "type": {
+          "const": "session_title_updated",
+          "default": "session_title_updated",
+          "title": "Type",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "title"
+      ],
+      "title": "SessionTitleUpdatedEvent",
       "type": "object"
     },
     "TerminalEvent": {
@@ -290,9 +400,13 @@
       "ask_user_question": "#/$defs/AskUserQuestionAskEvent",
       "assistant_text": "#/$defs/AssistantTextEvent",
       "assistant_thinking": "#/$defs/AssistantThinkingEvent",
+      "auto_compact_suggested": "#/$defs/AutoCompactSuggestedEvent",
+      "budget_exceeded": "#/$defs/BudgetExceededEvent",
       "error": "#/$defs/ErrorEvent",
+      "follow_ups_updated": "#/$defs/FollowUpsUpdatedEvent",
       "history_replay_done": "#/$defs/HistoryReplayDoneEvent",
       "permission_ask": "#/$defs/PermissionAskEvent",
+      "session_title_updated": "#/$defs/SessionTitleUpdatedEvent",
       "terminal": "#/$defs/TerminalEvent",
       "tool_result": "#/$defs/ToolResultEvent",
       "tool_use": "#/$defs/ToolUseEvent",
@@ -334,6 +448,18 @@
     },
     {
       "$ref": "#/$defs/ErrorEvent"
+    },
+    {
+      "$ref": "#/$defs/SessionTitleUpdatedEvent"
+    },
+    {
+      "$ref": "#/$defs/BudgetExceededEvent"
+    },
+    {
+      "$ref": "#/$defs/AutoCompactSuggestedEvent"
+    },
+    {
+      "$ref": "#/$defs/FollowUpsUpdatedEvent"
     }
   ],
   "$schema": "http://json-schema.org/draft-07/schema#",

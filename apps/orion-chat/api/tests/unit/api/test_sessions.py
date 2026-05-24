@@ -98,6 +98,9 @@ def test_create_session_missing_api_key_returns_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # 沒走 proxy 才會踩 individual key 不存在的 503;有走 proxy 改另一 test 驗
+    monkeypatch.delenv("ORION_MODEL_PROXY_URL", raising=False)
+    monkeypatch.delenv("ORION_MODEL_PROXY_KEY", raising=False)
     client, token = client_with_token
     r = client.post(
         "/sessions",
@@ -108,12 +111,35 @@ def test_create_session_missing_api_key_returns_503(
     assert "OPENAI_API_KEY" in r.json()["detail"]
 
 
+def test_create_session_proxy_mode_works_without_individual_key(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """走 proxy 時 individual provider key 由 proxy server-side 保管 — client
+    端只要有 ORION_MODEL_PROXY_URL + ORION_MODEL_PROXY_KEY,UI 上所有 provider
+    都該 available,create_session 也不該因缺 individual key 擋下。"""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("ORION_MODEL_PROXY_URL", "http://proxy.local:9090")
+    monkeypatch.setenv("ORION_MODEL_PROXY_KEY", "sk-orion-test")
+    client, token = client_with_token
+    r = client.post(
+        "/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"provider": "openai", "model": "gpt-5"},
+    )
+    assert r.status_code == 201, r.text
+
+
 def test_list_models_endpoint(
     client_with_token: tuple[TestClient, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-anthropic-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # Direct mode 測試 — 確保 individual key 控制 availability
+    monkeypatch.delenv("ORION_MODEL_PROXY_URL", raising=False)
+    monkeypatch.delenv("ORION_MODEL_PROXY_KEY", raising=False)
     client, token = client_with_token
     r = client.get(
         "/models", headers={"Authorization": f"Bearer {token}"},
@@ -131,6 +157,27 @@ def test_list_models_endpoint(
     # models list 非空
     assert len(providers["anthropic"]["models"]) >= 3
     assert len(providers["openai"]["models"]) >= 3
+
+
+def test_list_models_proxy_mode_all_available(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """走 proxy 時所有 provider 都該 available — UI 才不會誤灰掉。"""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("ORION_MODEL_PROXY_URL", "http://proxy.local:9090")
+    monkeypatch.setenv("ORION_MODEL_PROXY_KEY", "sk-orion-test")
+    client, token = client_with_token
+    r = client.get("/models", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    providers = {p["id"]: p for p in r.json()["providers"]}
+    # Anthropic / OpenAI / Google / OpenRouter 全 available;ollama 走本機沒 proxy 概念
+    for pid in ("anthropic", "openai", "google", "openrouter"):
+        if pid in providers:
+            assert providers[pid]["available"] is True, f"{pid} should be available via proxy"
 
 
 def test_list_sessions_empty(client_with_token: tuple[TestClient, str]) -> None:

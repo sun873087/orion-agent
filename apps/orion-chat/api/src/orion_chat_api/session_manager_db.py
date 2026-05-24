@@ -107,6 +107,7 @@ class DbSessionManager:
         if snapshot.warnings:
             for w in snapshot.warnings:
                 logger.warning("resume %s: %s", session_id, w)
+        from orion_chat_api.user_context import build_user_system_prefix
         conv = Conversation(
             provider=provider,
             user_id=user_id,
@@ -118,12 +119,122 @@ class DbSessionManager:
             state_messages=snapshot.messages,
             replacement_state=snapshot.replacement_state,
             db_engine=self.engine,
+            # soul.md → system prompt 前綴(rebuild 時也要帶,與 chat.py auto-create 對齊)
+            system_prompt=build_user_system_prefix(user_id),
             # Chat-api 是 server,沒 user-side cwd 概念 — 跳過 git_status /
             # project instructions / env cwd 顯示。env_info (platform/date) 仍開。
             include_workspace_context=False,
         )
         self._cache[(user_id, session_id)] = conv
         return conv
+
+    async def _rewrite_db_messages(
+        self, session_id: UUID, messages: list,
+    ) -> None:
+        """刪光 session 的 message rows 後依序重插(truncate / fork 用)。
+
+        DB 是 resume 的 source(prebaked > JSONL),所以重寫 DB 即等同改歷史;
+        JSONL 留舊內容無妨(resume 不會用到)。
+        """
+        from pydantic import BaseModel
+
+        from orion_sdk.storage.session import _message_raw_text
+
+        async with db_session(self.engine) as db:
+            await db.execute(
+                delete(MessageRow).where(MessageRow.session_id == str(session_id)),
+            )
+            for m in messages:
+                content = m.content
+                content_json = (
+                    content
+                    if isinstance(content, str)
+                    else [
+                        b.model_dump(mode="json") if isinstance(b, BaseModel) else b
+                        for b in content
+                    ]
+                )
+                db.add(
+                    MessageRow(
+                        session_id=str(session_id),
+                        role=m.role,
+                        content_json=content_json,
+                        metadata_json=None,
+                        raw_text=_message_raw_text(m),
+                    ),
+                )
+            await db.commit()
+
+    async def truncate_session(
+        self, user_id: str, session_id: UUID, up_to: int,
+    ) -> int | None:
+        """截斷到前 up_to 則 message。回新長度;session 不存在回 None。"""
+        conv = await self.get(user_id, session_id)
+        if conv is None:
+            return None
+        up_to = max(0, min(up_to, len(conv.state_messages)))
+        conv.state_messages = conv.state_messages[:up_to]
+        await self._rewrite_db_messages(session_id, conv.state_messages)
+        await self.sync_stats(user_id, session_id)
+        return len(conv.state_messages)
+
+    async def fork_session(
+        self,
+        user_id: str,
+        source_id: UUID,
+        up_to: int,
+        title: str | None = None,
+    ) -> UUID | None:
+        """複製來源前 up_to 則 message 到新 session。回新 session_id;來源不存在回 None。"""
+        from orion_chat_api.conversation_meta import upsert_meta
+        from orion_chat_api.user_context import build_user_system_prefix
+
+        src = await self.get(user_id, source_id)
+        if src is None:
+            return None
+        up_to = max(0, min(up_to, len(src.state_messages)))
+        copied = list(src.state_messages[:up_to])
+        new_sid = uuid4()
+
+        async with db_session(self.engine) as db:
+            db.add(
+                SessionRow(
+                    id=str(new_sid),
+                    user_id=user_id,
+                    provider=src.provider.name,
+                    model=src.provider.model,
+                    n_turns=0,
+                    n_messages=len(copied),
+                ),
+            )
+            await db.commit()
+
+        # 直接重用來源 provider 實例(provider 無 per-conversation 狀態);
+        # 不走 get_provider 以免 mock provider(env 注入,不在 registry)炸。
+        provider = src.provider
+        conv = Conversation(
+            provider=provider,
+            user_id=user_id,
+            session_id=new_sid,
+            tools=build_default_tool_set(),
+            max_tokens_per_turn=pick_max_tokens_per_turn(
+                provider.name, provider.model,
+            ),
+            state_messages=copied,
+            db_engine=self.engine,
+            system_prompt=build_user_system_prefix(user_id),
+            include_workspace_context=False,
+        )
+        await self._rewrite_db_messages(new_sid, copied)
+        self._cache[(user_id, new_sid)] = conv
+        await upsert_meta(
+            self.engine,
+            str(new_sid),
+            title=title,
+            parent_session_id=str(source_id),
+            forked_from_message_index=up_to,
+        )
+        return new_sid
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
         # 後 SQLite FK PRAGMA 已開,理論上 cascade 會自動清。仍保留手動
@@ -165,12 +276,17 @@ class DbSessionManager:
             result = await db.execute(stmt)
             rows = result.scalars().all()
 
+        # 批次撈 title / starred(避免 N+1)
+        from orion_chat_api.conversation_meta import fetch_meta_map
+        meta = await fetch_meta_map(self.engine, [r.id for r in rows])
+
         out: list[SessionInfo] = []
         for r in rows:
             try:
                 sid = UUID(r.id)
             except ValueError:
                 continue
+            title, starred = meta.get(r.id, (None, False))
             # 若有 in-memory cache,用快取的精確 stats;否則 DB 值
             cached = self._cache.get((user_id, sid))
             if cached is not None:
@@ -182,6 +298,8 @@ class DbSessionManager:
                         n_turns=cached.stats.turns,
                         provider=cached.provider.name,
                         model=cached.provider.model,
+                        title=title,
+                        starred=starred,
                     )
                 )
             else:
@@ -193,6 +311,8 @@ class DbSessionManager:
                         n_turns=r.n_turns,
                         provider=r.provider,
                         model=r.model,
+                        title=title,
+                        starred=starred,
                     )
                 )
         return out
