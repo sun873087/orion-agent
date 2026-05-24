@@ -46,11 +46,11 @@ orion-agent 的 vision + 未來方向。**主題式組織**(不按 phase 編號)
 
 ### 🤖 Model & wire
 
-**現況**:Anthropic + OpenAI + Ollama,SSE streaming,proxy 透傳。
+**現況**:Anthropic + OpenAI + Ollama + **OpenRouter**(gateway, 100+ models 從各 vendor),SSE streaming,proxy 透傳。
 
 **方向**:
 
-- **更多 provider**:Cohere、Mistral、Groq、Google Gemini、xAI Grok、自架 vLLM(走 OpenAI-compat)
+- **更多 direct provider**:Cohere、Mistral、Groq、Google Gemini、xAI Grok、自架 vLLM(走 OpenAI-compat)— 透過 OpenRouter 已能用,但 direct 整合可省 markup
 - **WebSocket Realtime**:OpenAI Realtime API + Anthropic 之後類似 API。proxy `/openai/v1/realtime` skeleton 已建,需實作 WS reverse proxy
 - **Embedding model abstraction**:目前 embedding 直連 OpenAI,要 provider-neutral
 - **Cross-provider failover**:`failover.py` 骨架已建,需跨 provider wire 互轉(model 名 mapping + system prompt 翻譯)

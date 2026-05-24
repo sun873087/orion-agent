@@ -103,6 +103,30 @@
           "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
         }
       ]
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "dynamic": true,
+      "_comment": "OpenRouter gateway:一支 OPENROUTER_API_KEY 接 100+ models。這裡只放精選 :free tier 模型當 static fallback;list_openrouter_models() 動態 fetch /api/v1/models 後 catalog merge 進這 section(動態 entry 依 id de-dup,static 優先)。沒設 key 也能 list,真正 send 才會擋。",
+      "models": [
+        {
+          "id": "deepseek/deepseek-v4-flash:free",
+          "label": "DeepSeek V4 Flash (free)",
+          "max_output_tokens": 4096,
+          "max_context_tokens": 163840,
+          "supports_reasoning": false,
+          "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+        },
+        {
+          "id": "openai/gpt-oss-120b:free",
+          "label": "OpenAI gpt-oss-120B (free)",
+          "max_output_tokens": 4096,
+          "max_context_tokens": 131072,
+          "supports_reasoning": false,
+          "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+        }
+      ]
     }
   ]
 }

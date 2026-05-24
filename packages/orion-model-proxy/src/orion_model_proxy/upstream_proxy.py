@@ -218,4 +218,23 @@ async def anthropic_reverse_proxy(req: Request, path: str) -> StreamingResponse:
     )
 
 
+async def openrouter_reverse_proxy(req: Request, path: str) -> StreamingResponse:
+    """OpenRouter 是 OpenAI-compat,用 Authorization: Bearer。
+
+    upstream_base 對 openrouter.ai/api/v1 — client OpenRouterProvider 走 proxy 時
+    base_url 是 `{proxy}/openrouter/v1`,path 部分剝掉 `openrouter/` 前綴後傳進來,
+    再拼上 `/api` 才對。但 reverse_proxy 是把 path 直接接在 upstream_base 後,
+    這裡用 upstream_base = `https://openrouter.ai` + path 含 `v1/chat/...` 對齊
+    OpenAI route(`/openai/{path}` upstream_base=api.openai.com,path=v1/...)的習慣。
+    """
+    key = _require_key("OPENROUTER_API_KEY", "OpenRouter")
+    return await reverse_proxy(
+        req, path,
+        upstream_base="https://openrouter.ai/api",
+        auth_header="Authorization",
+        auth_value=f"Bearer {key}",
+        provider="openrouter",
+    )
+
+
 __all__ = ["anthropic_reverse_proxy", "openai_reverse_proxy", "reverse_proxy"]

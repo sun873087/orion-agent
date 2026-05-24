@@ -14,11 +14,13 @@ loop、不認工具、不認 memory。Cowork / CLI / Chat / proxy 都 import 它
 packages/orion-model/src/orion_model/
 ├── provider.py                  通用 Provider 介面 + factory
 ├── anthropic_provider.py        AsyncAnthropic SDK 薄包
-├── openai_provider.py           AsyncOpenAI SDK 薄包(Chat + Responses API)
+├── openai_provider.py           AsyncOpenAI SDK 薄包(Responses API)
 ├── ollama_provider.py           本機 daemon HTTP
+├── openrouter_provider.py       OpenRouter gateway(OpenAI-compat chat.completions wire)
+├── openrouter_catalog.py        OpenRouter 動態 catalog(fetch /api/v1/models + cache)
 ├── events.py                    NormalizedEvent / NormalizedUsage(跨 provider 一致)
 ├── types.py                     NormalizedMessage / ImageBlock / TextBlock
-├── catalog.py + models.json     Chat model catalog(pricing / max_tokens)
+├── catalog.py + models.json     Chat model catalog(pricing / max_tokens;packaged static)
 ├── stt_catalog.py + stt_models.json    STT pricing
 ├── tts_catalog.py + tts_models.json    TTS pricing
 ├── pricing.py                   token → USD 計算
@@ -31,6 +33,12 @@ packages/orion-model/src/orion_model/
 
 **對外 entry**:`from orion_model.provider import get_provider("anthropic", "claude-...")`
 ;`from orion_model.audio import transcribe, synthesize`。
+
+**OpenRouter**(gateway 模式)— 一支 `OPENROUTER_API_KEY` 接 100+ models 來自各
+vendor。`OpenRouterProvider` 走 chat.completions wire(不是 OpenAI Responses API),
+catalog 從 `https://openrouter.ai/api/v1/models` 動態 fetch + cache,pricing 自動
+換 per-1M(OpenRouter API 用 per-token)。Catalog 抓不到不擋 host(silent fallback,
+provider 不顯示在 picker)。
 
 ### orion-sdk
 

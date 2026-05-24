@@ -6,6 +6,7 @@
 - /openai/v1/embeddings non-stream usage
 - /openai/v1/audio/speech request body 算 input chars × tts pricing
 - /anthropic/v1/messages stream(message_delta 累加)+ non-stream
+- /openrouter/v1/chat/completions 同 OpenAI chat 格式(usage / SSE 一致)
 
 其他 endpoint 走 best-effort fallback:cost=0,只 log endpoint 名(讓 admin
 看得到誰打了什麼,即使沒算到費用)。
@@ -264,7 +265,7 @@ _ANTHROPIC_MESSAGES_PATH = re.compile(r"^/?v1/messages$")
 
 def parse_usage(
     *,
-    provider: str, # 'openai' | 'anthropic'
+    provider: str, # 'openai' | 'anthropic' | 'openrouter'
     path: str, # 'v1/chat/completions' 之類(不含 /openai 或 /anthropic 前綴)
     method: str,
     request_body: bytes,
@@ -346,6 +347,36 @@ def _dispatch(
                 cost_usd=cost,
             )
         # 未支援 openai endpoint → fallback log,cost=0
+        return UsageEvent(
+            provider=provider, model="unknown", endpoint=endpoint_full,
+            input_tokens=None, output_tokens=None,
+            cache_read_tokens=None, cache_creation_tokens=None,
+            cost_usd=0.0,
+        )
+
+    if provider == "openrouter":
+        # OpenRouter chat.completions wire 跟 OpenAI 一致(usage 結構 / SSE 格式),
+        # 直接借 `_parse_openai_chat_or_responses` 解。
+        if _OPENAI_CHAT_PATHS.match(path):
+            model, usage = _parse_openai_chat_or_responses(
+                request_body, response_body, content_type
+            )
+            if model is None or usage is None:
+                return None
+            cost = _compute_cost(
+                provider, model,
+                usage.get("input_tokens"), usage.get("output_tokens"),
+                usage.get("cache_read_tokens"), None,
+            )
+            return UsageEvent(
+                provider=provider, model=model, endpoint=endpoint_full,
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                cache_read_tokens=usage.get("cache_read_tokens"),
+                cache_creation_tokens=None,
+                cost_usd=cost,
+            )
+        # 未支援 → fallback,cost=0(/models 等 query endpoint 走這裡)
         return UsageEvent(
             provider=provider, model="unknown", endpoint=endpoint_full,
             input_tokens=None, output_tokens=None,

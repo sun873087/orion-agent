@@ -53,7 +53,8 @@ def test_list_catalog_shape() -> None:
     providers = cat["providers"]
     assert isinstance(providers, list)
     ids = {p["id"] for p in providers}  # type: ignore[index]
-    assert ids == {"anthropic", "openai", "ollama"}
+    # 4 個 provider:anthropic / openai / ollama / openrouter(全來自 models.json static)
+    assert ids == {"anthropic", "openai", "ollama", "openrouter"}
     for p in providers:  # type: ignore[union-attr]
         assert "label" in p
         assert "models" in p

@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
             "providers": {
                 "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY")),
                 "openai": bool(os.environ.get("OPENAI_API_KEY")),
+                "openrouter": bool(os.environ.get("OPENROUTER_API_KEY")),
             },
         }
 
@@ -125,6 +126,8 @@ def create_app() -> FastAPI:
             ok = bool(os.environ.get("ANTHROPIC_API_KEY"))
         elif provider == "openai":
             ok = bool(os.environ.get("OPENAI_API_KEY"))
+        elif provider == "openrouter":
+            ok = bool(os.environ.get("OPENROUTER_API_KEY"))
         else:
             raise HTTPException(status_code=404, detail=f"unknown provider {provider!r}")
         return JSONResponse({"provider": provider, "ok": ok})
@@ -134,6 +137,7 @@ def create_app() -> FastAPI:
     from orion_model_proxy.upstream_proxy import (
         anthropic_reverse_proxy,
         openai_reverse_proxy,
+        openrouter_reverse_proxy,
     )
 
     @app.api_route(
@@ -153,6 +157,15 @@ def create_app() -> FastAPI:
     )
     async def anthropic_compat(req: Request, path: str) -> StreamingResponse:
         return await anthropic_reverse_proxy(req, path)
+
+    @app.api_route(
+        "/openrouter/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        dependencies=[Depends(require_auth), Depends(enforce_rate_limit), Depends(enforce_budget)],
+        tags=["openrouter"],
+    )
+    async def openrouter_compat(req: Request, path: str) -> StreamingResponse:
+        return await openrouter_reverse_proxy(req, path)
 
     # E:OpenAI Realtime WebSocket pass-through 骨架。實作未完成 —
     # 主要 use case 是 voice。先註冊 endpoint + 503,避免 path 撞到 catch-all。

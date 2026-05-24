@@ -133,4 +133,8 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
         from orion_model.ollama_provider import OllamaProvider
 
         return OllamaProvider(model=model)
+    if provider_name == "openrouter":
+        from orion_model.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(model=model)
     raise ValueError(f"Unknown provider: {provider_name!r}")

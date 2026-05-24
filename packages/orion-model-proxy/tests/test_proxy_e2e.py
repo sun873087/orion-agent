@@ -27,6 +27,12 @@ class _MockUpstreamTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.last_request = request
         host = request.url.host
+        # openrouter.ai 也含 "openai" 字串(unicode contains),要先比對它再 openai
+        if "openrouter" in host:
+            return httpx.Response(
+                200, content=self.openai_payload,
+                headers={"content-type": self.openai_ct},
+            )
         if "openai" in host:
             return httpx.Response(
                 200, content=self.openai_payload,
@@ -182,3 +188,80 @@ async def test_e2e_anthropic_messages_writes_usage_log(
     assert rows[0].input_tokens == 50
     assert rows[0].output_tokens == 10
     os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
+@pytest.mark.asyncio
+async def test_e2e_openrouter_chat_writes_usage_log(
+    proxy_db, admin_token, monkeypatch
+) -> None:
+    """OpenRouter chat.completions 透過 /openrouter/* route,usage_log 寫 DB。
+
+    Static catalog 內含 `openai/gpt-oss-120b:free`(pricing 0)— 用它讓 cost 預期 0,
+    但 token count 仍要被解出來。
+    """
+    import os
+    os.environ["OPENROUTER_API_KEY"] = "fake-upstream-key"
+
+    # OpenRouter 用 OpenAI chat.completions 格式
+    mock_payload = json.dumps({
+        "id": "or-1",
+        "model": "openai/gpt-oss-120b:free",
+        "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+    }).encode()
+    transport = _MockUpstreamTransport(mock_payload)
+    orig_init = httpx.AsyncClient.__init__
+
+    def patched_init(self, *args, **kwargs):
+        if "transport" not in kwargs:
+            kwargs["transport"] = transport
+        orig_init(self, *args, **kwargs)
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ) as c:
+        r = await c.post("/admin/users", json={"email": "or@x.com"})
+        uid = r.json()["id"]
+        r = await c.post(f"/admin/users/{uid}/keys", json={"env": "test"})
+        token = r.json()["token"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as c:
+        r = await c.post(
+            "/openrouter/v1/chat/completions",
+            json={
+                "model": "openai/gpt-oss-120b:free",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        assert r.status_code == 200
+
+    # 等背景 task 寫 DB
+    for _ in range(10):
+        await asyncio.sleep(0.05)
+        factory = get_session_factory()
+        async with factory() as s:
+            rows = (
+                await s.execute(select(UsageLog).where(UsageLog.user_id == uid))
+            ).scalars().all()
+        if rows:
+            break
+    assert rows, "openrouter usage_log 沒寫進 DB"
+    assert rows[0].provider == "openrouter"
+    assert rows[0].model == "openai/gpt-oss-120b:free"
+    assert rows[0].input_tokens == 7
+    assert rows[0].output_tokens == 3
+    # :free tier pricing 0 → cost 0
+    assert rows[0].cost_usd == 0.0
+    # Verify upstream Bearer header was injected by reverse_proxy
+    assert transport.last_request is not None
+    assert transport.last_request.headers.get("authorization") == "Bearer fake-upstream-key"
+    assert "openrouter.ai" in transport.last_request.url.host
+    os.environ.pop("OPENROUTER_API_KEY", None)

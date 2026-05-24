@@ -772,6 +772,7 @@ class Handlers:
         env_map = {
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
         }
         # 走 proxy 時 client 不必有直接 key — UI 仍標 configured,但同時 flag
         # via_proxy=True 讓 UI 顯⚠「未驗證」徽章,提示「我們沒真的 ping proxy
@@ -790,11 +791,16 @@ class Handlers:
                     p["api_key_configured"] = True
                     p["dynamic"] = True
                 elif pid in env_map and via_proxy:
+                    # Anthropic / OpenAI / OpenRouter 走 proxy:proxy 端有 key 才能用
+                    # 但 UI 不能 ping proxy 驗證,先標 configured + via_proxy 警示徽章
                     p["api_key_configured"] = True
                     p["via_proxy"] = True
                 else:
                     env_name = env_map.get(pid)
                     p["api_key_configured"] = bool(env_name and os.environ.get(env_name))
+                # OpenRouter catalog 動態(fetch /api/v1/models)— 標 flag 讓 UI 知道
+                if pid == "openrouter":
+                    p["dynamic"] = True
         yield {
             "event": "models",
             "data": catalog,

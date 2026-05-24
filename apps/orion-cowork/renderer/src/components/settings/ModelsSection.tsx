@@ -56,10 +56,10 @@ export function ModelsSection() {
             <span className="text-sm font-medium">{p.label}</span>
             {p.api_key_configured && p.via_proxy ? (
               <span
-                className="flex items-center gap-1 text-xs text-warning"
+                className="flex items-center gap-1 text-xs text-fg-muted"
                 title={t('settings.model.viaProxyHint')}
               >
-                <AlertCircle size={12} /> {t('settings.model.viaProxy')}
+                <Layers size={12} /> {t('settings.model.viaProxy')}
               </span>
             ) : p.api_key_configured ? (
               <span className="flex items-center gap-1 text-xs text-success">

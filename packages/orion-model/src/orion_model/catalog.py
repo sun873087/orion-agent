@@ -245,7 +245,7 @@ def get_max_context_tokens(provider: str, model: str) -> int | None:
 
 
 def get_supports_reasoning(provider: str, model: str) -> bool:
-    """Whether this model supports reasoning blocks (Claude thinking / OpenAI o-series)."""
+    """Whether this model supports reasoning blocks (Claude thinking / OpenAI o-series)。"""
     e = _entry(provider, model)
     return e["supports_reasoning"] if e else False
 
@@ -260,7 +260,7 @@ def find_pricing_by_model(model: str) -> Pricing | None:
     """Reverse lookup — used by cost_tracker which only has model name, not provider.
 
     Scans all providers; first match wins. Model names don't collide across
-    Anthropic (claude-*) and OpenAI (gpt-*/o*), so this is unambiguous in practice.
+    Anthropic (claude-*) / OpenAI (gpt-*) / OpenRouter (vendor/model)。
     """
     for entries in _models().values():
         for e in entries:
@@ -270,12 +270,7 @@ def find_pricing_by_model(model: str) -> Pricing | None:
 
 
 def find_provider_by_model(model: str) -> str | None:
-    """Reverse lookup — given a model id, return its provider id (or None).
-
-    Used by callers that take a bare model id from config (e.g. ranker env)
-    and need to construct the matching provider. First match wins; model
-    names don't collide across providers in practice.
-    """
+    """Reverse lookup — given a model id, return its provider id (or None)."""
     for provider_id, entries in _models().items():
         for e in entries:
             if e["id"] == model:
@@ -292,7 +287,12 @@ def iter_all_entries() -> list[ModelEntry]:
 
 
 def list_catalog() -> dict[str, object]:
-    """For GET /models — caller decides `available` / `default`."""
+    """For GET /models — caller decides `available` / `default`。
+
+    OpenRouter:**只**用 models.json 內 static section(user 手選的 model 才出
+    現,不動態 fetch /api/v1/models 那 350+ 個)。若 user 想加新 OpenRouter
+    model,直接編 models.json 新增 entry。
+    """
     models = _models()
     labels = _labels()
     return {
