@@ -1336,6 +1336,30 @@ class Handlers:
                 )
                 if last_assistant_idx >= 0:
                     store = await self._get_audit_store(sid)
+                    # A2 wire snapshot — 從 send params 拿 user 設定的保留數量
+                    # (default 1,range 0-20)。0 = 不存,純 fallback
+                    # messagesBySession。
+                    wire_maxlen_raw = params.get("audit_wire_payload_history", 1)
+                    try:
+                        wire_maxlen = max(0, min(20, int(wire_maxlen_raw)))
+                    except (TypeError, ValueError):
+                        wire_maxlen = 1
+                    store.set_wire_maxlen(wire_maxlen)
+                    # Snapshot 真實 conv.state_messages(LLM 看到的版本,含
+                    # tool result blocks 等;但 SDK per-turn memory inject 不
+                    # 在此 — modal 端會標 disclaimer)
+                    wire_seq = -1
+                    if wire_maxlen > 0:
+                        try:
+                            snapshot = [
+                                m.model_dump() for m in conv.state_messages
+                            ]
+                            wire_seq = store.record_wire(snapshot)
+                        except Exception as e: # noqa: BLE001
+                            print(
+                                f"[audit] wire snapshot failed sid={sid[:8]}: {e}",
+                                file=_sys_a.stderr, flush=True,
+                            )
                     # 算本 turn cost(同 ledger pricing)
                     try:
                         from orion_model.pricing import get_pricing
@@ -1350,8 +1374,30 @@ class Handlers:
                         ) / 1_000_000
                     except Exception: # noqa: BLE001
                         turn_cost = 0.0
+                    # turn_index 用「conv.state_messages 內**真 user prompt** 數」
+                    # 對齊 renderer 端 `messages.filter(role==='user').length`。
+                    # 注意:wire 內 tool_result 也是 user role(SDK 每個 tool 完成
+                    # append 一條 user role 帶 ToolResultBlock 的 message),要排除
+                    # 不算進 turn count。renderer 端 tool_result 綁進 assistant
+                    # 的 toolCalls,user msg 不含 tool_result,所以以「真 user
+                    # prompt」(含 non-tool_result 的 content block)為基準對齊。
+                    user_msg_count = 0
+                    for m in conv.state_messages:
+                        if getattr(m, "role", None) != "user":
+                            continue
+                        content = getattr(m, "content", None)
+                        if isinstance(content, str):
+                            user_msg_count += 1
+                            continue
+                        if isinstance(content, list):
+                            # 有任一 non-tool_result block 才算真 user prompt
+                            for block in content:
+                                btype = getattr(block, "type", None)
+                                if btype and btype != "tool_result":
+                                    user_msg_count += 1
+                                    break
                     store.record(
-                        turn_index=stats.turns,
+                        turn_index=user_msg_count,
                         message_index=last_assistant_idx,
                         system_prompt=conv.system_prompt or "",
                         tools=build_tool_entries(list(conv.tools)),
@@ -1362,6 +1408,7 @@ class Handlers:
                         cache_read_tokens=cur_cr,
                         cache_creation_tokens=cur_cc,
                         cost_usd=turn_cost,
+                        wire_seq=wire_seq,
                     )
                     print(
                         f"[audit] recorded sid={sid[:8]} turn={stats.turns} "

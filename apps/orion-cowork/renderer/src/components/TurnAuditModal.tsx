@@ -1,8 +1,112 @@
-import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, Copy, Loader2, Search, Send, X } from 'lucide-react'
 
 import { getTurnAudit, type TurnAudit } from '../api/agent'
 import { useTranslation } from '../i18n'
+import { useAgentStore, type Message } from '../store/agent'
+
+// Module-level stable empty — 避免 zustand selector inline `[]` infinite render
+const EMPTY_MESSAGES: readonly Message[] = []
+
+/**
+ * 渲染單條 wire message:role + content。Content 可能是 string 或 list 含
+ * tool_use / tool_result / text / image 等 block。對 tool_result 加警示色 +
+ * 「送了雲端」badge — 提醒 user 這段檔案內容真的離開機器了。
+ */
+function WireMessageCard({
+  role,
+  content,
+  t,
+}: {
+  role: string
+  content: string | Array<Record<string, unknown>>
+  t: (key: string) => string
+}) {
+  const blocks = Array.isArray(content)
+    ? content
+    : [{ type: 'text', text: content }]
+  return (
+    <li className="rounded border border-bg-hover bg-bg-panel/40 px-2 py-1.5">
+      <div className="mb-1 font-mono text-[9px] uppercase text-fg-subtle">{role}</div>
+      <div className="space-y-1">
+        {blocks.map((block, i) => {
+          const type = typeof block.type === 'string' ? block.type : 'text'
+          if (type === 'tool_result') {
+            const tool_use_id = typeof block.tool_use_id === 'string' ? block.tool_use_id : ''
+            const isError = block.is_error === true
+            const rawContent = block.content
+            const text =
+              typeof rawContent === 'string'
+                ? rawContent
+                : Array.isArray(rawContent)
+                  ? rawContent
+                      .map((b) =>
+                        typeof b === 'object' && b !== null && typeof (b as Record<string, unknown>).text === 'string'
+                          ? (b as Record<string, string>).text
+                          : '',
+                      )
+                      .join('\n')
+                  : JSON.stringify(rawContent)
+            return (
+              <div
+                key={i}
+                className={`rounded px-2 py-1 ${
+                  isError
+                    ? 'border border-error/30 bg-error/10'
+                    : 'border border-warning/30 bg-warning/5'
+                }`}
+              >
+                <div className="mb-0.5 flex items-center gap-1.5 text-[9px]">
+                  <span className="rounded bg-warning/20 px-1 py-0.5 font-medium text-warning">
+                    {t('audit.messages.toolResultBadge')}
+                  </span>
+                  <span className="font-mono text-fg-subtle">
+                    tool_result
+                    {tool_use_id && ` · ${tool_use_id.slice(0, 8)}`}
+                  </span>
+                  {isError && (
+                    <span className="text-error">⚠ error</span>
+                  )}
+                </div>
+                <pre className="scrollbar-thin max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-base">
+                  {text || '(empty)'}
+                </pre>
+              </div>
+            )
+          }
+          if (type === 'tool_use') {
+            const name = typeof block.name === 'string' ? block.name : 'tool'
+            const input = block.input ?? {}
+            return (
+              <div key={i} className="rounded border border-bg-hover bg-bg-base/40 px-2 py-1">
+                <div className="mb-0.5 font-mono text-[9px] text-fg-subtle">
+                  tool_use · {name}
+                </div>
+                <pre className="scrollbar-thin max-h-20 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-muted">
+                  {JSON.stringify(input, null, 2)}
+                </pre>
+              </div>
+            )
+          }
+          if (type === 'image') {
+            return (
+              <div key={i} className="text-[10px] italic text-fg-subtle">
+                [image · {typeof block.media_type === 'string' ? block.media_type : 'unknown'}]
+              </div>
+            )
+          }
+          // text / thinking / tombstone 等預設純文字
+          const text = typeof block.text === 'string' ? block.text : typeof block.summary === 'string' ? block.summary : ''
+          return (
+            <div key={i} className="whitespace-pre-wrap text-fg-base">
+              {text}
+            </div>
+          )
+        })}
+      </div>
+    </li>
+  )
+}
 
 /**
  * A1「為什麼這樣回答」audit modal — 顯本 turn LLM 看到的:
@@ -32,9 +136,15 @@ export function TurnAuditModal({
   const [audit, setAudit] = useState<TurnAudit | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // 各區段預設摺疊狀態 — system_prompt / tools 內容多,預設展開讓 user 直接看到
+  const [copied, setCopied] = useState(false)
+  // 各區段預設摺疊狀態 — system_prompt / messages 大,預設展開讓 user 直接看到
   const [showSystem, setShowSystem] = useState(true)
+  const [showMessages, setShowMessages] = useState(true)
   const [showTools, setShowTools] = useState(false)
+  // Fallback 用 messagesBySession,當 wire 為 null 時顯 approximate 對話內容
+  const fallbackMessages = useAgentStore((s) =>
+    sessionId ? s.messagesBySession[sessionId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES,
+  )
 
   // Esc 關閉
   useEffect(() => {
@@ -71,6 +181,50 @@ export function TurnAuditModal({
     }
   }, [open, sessionId, turnIndex])
 
+  // 切到該 turn 的 fallback messages slice — 找第 turnIndex 個 user msg 開始,
+  // 直到下一個 user msg(或結尾)為止
+  const fallbackSlice = useMemo(() => {
+    if (turnIndex == null || turnIndex < 1) return fallbackMessages
+    let userCount = 0
+    let sliceEnd = fallbackMessages.length
+    for (let i = 0; i < fallbackMessages.length; i++) {
+      if (fallbackMessages[i].role === 'user') {
+        userCount += 1
+        if (userCount === turnIndex + 1) {
+          sliceEnd = i
+          break
+        }
+      }
+    }
+    return fallbackMessages.slice(0, sliceEnd)
+  }, [fallbackMessages, turnIndex])
+
+  async function handleCopy() {
+    if (!audit) return
+    const parts: string[] = []
+    parts.push('=== System Prompt ===')
+    parts.push(audit.systemPrompt || '(empty)')
+    parts.push('')
+    parts.push('=== Messages ===')
+    const msgs = audit.wireMessages ?? fallbackSlice.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }))
+    parts.push(JSON.stringify(msgs, null, 2))
+    parts.push('')
+    parts.push(`=== Model ===`)
+    parts.push(`${audit.provider} / ${audit.model}`)
+    parts.push(`tokens: input=${audit.inputTokens} output=${audit.outputTokens} cache_read=${audit.cacheReadTokens}`)
+    parts.push(`cost: $${audit.costUsd.toFixed(6)}`)
+    try {
+      await navigator.clipboard.writeText(parts.join('\n'))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // 沒 clipboard 權限 — 不彈錯,user 自己會發現
+    }
+  }
+
   if (!open) return null
 
   return (
@@ -87,14 +241,27 @@ export function TurnAuditModal({
             <Search size={16} />
             {t('audit.title')}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
-            aria-label={t('audit.close')}
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {audit && !loading && (
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded-md border border-bg-hover px-2 py-1 text-[11px] text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+                title={t('audit.copy.tooltip')}
+              >
+                {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                {copied ? t('audit.copy.copied') : t('audit.copy.label')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1 text-fg-muted hover:bg-bg-hover hover:text-fg-base"
+              aria-label={t('audit.close')}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="scrollbar-thin max-h-[70vh] overflow-y-auto px-5 py-4">
@@ -160,6 +327,58 @@ export function TurnAuditModal({
                     <pre className="scrollbar-thin max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-bg-hover bg-bg-panel/40 px-3 py-2 font-mono text-[11px] text-fg-base">
                       {audit.systemPrompt || `<${t('audit.empty')}>`}
                     </pre>
+                  </>
+                )}
+              </section>
+
+              {/* Messages — 真實送 LLM 的 wire payload 或 fallback */}
+              <section>
+                <button
+                  type="button"
+                  onClick={() => setShowMessages((v) => !v)}
+                  className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-fg-subtle hover:text-fg-muted"
+                >
+                  {showMessages ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                  {t('audit.section.messages')}
+                  <span className="text-[10px] normal-case text-fg-subtle">
+                    ({audit.wireMessages ? audit.wireMessages.length : fallbackSlice.length})
+                  </span>
+                  {audit.wireMessages ? (
+                    <span className="ml-2 rounded bg-info/20 px-1.5 py-0.5 text-[9px] normal-case text-info">
+                      {t('audit.messages.wire')}
+                    </span>
+                  ) : (
+                    <span className="ml-2 rounded bg-warning/20 px-1.5 py-0.5 text-[9px] normal-case text-warning">
+                      {t('audit.messages.fallback')}
+                    </span>
+                  )}
+                </button>
+                {showMessages && (
+                  <>
+                    <p className="mb-2 text-[10px] text-fg-subtle">
+                      {audit.wireMessages
+                        ? t('audit.messages.wireHint')
+                        : t('audit.messages.fallbackHint')}
+                    </p>
+                    <ul className="space-y-1.5 text-xs">
+                      {audit.wireMessages ? (
+                        audit.wireMessages.map((m, i) => (
+                          <WireMessageCard key={i} role={m.role} content={m.content} t={t} />
+                        ))
+                      ) : (
+                        fallbackSlice.map((m) => (
+                          <li
+                            key={m.id}
+                            className="rounded border border-bg-hover bg-bg-panel/40 px-2 py-1.5"
+                          >
+                            <div className="mb-0.5 font-mono text-[9px] uppercase text-fg-subtle">
+                              {m.role}
+                            </div>
+                            <div className="whitespace-pre-wrap text-fg-base">{m.text}</div>
+                          </li>
+                        ))
+                      )}
+                    </ul>
                   </>
                 )}
               </section>

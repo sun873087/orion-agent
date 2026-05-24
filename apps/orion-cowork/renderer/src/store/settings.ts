@@ -150,6 +150,13 @@ type SettingsState = {
   soulAutoUpdateEnabled: boolean
   setSoulAutoUpdateEnabled: (v: boolean) => void
 
+  /** A2「我送了什麼給 LLM」隱私 audit — 保留最近 N 個 turn 的真實 wire payload
+   * snapshot,給「為什麼這樣回答」modal 顯精準對話內容。0 = 完全不存(純走
+   * fallback 顯 messagesBySession);範圍 0-20,default 1(看最近一次)。
+   * 數量大佔儲存,user 自選 trade-off。 */
+  auditWirePayloadHistory: number
+  setAuditWirePayloadHistory: (v: number) => void
+
   /** 同時 in-flight 的 conversation 上限— 避免一次 spawn N 個
    * session 同時串流推爆 token cost。預設 5,Settings UI 可調 1-20。 */
   maxConcurrentSessions: number
@@ -275,6 +282,7 @@ export const useSettingsStore = create<SettingsState>()(
       autoCompactThreshold: 0.8,
       followUpsEnabled: false,
       soulAutoUpdateEnabled: false,
+      auditWirePayloadHistory: 1,
       maxConcurrentSessions: 5,
       defaultBudgetUsd: 0,
       collapsedForkParents: [],
@@ -349,6 +357,8 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setFollowUpsEnabled: (v) => set({ followUpsEnabled: v }),
       setSoulAutoUpdateEnabled: (v) => set({ soulAutoUpdateEnabled: v }),
+      setAuditWirePayloadHistory: (v) =>
+        set({ auditWirePayloadHistory: Math.max(0, Math.min(20, Math.round(v))) }),
       setMaxConcurrentSessions: (v) =>
         set({ maxConcurrentSessions: Math.max(1, Math.min(20, Math.round(v))) }),
       setDefaultBudgetUsd: (v) => {
@@ -402,6 +412,7 @@ export const useSettingsStore = create<SettingsState>()(
         autoCompactThreshold: s.autoCompactThreshold,
         followUpsEnabled: s.followUpsEnabled,
         soulAutoUpdateEnabled: s.soulAutoUpdateEnabled,
+        auditWirePayloadHistory: s.auditWirePayloadHistory,
         compactSummaryProvider: s.compactSummaryProvider,
         compactSummaryModel: s.compactSummaryModel,
         maxConcurrentSessions: s.maxConcurrentSessions,

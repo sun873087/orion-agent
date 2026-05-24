@@ -22,6 +22,19 @@ SDK 自動 inject 的 memory ranker / git_status / per_turn_text 暫不 audit
 改用 **content-addressed dedup**:`AuditStore` 內有 `prompts: {hash → str}`
 跟 `tool_sets: {hash → list}` 兩張表,每個 entry 只存 hash 指過去。Ring buffer
 evict 一筆時 GC 沒人引用的 hash。實測 100 turn 從 ~1MB 壓到 ~30KB。
+
+**Wire messages buffer**(A2):user Settings 可調保留最近 N 個 turn 的 sidecar
+端 `conv.state_messages` snapshot(預設 N=1,範圍 0-20)。**不是 100% 的真實
+wire**:SDK 在 `conv.send` 內會對最後一條 user msg 跑 `inject_per_turn_into_user_message`
+注入 memory ranker / git_status / per_turn_text 結果(`augmented_user_msg`),
+sidecar 看到的 `conv.state_messages` 不含這段 inject。**對齊度約 95%**
+— 對話內容 / tool_use / tool_result blocks 100% 對 wire,僅缺最後一輪 user msg
+的 per-turn auto-inject 增補。Modal UI 已附 disclaimer 提示 user 這點。
+
+dedup 不適用(每 turn messages list 都不一樣,hash 不會 match),改用獨立 ring
+buffer,maxlen 從 send 帶過來。Entry 用 `wire_seq` 對應到 buffer 內的 sequence
+number — 因為 buffer evict 不影響 entry,只是 lookup 時可能 miss(那筆 wire 已
+被擠掉,renderer 走 fallback 顯 messagesBySession,UI 端標 approximate)。
 """
 
 from __future__ import annotations
@@ -56,7 +69,8 @@ class ToolEntry:
 @dataclass
 class AuditEntry:
     """單 turn 的 audit ref。system_prompt / tools 走 dedupe 表 hash 對應,本身
-    只記 turn-specific 資訊(token / cost / turn_index 等)。"""
+    只記 turn-specific 資訊(token / cost / turn_index 等)+ wire_seq 指 wire
+    messages buffer 內的 snapshot(若有)。"""
 
     turn_index: int
     timestamp: float
@@ -72,6 +86,11 @@ class AuditEntry:
     cache_read_tokens: int
     cache_creation_tokens: int
     cost_usd: float
+    # A2 wire messages — sequence number 指向 wire_buffer 內某 snapshot。
+    # -1 = 該 turn 沒存 wire(N=0 設定 / buffer evict / N=1 但有新 turn 進來
+    # 把這筆擠掉)。renderer 拿 expanded audit 時若 wire_messages 為 null,
+    # fallback 顯 messagesBySession。
+    wire_seq: int = -1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +106,7 @@ class AuditEntry:
             "cache_read_tokens": self.cache_read_tokens,
             "cache_creation_tokens": self.cache_creation_tokens,
             "cost_usd": round(self.cost_usd, 6),
+            "wire_seq": self.wire_seq,
         }
 
     @classmethod
@@ -104,6 +124,7 @@ class AuditEntry:
             cache_read_tokens=int(d.get("cache_read_tokens", 0) or 0),
             cache_creation_tokens=int(d.get("cache_creation_tokens", 0) or 0),
             cost_usd=float(d.get("cost_usd", 0.0) or 0.0),
+            wire_seq=int(d.get("wire_seq", -1) if d.get("wire_seq") is not None else -1),
         )
 
 
@@ -115,16 +136,55 @@ def _hash16(s: str) -> str:
 @dataclass
 class AuditStore:
     """Per-session audit:dedup 大欄位(system_prompt / tools),每 turn 只記 ref +
-    token usage。Ring buffer 最近 100 turns,DB JSON 持久化跨重啟。"""
+    token usage。Ring buffer 最近 100 turns,DB JSON 持久化跨重啟。
+
+    Wire messages(A2):獨立 ring buffer,maxlen 從 settings 來,user 可控 0-20。
+    每筆 entry 用 monotonic `wire_seq` 對應 buffer 內某 snapshot;buffer evict
+    後 entry.wire_seq 對不上就視為 「該 turn wire 不在」。
+    """
 
     prompts: dict[str, str] = field(default_factory=dict)
     tool_sets: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     entries: deque[AuditEntry] = field(default_factory=lambda: deque(maxlen=100))
     maxlen: int = 100
+    # Wire messages buffer — list of (seq, messages_snapshot)。Maxlen 動態調(
+    # user settings 變動時就 resize)。
+    wire_buffer: list[tuple[int, list[dict[str, Any]]]] = field(default_factory=list)
+    wire_maxlen: int = 1
+    next_wire_seq: int = 0
 
     def __post_init__(self) -> None:
         if self.entries.maxlen != self.maxlen:
             self.entries = deque(self.entries, maxlen=self.maxlen)
+
+    def set_wire_maxlen(self, n: int) -> None:
+        """調 wire buffer 上限。n=0 表示完全不存 wire。Trim 多餘的舊 snapshot。"""
+        n = max(0, min(20, int(n)))
+        self.wire_maxlen = n
+        # Trim 舊的(從前面砍)
+        while len(self.wire_buffer) > n:
+            self.wire_buffer.pop(0)
+
+    def record_wire(self, messages: list[dict[str, Any]]) -> int:
+        """把該 turn 真實送 LLM 的 messages snapshot 寫進 buffer,回新 seq。
+        N=0 時不存,回 -1。Buffer 滿時 FIFO evict。"""
+        if self.wire_maxlen <= 0:
+            return -1
+        seq = self.next_wire_seq
+        self.next_wire_seq += 1
+        self.wire_buffer.append((seq, messages))
+        while len(self.wire_buffer) > self.wire_maxlen:
+            self.wire_buffer.pop(0)
+        return seq
+
+    def get_wire(self, wire_seq: int) -> list[dict[str, Any]] | None:
+        """從 buffer 找對應 seq 的 snapshot,沒找到回 None(已 evict)。"""
+        if wire_seq < 0:
+            return None
+        for seq, msgs in self.wire_buffer:
+            if seq == wire_seq:
+                return msgs
+        return None
 
     def record(
         self,
@@ -140,6 +200,7 @@ class AuditStore:
         cache_read_tokens: int,
         cache_creation_tokens: int,
         cost_usd: float,
+        wire_seq: int = -1,
     ) -> None:
         """Append 新 audit entry,system_prompt / tools 自動 hash + dedup。
         Ring buffer 滿時前一筆被 evict,順手 GC 沒人引用的 hash。"""
@@ -169,6 +230,7 @@ class AuditStore:
             cache_read_tokens=cache_read_tokens,
             cache_creation_tokens=cache_creation_tokens,
             cost_usd=cost_usd,
+            wire_seq=wire_seq,
         ))
         if will_evict:
             self._gc_unreferenced()
@@ -204,13 +266,17 @@ class AuditStore:
         return None
 
     def _expand(self, e: AuditEntry) -> dict[str, Any]:
-        """把 ref entry 加上 dedup 表內的完整 system_prompt / tools,給 RPC 回出去。"""
+        """把 ref entry 加上 dedup 表內的完整 system_prompt / tools / wire messages,
+        給 RPC 回出去。wire_messages 為 null 表示沒存(N=0 或被 evict),renderer
+        要 fallback 顯 messagesBySession。"""
+        wire = self.get_wire(e.wire_seq)
         return {
             "turn_index": e.turn_index,
             "timestamp": e.timestamp,
             "message_index": e.message_index,
             "system_prompt": self.prompts.get(e.system_prompt_hash, ""),
             "tools": list(self.tool_sets.get(e.tools_hash, [])),
+            "wire_messages": wire,
             "provider": e.provider,
             "model": e.model,
             "input_tokens": e.input_tokens,
@@ -225,6 +291,9 @@ class AuditStore:
             "prompts": self.prompts,
             "tool_sets": self.tool_sets,
             "entries": [e.to_dict() for e in self.entries],
+            "wire_buffer": [{"seq": s, "messages": m} for s, m in self.wire_buffer],
+            "wire_maxlen": self.wire_maxlen,
+            "next_wire_seq": self.next_wire_seq,
         }, ensure_ascii=False)
 
     @classmethod
@@ -252,6 +321,17 @@ class AuditStore:
                             store.entries.append(AuditEntry.from_dict(item))
                         except Exception: # noqa: BLE001
                             continue
+            raw_wire = d.get("wire_buffer", [])
+            if isinstance(raw_wire, list):
+                for item in raw_wire:
+                    if isinstance(item, dict) and "seq" in item and isinstance(item.get("messages"), list):
+                        store.wire_buffer.append((int(item["seq"]), list(item["messages"])))
+            wml = d.get("wire_maxlen")
+            if isinstance(wml, int):
+                store.wire_maxlen = max(0, min(20, wml))
+            nws = d.get("next_wire_seq")
+            if isinstance(nws, int):
+                store.next_wire_seq = max(nws, 0)
         except Exception: # noqa: BLE001
             pass
         return store

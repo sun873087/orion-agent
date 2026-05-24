@@ -638,6 +638,7 @@ export async function sendPrompt(
     summaryModel?: string | null
     followUpsEnabled?: boolean
     soulAutoUpdateEnabled?: boolean
+    auditWirePayloadHistory?: number
   },
 ): Promise<void> {
   await window.agent.call(
@@ -653,6 +654,7 @@ export async function sendPrompt(
       summary_model: opts?.summaryModel ?? undefined,
       follow_ups_enabled: opts?.followUpsEnabled ?? false,
       soul_auto_update_enabled: opts?.soulAutoUpdateEnabled ?? false,
+      audit_wire_payload_history: opts?.auditWirePayloadHistory ?? 1,
       attachments: (attachments ?? []).map((a) => ({
         media_type: a.media_type,
         data: a.data,
@@ -850,12 +852,22 @@ export async function explainToolInput(opts: {
 
 export type TurnAuditTool = { name: string; description: string }
 
+/** Wire message — sidecar 真實送 LLM 的版本(conv.state_messages dump)。
+ * Tool result 在 user role 內 content 為 list,某 block type = 'tool_result'。 */
+export type WireMessage = {
+  role: 'user' | 'assistant' | 'system'
+  content: string | Array<Record<string, unknown>>
+}
+
 export type TurnAudit = {
   turnIndex: number
   timestamp: number
   messageIndex: number
   systemPrompt: string
   tools: TurnAuditTool[]
+  /** Sidecar snapshot 真實送 LLM 的 conv.state_messages。null = N=0 不存 / 該 turn
+   * 已被 wire buffer evict。renderer 看到 null 走 fallback messagesBySession。 */
+  wireMessages: WireMessage[] | null
   provider: string
   model: string
   inputTokens: number
@@ -896,6 +908,21 @@ export async function getTurnAudit(opts: {
         const n = (k: string): number => (typeof d[k] === 'number' ? (d[k] as number) : 0)
         const s = (k: string): string => (typeof d[k] === 'string' ? (d[k] as string) : '')
         const rawTools = Array.isArray(d.tools) ? (d.tools as Array<Record<string, unknown>>) : []
+        const rawWire = d.wire_messages
+        const wireMessages: WireMessage[] | null = Array.isArray(rawWire)
+          ? (rawWire as Array<Record<string, unknown>>).map((m) => ({
+              role:
+                (m.role === 'user' || m.role === 'assistant' || m.role === 'system')
+                  ? m.role
+                  : 'system',
+              content:
+                typeof m.content === 'string'
+                  ? m.content
+                  : Array.isArray(m.content)
+                    ? (m.content as Array<Record<string, unknown>>)
+                    : '',
+            }))
+          : null
         out = {
           turnIndex: n('turn_index'),
           timestamp: n('timestamp'),
@@ -905,6 +932,7 @@ export async function getTurnAudit(opts: {
             name: typeof t.name === 'string' ? t.name : '',
             description: typeof t.description === 'string' ? t.description : '',
           })),
+          wireMessages,
           provider: s('provider'),
           model: s('model'),
           inputTokens: n('input_tokens'),
