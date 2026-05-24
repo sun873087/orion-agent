@@ -176,8 +176,86 @@ async def init_storage() -> AsyncEngine:
     await _upsert_local_user(engine)
     await _ensure_cowork_ext_tables(engine)
     await _ensure_default_workspace(engine)
+    await _ensure_message_feedback_table(engine)
     await _ensure_messages_fts(engine)
     return engine
+
+
+async def _ensure_message_feedback_table(engine: AsyncEngine) -> None:
+    """Per-message 👍 / 👎 feedback table。C1 task。
+
+    Scope per message_id(FK to SDK messages.id),feedback ∈ {positive, negative}。
+    User toggle 同按鈕 = unset。「ON DELETE CASCADE」確保 message 刪了 feedback
+    跟著清。
+
+    為什麼 negative 要參與 search 過濾:user 👎 = 「這回答不好」,LLM 之後跨對話
+    搜尋若拿到 disliked 內容當參考,會 reinforce 不好的回答。ConversationSearch
+    SQL JOIN 排除 — 但 RecentChats 不過濾(session-level,user 想看完整歷史)。
+    """
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS cowork_message_feedback (
+                message_id TEXT PRIMARY KEY,
+                feedback TEXT NOT NULL CHECK(feedback IN ('positive', 'negative')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS cowork_msg_fb_negative_idx "
+            "ON cowork_message_feedback(message_id) WHERE feedback = 'negative'"
+        )
+        await conn.commit()
+
+
+async def set_message_feedback(
+    engine: AsyncEngine,
+    message_id: str,
+    feedback: str | None,
+) -> None:
+    """Upsert feedback。`feedback=None` 表示 unset(刪 row)。"""
+    async with engine.connect() as conn:
+        if feedback is None:
+            await conn.exec_driver_sql(
+                "DELETE FROM cowork_message_feedback WHERE message_id = ?",
+                (message_id,),
+            )
+        else:
+            if feedback not in ("positive", "negative"):
+                raise ValueError(f"feedback must be 'positive' or 'negative', got {feedback!r}")
+            await conn.exec_driver_sql(
+                """
+                INSERT INTO cowork_message_feedback (message_id, feedback)
+                VALUES (?, ?)
+                ON CONFLICT(message_id) DO UPDATE SET
+                    feedback = excluded.feedback,
+                    created_at = datetime('now')
+                """,
+                (message_id, feedback),
+            )
+        await conn.commit()
+
+
+async def get_session_feedback_map(
+    engine: AsyncEngine,
+    session_id: str,
+) -> dict[str, str]:
+    """回 {message_id: feedback} 給 renderer hydrate 進 store。
+    Renderer 在 load messages 時順手 query 一次。"""
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(
+            """
+            SELECT mf.message_id, mf.feedback
+            FROM cowork_message_feedback mf
+            JOIN messages m ON m.id = mf.message_id
+            WHERE m.session_id = ?
+            """,
+            (session_id,),
+        )
+        rows = result.all()
+    return {row[0]: row[1] for row in rows}
 
 
 async def _ensure_messages_fts(engine: AsyncEngine) -> None:
@@ -279,6 +357,8 @@ async def search_messages_fts(
     *,
     limit: int = 10,
     session_filter: str | None = None,
+    project_filter: str | None = None,
+    collaboration_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """FTS5 全文搜尋 messages。
 
@@ -287,6 +367,9 @@ async def search_messages_fts(
             User / LLM 通常給單 keyword 即可。空字串回空 list。
         limit: 結果上限,1-100。
         session_filter: 限定 session_id(只搜該 session 內)。
+        project_filter: 限定 project_id — 只搜該 project 旗下 sessions。
+        collaboration_filter: 限定 collaboration_id — 只搜該 multi-pane 容器
+            旗下 panes 的 sessions。
 
     Returns:
         [{message_id, session_id, session_title, role, snippet, created_at_iso}, ...]
@@ -300,7 +383,23 @@ async def search_messages_fts(
     # (但保留空白讓 multi-word 自然 AND;若要支援 NEAR / phrase 等 advanced
     # syntax 可改另一條 escape 路徑)
     safe_query = '"' + query.strip().replace('"', '""') + '"'
-    sql = """
+    # 過濾掉 user 標 negative 的 message — 避免 LLM 跨對話搜時拿到「user 不喜歡
+    # 的回答」當參考。LEFT JOIN feedback table,排除 feedback='negative'。
+    # scope filter(project / collaboration)走 cowork_session_ext JOIN — 沒 row
+    # 的 session 視為「無 project / 無 collab」,scope 過濾自動排除。
+    extra_filters: list[str] = []
+    extra_params: list[Any] = []
+    if session_filter:
+        extra_filters.append("mf.session_id = ?")
+        extra_params.append(session_filter)
+    if project_filter:
+        extra_filters.append("se.project_id = ?")
+        extra_params.append(project_filter)
+    if collaboration_filter:
+        extra_filters.append("se.collaboration_id = ?")
+        extra_params.append(collaboration_filter)
+    extra_sql = ("AND " + " AND ".join(extra_filters)) if extra_filters else ""
+    sql = f"""
         SELECT
             mf.message_id,
             mf.session_id,
@@ -311,17 +410,15 @@ async def search_messages_fts(
         FROM messages_fts mf
         JOIN messages m ON m.id = mf.message_id
         LEFT JOIN conversation_metadata cm ON cm.session_id = mf.session_id
+        LEFT JOIN cowork_message_feedback fb ON fb.message_id = mf.message_id
+        LEFT JOIN cowork_session_ext se ON se.session_id = mf.session_id
         WHERE messages_fts MATCH ?
-        {filter_sql}
+        AND (fb.feedback IS NULL OR fb.feedback != 'negative')
+        {extra_sql}
         ORDER BY rank
         LIMIT ?
-    """.format(
-        filter_sql="AND mf.session_id = ?" if session_filter else "",
-    )
-    params: list[Any] = [safe_query]
-    if session_filter:
-        params.append(session_filter)
-    params.append(limit)
+    """
+    params: list[Any] = [safe_query, *extra_params, limit]
     async with engine.connect() as conn:
         result = await conn.exec_driver_sql(sql, tuple(params))
         rows = result.all()
@@ -347,6 +444,8 @@ async def list_recent_chats(
     since: str | None = None,
     until: str | None = None,
     limit: int = 20,
+    project_filter: str | None = None,
+    collaboration_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """列最近活動 sessions(BY 最後 message timestamp)。
 
@@ -354,6 +453,8 @@ async def list_recent_chats(
         since / until: ISO 8601 datetime str(e.g. '2026-05-01' / '2026-05-24T12:00:00')。
             None 表示不限。
         limit: 1-100。
+        project_filter / collaboration_filter: scope 過濾(scope=project/collaboration
+            時 sidecar 自動帶入當前 session 對應 id)。
 
     Returns:
         [{session_id, title, n_messages, last_user_msg, last_activity_iso}, ...]
@@ -368,6 +469,12 @@ async def list_recent_chats(
     if until:
         where_parts.append("m.created_at <= ?")
         params.append(until)
+    if project_filter:
+        where_parts.append("se.project_id = ?")
+        params.append(project_filter)
+    if collaboration_filter:
+        where_parts.append("se.collaboration_id = ?")
+        params.append(collaboration_filter)
     where_sql = " AND ".join(where_parts)
     sql = f"""
         SELECT
@@ -378,6 +485,7 @@ async def list_recent_chats(
         FROM sessions s
         JOIN messages m ON {where_sql}
         LEFT JOIN conversation_metadata cm ON cm.session_id = s.id
+        LEFT JOIN cowork_session_ext se ON se.session_id = s.id
         GROUP BY s.id, cm.title
         ORDER BY last_activity DESC
         LIMIT ?
@@ -1571,20 +1679,22 @@ async def load_messages(
 async def load_raw_messages(
     engine: AsyncEngine,
     session_id: str,
-) -> list[tuple[str, Any, Any]]:
-    """UI lightweight 載入:不 hydrate blob,只回 (role, content_json, metadata_json) 原樣。
+) -> list[tuple[str, str, Any, Any]]:
+    """UI lightweight 載入:不 hydrate blob,只回 (id, role, content_json,
+    metadata_json) 原樣。
 
     切歷史時不會把 N × MB 的圖讀進記憶體,UI 拿到 ref dict 再 lazy 撈單張。
     metadata_json 帶回給 caller 判斷 compacted_out / 其他標記。
+    id 帶回給 caller 對應 message feedback 等 per-message metadata。
     """
     async with db_session(engine) as s:
         stmt = (
-            select(MessageRow.role, MessageRow.content_json, MessageRow.metadata_json)
+            select(MessageRow.id, MessageRow.role, MessageRow.content_json, MessageRow.metadata_json)
             .where(MessageRow.session_id == session_id)
             .order_by(MessageRow.created_at, MessageRow.id)
         )
         rows = list(await s.execute(stmt))
-    return [(role, content_json, meta) for role, content_json, meta in rows]
+    return [(mid, role, content_json, meta) for mid, role, content_json, meta in rows]
 
 
 async def read_attachment_data_url(
@@ -1600,7 +1710,7 @@ async def read_attachment_data_url(
     rows = await load_raw_messages(engine, session_id)
     if message_index < 0 or message_index >= len(rows):
         raise IndexError(f"message_index {message_index} out of range")
-    _, content_json, _ = rows[message_index]
+    _, _, content_json, _ = rows[message_index]
     if not isinstance(content_json, list):
         raise ValueError("message has no attachments")
     images = [

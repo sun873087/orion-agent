@@ -239,6 +239,8 @@ export default {
   'tool.error.explainLoading': 'AI explaining…',
   'tool.error.explainError': 'Explain failed: {message}',
   'message.summarize': 'Summarize',
+  'message.feedback.positive': 'This answer was helpful (Orion may reference it in future searches)',
+  'message.feedback.negative': "This answer wasn't good (Orion will skip it in cross-conversation searches)",
   'message.summarizeLoading': 'AI summarizing…',
   'message.summarizeError': 'Summary failed: {message}',
   'message.summary.hide': 'Hide summary',

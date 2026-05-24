@@ -361,6 +361,83 @@ async def test_recent_chats_tool_success(engine: AsyncEngine) -> None:
 
 
 @pytest.mark.asyncio
+async def test_set_and_get_feedback(engine: AsyncEngine) -> None:
+    """Feedback CRUD:set positive / set negative / unset(None)。"""
+    sid = str(uuid.uuid4())
+    await _insert_session(engine, sid)
+    mid1 = await _insert_message(engine, sid, "assistant", "hello")
+    mid2 = await _insert_message(engine, sid, "assistant", "world")
+
+    # Initially empty
+    assert await storage.get_session_feedback_map(engine, sid) == {}
+
+    # Set positive on mid1
+    await storage.set_message_feedback(engine, mid1, "positive")
+    fbmap = await storage.get_session_feedback_map(engine, sid)
+    assert fbmap == {mid1: "positive"}
+
+    # Set negative on mid2, update mid1 also to negative
+    await storage.set_message_feedback(engine, mid2, "negative")
+    await storage.set_message_feedback(engine, mid1, "negative")
+    fbmap = await storage.get_session_feedback_map(engine, sid)
+    assert fbmap == {mid1: "negative", mid2: "negative"}
+
+    # Unset mid1 (feedback=None)
+    await storage.set_message_feedback(engine, mid1, None)
+    fbmap = await storage.get_session_feedback_map(engine, sid)
+    assert fbmap == {mid2: "negative"}
+
+
+@pytest.mark.asyncio
+async def test_feedback_invalid_value_raises(engine: AsyncEngine) -> None:
+    """非 'positive'/'negative' 應該 raise ValueError。"""
+    sid = str(uuid.uuid4())
+    await _insert_session(engine, sid)
+    mid = await _insert_message(engine, sid, "assistant", "x")
+    with pytest.raises(ValueError):
+        await storage.set_message_feedback(engine, mid, "thumbs-up")
+
+
+@pytest.mark.asyncio
+async def test_search_excludes_negative_feedback(engine: AsyncEngine) -> None:
+    """ConversationSearch 過濾掉 user 標 negative 的 message。"""
+    sid = str(uuid.uuid4())
+    await _insert_session(engine, sid)
+    mid_good = await _insert_message(engine, sid, "assistant", "good Python answer")
+    mid_bad = await _insert_message(engine, sid, "assistant", "bad Python answer")
+    # Both indexed first
+    all_results = await storage.search_messages_fts(engine, "Python", limit=10)
+    assert len(all_results) == 2
+    # Mark bad as negative → should be excluded
+    await storage.set_message_feedback(engine, mid_bad, "negative")
+    filtered = await storage.search_messages_fts(engine, "Python", limit=10)
+    assert len(filtered) == 1
+    assert filtered[0]["message_id"] == mid_good
+    # Positive doesn't exclude
+    await storage.set_message_feedback(engine, mid_good, "positive")
+    still_filtered = await storage.search_messages_fts(engine, "Python", limit=10)
+    assert len(still_filtered) == 1
+    assert still_filtered[0]["message_id"] == mid_good
+
+
+@pytest.mark.asyncio
+async def test_feedback_cascade_on_message_delete(engine: AsyncEngine) -> None:
+    """Message 被刪除時 feedback row 跟著清掉(FK ON DELETE CASCADE)。"""
+    sid = str(uuid.uuid4())
+    await _insert_session(engine, sid)
+    mid = await _insert_message(engine, sid, "assistant", "x")
+    await storage.set_message_feedback(engine, mid, "negative")
+    assert await storage.get_session_feedback_map(engine, sid) == {mid: "negative"}
+    # Delete the message
+    async with engine.connect() as conn:
+        # SQLite FK 預設 OFF;cowork.db SDK 是否打開 PRAGMA?保險用 explicit。
+        await conn.exec_driver_sql("PRAGMA foreign_keys = ON")
+        await conn.exec_driver_sql("DELETE FROM messages WHERE id = ?", (mid,))
+        await conn.commit()
+    assert await storage.get_session_feedback_map(engine, sid) == {}
+
+
+@pytest.mark.asyncio
 async def test_recent_chats_tool_empty(engine: AsyncEngine) -> None:
     """沒對話回友善 TextEvent。"""
 
@@ -375,3 +452,209 @@ async def test_recent_chats_tool_empty(engine: AsyncEngine) -> None:
     assert len(events) == 1
     assert isinstance(events[0], TextEvent)
     assert "No recent chats" in events[0].text
+
+
+# ─── Scope filter(project / collaboration / session) ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_project_filter(engine: AsyncEngine) -> None:
+    """storage layer:project_filter 只搜該 project 旗下 sessions。"""
+    sid_a1, sid_a2, sid_b = (str(uuid.uuid4()) for _ in range(3))
+    for sid in (sid_a1, sid_a2, sid_b):
+        await _insert_session(engine, sid)
+    # 三個 session 都有 OAuth message
+    await _insert_message(engine, sid_a1, "user", "OAuth in project A session 1")
+    await _insert_message(engine, sid_a2, "user", "OAuth in project A session 2")
+    await _insert_message(engine, sid_b, "user", "OAuth in project B")
+    # sid_a1 / sid_a2 → project P_A;sid_b → project P_B
+    await storage.set_session_project(engine, sid_a1, "P_A")
+    await storage.set_session_project(engine, sid_a2, "P_A")
+    await storage.set_session_project(engine, sid_b, "P_B")
+    # No filter → 3 結果
+    all_r = await storage.search_messages_fts(engine, "OAuth", limit=10)
+    assert len(all_r) == 3
+    # project_filter=P_A → 2 結果
+    pa = await storage.search_messages_fts(
+        engine, "OAuth", limit=10, project_filter="P_A",
+    )
+    assert len(pa) == 2
+    assert {r["session_id"] for r in pa} == {sid_a1, sid_a2}
+    # project_filter=P_B → 1 結果
+    pb = await storage.search_messages_fts(
+        engine, "OAuth", limit=10, project_filter="P_B",
+    )
+    assert len(pb) == 1
+    assert pb[0]["session_id"] == sid_b
+
+
+@pytest.mark.asyncio
+async def test_search_collaboration_filter(engine: AsyncEngine) -> None:
+    """storage layer:collaboration_filter 只搜該 collab 旗下 panes。"""
+    sid_x1, sid_x2, sid_solo = (str(uuid.uuid4()) for _ in range(3))
+    for sid in (sid_x1, sid_x2, sid_solo):
+        await _insert_session(engine, sid)
+    await _insert_message(engine, sid_x1, "user", "kubernetes pane 1")
+    await _insert_message(engine, sid_x2, "user", "kubernetes pane 2")
+    await _insert_message(engine, sid_solo, "user", "kubernetes solo")
+    coll = await storage.create_collaboration(engine, name="multi-pane test")
+    await storage.add_pane_to_collaboration(
+        engine, collaboration_id=coll.id, session_id=sid_x1, pane_name="@a",
+    )
+    await storage.add_pane_to_collaboration(
+        engine, collaboration_id=coll.id, session_id=sid_x2, pane_name="@b",
+    )
+    # 全範圍 → 3
+    assert len(await storage.search_messages_fts(engine, "kubernetes")) == 3
+    # collab filter → 2
+    in_coll = await storage.search_messages_fts(
+        engine, "kubernetes", limit=10, collaboration_filter=coll.id,
+    )
+    assert len(in_coll) == 2
+    assert {r["session_id"] for r in in_coll} == {sid_x1, sid_x2}
+
+
+@pytest.mark.asyncio
+async def test_tool_scope_project_auto_fills_from_current_session(
+    engine: AsyncEngine,
+) -> None:
+    """Tool scope='project' 自動從 current_session_id 撈 project_id。"""
+    sid_curr, sid_same_proj, sid_other_proj = (str(uuid.uuid4()) for _ in range(3))
+    for sid in (sid_curr, sid_same_proj, sid_other_proj):
+        await _insert_session(engine, sid)
+    await _insert_message(engine, sid_curr, "user", "alpha keyword in curr")
+    await _insert_message(engine, sid_same_proj, "user", "alpha keyword in same project")
+    await _insert_message(engine, sid_other_proj, "user", "alpha keyword in other")
+    await storage.set_session_project(engine, sid_curr, "PROJ1")
+    await storage.set_session_project(engine, sid_same_proj, "PROJ1")
+    await storage.set_session_project(engine, sid_other_proj, "PROJ2")
+
+    async def provider() -> AsyncEngine:
+        return engine
+
+    tool = ConversationSearchTool(provider, current_session_id=sid_curr)
+    ctx = AgentContext()
+    events = []
+    async for ev in tool.call(
+        ConversationSearchInput(query="alpha", scope="project"), ctx,
+    ):
+        events.append(ev)
+    assert len(events) == 1
+    assert isinstance(events[0], TextEvent)
+    payload = json.loads(events[0].text)
+    assert payload["scope"] == "project"
+    assert payload["count"] == 2
+    sids = {r["session_id"] for r in payload["results"]}
+    assert sids == {sid_curr, sid_same_proj}
+
+
+@pytest.mark.asyncio
+async def test_tool_scope_collaboration_no_collab_zero_results(
+    engine: AsyncEngine,
+) -> None:
+    """Tool scope='collaboration' 但 current session 沒綁 collab → 0 結果
+    (用 __NONE__ 哨兵防誤回全部)。"""
+    sid_curr, sid_other = str(uuid.uuid4()), str(uuid.uuid4())
+    await _insert_session(engine, sid_curr)
+    await _insert_session(engine, sid_other)
+    await _insert_message(engine, sid_curr, "user", "beta keyword")
+    await _insert_message(engine, sid_other, "user", "beta keyword too")
+
+    async def provider() -> AsyncEngine:
+        return engine
+
+    tool = ConversationSearchTool(provider, current_session_id=sid_curr)
+    ctx = AgentContext()
+    events = []
+    async for ev in tool.call(
+        ConversationSearchInput(query="beta", scope="collaboration"), ctx,
+    ):
+        events.append(ev)
+    assert len(events) == 1
+    assert isinstance(events[0], TextEvent)
+    assert "No messages found" in events[0].text
+
+
+@pytest.mark.asyncio
+async def test_tool_scope_session_uses_current(engine: AsyncEngine) -> None:
+    """Tool scope='session' 自動限定 current_session_id。"""
+    sid_curr, sid_other = str(uuid.uuid4()), str(uuid.uuid4())
+    await _insert_session(engine, sid_curr)
+    await _insert_session(engine, sid_other)
+    await _insert_message(engine, sid_curr, "user", "gamma here")
+    await _insert_message(engine, sid_other, "user", "gamma there")
+
+    async def provider() -> AsyncEngine:
+        return engine
+
+    tool = ConversationSearchTool(provider, current_session_id=sid_curr)
+    ctx = AgentContext()
+    events = []
+    async for ev in tool.call(
+        ConversationSearchInput(query="gamma", scope="session"), ctx,
+    ):
+        events.append(ev)
+    payload = json.loads(events[0].text)
+    assert payload["count"] == 1
+    assert payload["results"][0]["session_id"] == sid_curr
+
+
+@pytest.mark.asyncio
+async def test_tool_explicit_session_id_overrides_scope(engine: AsyncEngine) -> None:
+    """LLM 顯式給 session_id 時忽略 scope,優先 session_id。"""
+    sid_curr, sid_target = str(uuid.uuid4()), str(uuid.uuid4())
+    await _insert_session(engine, sid_curr)
+    await _insert_session(engine, sid_target)
+    await _insert_message(engine, sid_curr, "user", "delta in curr")
+    await _insert_message(engine, sid_target, "user", "delta in target")
+
+    async def provider() -> AsyncEngine:
+        return engine
+
+    tool = ConversationSearchTool(provider, current_session_id=sid_curr)
+    ctx = AgentContext()
+    events = []
+    # scope=session 本來會限 sid_curr,但顯式 session_id=sid_target 覆蓋
+    async for ev in tool.call(
+        ConversationSearchInput(
+            query="delta", scope="session", session_id=sid_target,
+        ),
+        ctx,
+    ):
+        events.append(ev)
+    payload = json.loads(events[0].text)
+    assert payload["count"] == 1
+    assert payload["results"][0]["session_id"] == sid_target
+
+
+@pytest.mark.asyncio
+async def test_recent_chats_scope_project_filter(engine: AsyncEngine) -> None:
+    """RecentChatsTool scope='project' 只列同 project 旗下 sessions。"""
+    sid_curr, sid_same_proj, sid_other = (str(uuid.uuid4()) for _ in range(3))
+    for sid in (sid_curr, sid_same_proj, sid_other):
+        await _insert_session(engine, sid)
+    await _insert_message(
+        engine, sid_curr, "user", "x", created_at_iso="2026-05-20T10:00:00",
+    )
+    await _insert_message(
+        engine, sid_same_proj, "user", "y", created_at_iso="2026-05-21T10:00:00",
+    )
+    await _insert_message(
+        engine, sid_other, "user", "z", created_at_iso="2026-05-22T10:00:00",
+    )
+    await storage.set_session_project(engine, sid_curr, "PA")
+    await storage.set_session_project(engine, sid_same_proj, "PA")
+    await storage.set_session_project(engine, sid_other, "PB")
+
+    async def provider() -> AsyncEngine:
+        return engine
+
+    tool = RecentChatsTool(provider, current_session_id=sid_curr)
+    ctx = AgentContext()
+    events = []
+    async for ev in tool.call(RecentChatsInput(scope="project"), ctx):
+        events.append(ev)
+    payload = json.loads(events[0].text)
+    assert payload["scope"] == "project"
+    assert payload["count"] == 2
+    assert {c["session_id"] for c in payload["chats"]} == {sid_curr, sid_same_proj}

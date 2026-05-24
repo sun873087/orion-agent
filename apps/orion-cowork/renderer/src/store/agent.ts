@@ -192,6 +192,13 @@ type AgentState = {
   draftsBySession: Record<string, string>
   setDraft: (sid: string, text: string) => void
   clearDraft: (sid: string) => void
+
+  /** Message 👍 / 👎 feedback — assistant message 旁邊兩個按鈕,user 標完寫
+   * DB 同時 ConversationSearch 排除 negative。Per-session per-message-id map。
+   * Hydrate from DB on session load。 */
+  feedbackBySession: Record<string, Record<string, 'positive' | 'negative'>>
+  setMessageFeedback: (sid: string, messageId: string, feedback: 'positive' | 'negative' | null) => void
+  hydrateFeedbackForSession: (sid: string, map: Record<string, 'positive' | 'negative'>) => void
   /** 切到某 session — **不**清舊 session 的 messages / busy,只改 currentSessionId。
    * 舊 session 仍可在背景跑,切回來能看到最新狀態。 */
   switchToSession: (sid: string) => void
@@ -285,6 +292,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
   selectedSessionIds: [],
   followUpsBySession: {},
   draftsBySession: {},
+  feedbackBySession: {},
 
   setSessionId: (sid) => set({ sessionId: sid }),
   setInitError: (err) => set({ initError: err }),
@@ -322,6 +330,22 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
       delete next[sid]
       return { draftsBySession: next }
     }),
+  setMessageFeedback: (sid, messageId, feedback) =>
+    set((s) => {
+      const sessionMap = { ...(s.feedbackBySession[sid] ?? {}) }
+      if (feedback === null) {
+        delete sessionMap[messageId]
+      } else {
+        sessionMap[messageId] = feedback
+      }
+      return {
+        feedbackBySession: { ...s.feedbackBySession, [sid]: sessionMap },
+      }
+    }),
+  hydrateFeedbackForSession: (sid, map) =>
+    set((s) => ({
+      feedbackBySession: { ...s.feedbackBySession, [sid]: map },
+    })),
   switchToSession: (sid) => set({ sessionId: sid }),
 
   hydrateMessages: (sid, messages) =>
@@ -350,6 +374,7 @@ export const useAgentStore = create<AgentState>()(persist((set) => ({
         compactingBySession: drop(s.compactingBySession),
         followUpsBySession: drop(s.followUpsBySession),
         draftsBySession: drop(s.draftsBySession),
+        feedbackBySession: drop(s.feedbackBySession),
       }
     }),
 

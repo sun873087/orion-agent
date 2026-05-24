@@ -25,7 +25,8 @@ cost ledger + breakdown、soul.md、`?` cheat sheet。
 |---|---|---|
 | ✅ | **A1. 訊息「為什麼這樣回答」追溯** | 每個 turn 末 assistant message 加「🔎 為什麼?」按鈕,modal 顯本 turn 的 system_prompt(完整段落)+ tools list + model + token / cost。Sidecar `AuditStore` per-session ring buffer 100 turns,**content-addressed dedup**(prompts / tool_sets 各自 hash 表 + entries ref)— 同 session 內 system_prompt 跨 turn 幾乎不變,100 turn 從 ~1MB 壓到 ~30KB。持久化 DB JSON 跨 sidecar 重啟。已知 limitation:SDK 自動 inject 的 memory ranker / git status / per_turn_text 暫不在 audit 顯(需要 SDK 暴露 hook 才能 capture)。 |
 | ✅ | **A2. 「我送了什麼給 LLM」隱私 audit** | 沿用 A1 audit modal,加新區段「📤 送 LLM 的訊息」。Sidecar 加 wire_buffer(獨立 ring buffer,maxlen 從 settings 來,default 1,範圍 0-20)snapshot 真實 `conv.state_messages`。Tool result 警示色 + 紅 badge「送了雲端」讓 user 一眼看出檔案內容真的離開機器。有 wire snapshot 顯精準版,沒有就 fallback `messagesBySession`(approximate badge)。Header 加「複製」按鈕一鍵 copy 完整 payload 給 user 離線 audit / diff。Settings 新「隱私 / 資料」section 集中控制(A1 read-only 說明 + A2 數量設定)。95% 對齊真實 wire(SDK auto-inject 的 memory / git_status 不含,modal 有 disclaimer)。 |
-| ✅ | **B2. 跨對話搜尋 — 改成 LLM Tool**(原 spec sidebar UI → 改 Tool) | 設計 pivot:原本想做 sidebar semantic search,改成**對齊 Anthropic 的 `conversation_search` / `recent_chats` Tool 模式**(LLM 主動「想起」過去對話 > user 自己 sidebar 找)。後端 SQLite FTS5 virtual table 對 `messages.raw_text` 全文索引,trigger 自動 sync,BM25 ranker 毫秒級 query。新 cowork-specific tools:`ConversationSearch(query, limit?, session_id?)` 跟 `RecentChats(since?, until?, limit?)`,description 強調「實質性 keyword」對齊 Anthropic 引導語。Read-only,Settings → 工具 新「Recall」group default ON。Pure local — zero embedding model call / zero 外部 service / zero token cost。 |
+| ✅ | **B2. 跨對話搜尋 — 改成 LLM Tool**(原 spec sidebar UI → 改 Tool) | 設計 pivot:原本想做 sidebar semantic search,改成**對齊 Anthropic 的 `conversation_search` / `recent_chats` Tool 模式**(LLM 主動「想起」過去對話 > user 自己 sidebar 找)。後端 SQLite FTS5 virtual table 對 `messages.raw_text` 全文索引,trigger 自動 sync,BM25 ranker 毫秒級 query。新 cowork-specific tools:`ConversationSearch(query, limit?, scope?, session_id?)` 跟 `RecentChats(since?, until?, limit?, scope?)`,description 強調「實質性 keyword」對齊 Anthropic 引導語。`scope` 可選 `all`(預設)/ `project`(同當前 session 旗下 project)/ `collaboration`(同當前 multi-pane window 的 panes)/ `session`(僅當前 session)— LLM 無法自己取 project_id / collaboration_id,sidecar 從當前 session auto-fill(類似 schedule tool pattern)。Read-only,Settings → 工具 新「Recall」group default ON。Pure local — zero embedding model call / zero 外部 service / zero token cost。 |
+| ✅ | **C1. 訊息品質 👍 / 👎(+ disliked 在 search 排除)** | 每個 assistant message action row 加 👍 / 👎 兩個按鈕(toggle 行為,同按鈕 = unset)。新表 `cowork_message_feedback`(message_id PK FK→messages.id ON DELETE CASCADE)+ 2 個 RPC。**👎 過的訊息在 SQL 層 hard-排除**(不靠 prompt 控制 — ConversationSearch SQL `LEFT JOIN cowork_message_feedback WHERE feedback IS NULL OR feedback != 'negative'`)。Tool description 內 NOTE 是給 LLM 的 hint(讓它知道「為什麼某些東西搜不到」避免無謂重試),**不影響穩定性**(SQL JOIN 100% 排除,LLM 根本看不到 disliked message 進結果)。順手把 sidecar `load_raw_messages` 改成回 message_id,UI hydrate 用真實 SDK id 取代隨機 hist id,讓 feedback 對應穩定。Optimistic UI + RPC fail revert。Tests 涵蓋 CRUD / invalid value / search 排除 / FK CASCADE。 |
 
 ---
 
@@ -88,21 +89,7 @@ user click 跳轉 / dismiss。
 
 ---
 
-## C. 對話品質回饋
-
-### C1. 訊息品質 👍 / 👎
-
-**痛點**:User 對 Orion 某句回答不滿意,目前只能在下個 prompt 抱怨。LLM 無法
-跨 session 學到「user 不喜歡 X 風格」。
-
-**做法**:Assistant message hover 出現 👍 / 👎 small button,點下去寫進 feedback
-memory(獨立的 `~/.orion/users/<u>/memory/feedback_orion.md`,跟 soul.md 同層)。
-N 個 negative 累積後 inject 進系統 prompt 提示 LLM「avoid X」。
-
-**設計考量**:
-- 點 👎 跳一個 inline 小框讓 user 寫**為什麼**(optional 但鼓勵),feedback 更具體
-- 內容由 LLM 整理進 feedback memory(不直接寫 user 原話),走摘要 model
-- Cost 進 ledger `feedback` origin
+## C. 對話品質回饋(剩 C2)
 
 ### C2. 對話 → todo 自動產生
 
@@ -148,11 +135,11 @@ Hover 顯 tooltip 預覽,click 跳該 tool row。
 
 ## 推薦優先順序
 
-1. ~~**A1**~~ ✅ / ~~**A2**~~ ✅ / ~~**B2**~~ ✅ — 已完成。B2 從原 sidebar UI 設想 pivot 成 Tool-only(對齊 Anthropic conversation_search 模式),價值反而更高
+1. ~~**A1**~~ ✅ / ~~**A2**~~ ✅ / ~~**B2**~~ ✅ / ~~**C1**~~ ✅ — 已完成。C1 跟 B2 配合:disliked 訊息在 SQL 層 hard-排除,LLM 跨對話搜不到 user 標 👎 的回答
 2. **A3**(敏感資訊偵測)— 純 regex 防護,投入最小,效果立即
 3. **B1**(recap chip)— 跨 session 體驗大躍進,沿用既有 cheap LLM channel
 4. **B3**(對話自動 export markdown)— Phase 2,沿用同 cheap LLM channel
-5. **C1** / **D1** — 純 polish,有空再做
+5. **C2 / D1**(todo 自動產生 / tool 狀態列)— 純 polish,有空再做
 
 ---
 

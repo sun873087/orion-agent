@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSyncExternalStore } from 'react'
-import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Search, Square, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, GitBranch, Search, Square, ThumbsDown, ThumbsUp, User, Sparkles, Info, ImageIcon, Pencil, RefreshCw, Trash2, Volume2, X as XIcon } from 'lucide-react'
 
-import { loadAttachment, summarizeMessage } from '../api/agent'
+import { loadAttachment, setMessageFeedback as rpcSetFeedback, summarizeMessage } from '../api/agent'
 import type { ContextBreakdown } from '../api/agent'
 import { useDeleteFrom, useEditAndResend, useRegenerate } from '../hooks/useAgent'
 import { TurnAuditModal } from './TurnAuditModal'
@@ -81,6 +81,11 @@ export function MessageBubble({
     : ''
   const [editing, setEditing] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
+  // Message feedback — 從 store map 取該訊息的 👍/👎 狀態,null = 未標
+  const feedback = useAgentStore((s) => {
+    const sid = s.sessionId
+    return sid ? (s.feedbackBySession[sid]?.[message.id] ?? null) : null
+  })
   const { t, locale } = useTranslation()
   // 摘要 state lift 到這層(原本放 sub-component 內,但結果 block 跟按鈕要 render
   // 在兩處 — card 在 action row 上方獨立 block、button 嵌進 action row 內)。
@@ -93,6 +98,22 @@ export function MessageBubble({
   >({ status: 'idle' })
   const summaryProvider = useSettingsStore((s) => s.compactSummaryProvider)
   const summaryModel = useSettingsStore((s) => s.compactSummaryModel)
+  async function toggleFeedback(next: 'positive' | 'negative') {
+    const sid = useAgentStore.getState().sessionId
+    if (!sid || !message.messageIndex && message.messageIndex !== 0) return
+    // 同按鈕 = unset(toggle 行為);不同按鈕 = 換 feedback
+    const newValue: 'positive' | 'negative' | null = feedback === next ? null : next
+    // Optimistic UI
+    useAgentStore.getState().setMessageFeedback(sid, message.id, newValue)
+    try {
+      await rpcSetFeedback(message.id, newValue)
+    } catch (e) {
+      // Revert
+      useAgentStore.getState().setMessageFeedback(sid, message.id, feedback)
+      console.warn('[feedback] write failed', e)
+    }
+  }
+
   async function handleSummarize() {
     // 已有結果只是收起 → 直接展開,不重打 LLM
     if (summaryState.status === 'done') {
@@ -325,6 +346,36 @@ export function MessageBubble({
                   }
                 }}
               />
+            )}
+            {/* 👍 / 👎 訊息品質 feedback — assistant message 才顯。👎 過的訊息
+                會在 ConversationSearch tool 排除,LLM 之後跨對話搜不到。 */}
+            {!isUser && !message.compacted && message.text && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void toggleFeedback('positive')}
+                  title={t('message.feedback.positive')}
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-bg-hover ${
+                    feedback === 'positive'
+                      ? 'text-success'
+                      : 'text-fg-muted hover:text-fg-base'
+                  }`}
+                >
+                  <ThumbsUp size={12} className={feedback === 'positive' ? 'fill-current' : ''} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleFeedback('negative')}
+                  title={t('message.feedback.negative')}
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-bg-hover ${
+                    feedback === 'negative'
+                      ? 'text-error'
+                      : 'text-fg-muted hover:text-fg-base'
+                  }`}
+                >
+                  <ThumbsDown size={12} className={feedback === 'negative' ? 'fill-current' : ''} />
+                </button>
+              </>
             )}
             {/* 🔎 為什麼這樣回答 — turn 末 assistant message 才顯。Audit ring buffer
                 100 turns,持久化 DB JSON,跨 sidecar 重啟仍可看舊 turn。 */}

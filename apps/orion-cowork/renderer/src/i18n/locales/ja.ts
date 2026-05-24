@@ -239,6 +239,8 @@ export default {
   'tool.error.explainLoading': 'AI が説明中…',
   'tool.error.explainError': '説明に失敗:{message}',
   'message.summarize': '要約する',
+  'message.feedback.positive': 'この回答は役立った(今後の検索で Orion が参照可能)',
+  'message.feedback.negative': 'この回答は良くない(Orion が会話間検索でこれを除外)',
   'message.summarizeLoading': 'AI 要約中…',
   'message.summarizeError': '要約に失敗:{message}',
   'message.summary.hide': '要約を閉じる',

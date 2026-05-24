@@ -950,6 +950,38 @@ export async function getTurnAudit(opts: {
   return out
 }
 
+export type MessageFeedback = 'positive' | 'negative'
+
+/** Set / unset message 👍 / 👎 feedback。Negative 會在 ConversationSearch 排除掉。 */
+export async function setMessageFeedback(
+  messageId: string,
+  feedback: MessageFeedback | null,
+): Promise<void> {
+  await window.agent.call(
+    'message.set_feedback',
+    { message_id: messageId, feedback },
+    () => {},
+  )
+}
+
+/** Hydrate 某 session 內所有 message 的 feedback,渲染前一次拿。 */
+export async function getFeedbackForSession(
+  sessionId: string,
+): Promise<Record<string, MessageFeedback>> {
+  let out: Record<string, MessageFeedback> = {}
+  await window.agent.call(
+    'message.get_feedback_for_session',
+    { session_id: sessionId },
+    (frame) => {
+      const f = frame as { event?: string; data?: { feedback?: Record<string, string> } }
+      if (f.event === 'feedback_map' && f.data?.feedback) {
+        out = f.data.feedback as Record<string, MessageFeedback>
+      }
+    },
+  )
+  return out
+}
+
 /** 讀 Orion 對使用者的 soul.md(第一人稱「我認識的這個人」)。檔不存在回空字串。 */
 export async function getSoul(): Promise<string> {
   let out = ''
@@ -1928,6 +1960,9 @@ export type LoadedBlock =
   | { type: 'tools'; tool_use_ids: string[] }
 
 export type LoadedMessage = {
+  /** SDK messages.id (UUID),對應 cowork_message_feedback.message_id。
+   * Compact summary card 也有 id(tombstone row 在 DB 內仍是一行)。 */
+  id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   text: string
   message_index: number

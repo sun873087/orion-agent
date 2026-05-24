@@ -14,6 +14,7 @@ import {
   createConversation,
   deleteConversation as rpcDelete,
   listConversations,
+  getFeedbackForSession,
   loadMessages,
   regenerateLast,
   sendPrompt as rpcSendPrompt,
@@ -266,6 +267,8 @@ export function useSwitchConversation() {
     try {
       const loaded = await loadMessages(sid)
       _hydrateMessages(sid, loaded)
+      // 順手 hydrate 該 session 的 message feedback map(👍 / 👎 UI 狀態)
+      void _hydrateFeedback(sid)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       useAgentStore.getState().setError(sid, `failed to load history: ${msg}`)
@@ -287,6 +290,15 @@ export async function hydrateSessionMessages(sessionId: string): Promise<void> {
   }
 }
 
+async function _hydrateFeedback(sessionId: string): Promise<void> {
+  try {
+    const map = await getFeedbackForSession(sessionId)
+    useAgentStore.getState().hydrateFeedbackForSession(sessionId, map)
+  } catch {
+    // 拿不到也不擾 UI(預設就是沒人 feedback)
+  }
+}
+
 function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
   // Reset 後重 build store.messages — attachment 只帶 ref,base64 由
   // MessageBubble.LazyImage 之後 useEffect 拿,不擋切換 latency。
@@ -294,7 +306,9 @@ function _hydrateMessages(sessionId: string, loaded: LoadedMessage[]) {
   // 在歷史對話也能 work。
   let counter = 0
   const messages = loaded.map((m) => ({
-    id: `hist-${Date.now()}-${counter++}`,
+    // 優先用 backend SDK message id(對 cowork_message_feedback 等 per-message
+    // metadata 對應用)。Backend 沒給就 fallback 隨機 id(historical 資料)。
+    id: m.id || `hist-${Date.now()}-${counter++}`,
     role: m.role,
     text: m.text,
     attachments: m.attachments.length

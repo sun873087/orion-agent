@@ -251,6 +251,8 @@ export default {
   'tool.error.explainLoading': 'AI 解釋中…',
   'tool.error.explainError': '解釋失敗:{message}',
   'message.summarize': '摘要這則',
+  'message.feedback.positive': '這回答有用(點下去之後 Orion 可在搜尋中參考)',
+  'message.feedback.negative': '這回答不好(點下去之後 Orion 跨對話搜不到這條)',
   'message.summarizeLoading': 'AI 摘要中…',
   'message.summarizeError': '摘要失敗:{message}',
   'message.summary.hide': '收起摘要',

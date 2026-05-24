@@ -727,6 +727,8 @@ class Handlers:
             "message.summarize": self.message_summarize,
             "conversation.cost_breakdown": self.conversation_cost_breakdown,
             "conversation.turn_audit": self.conversation_turn_audit,
+            "message.set_feedback": self.message_set_feedback,
+            "message.get_feedback_for_session": self.message_get_feedback_for_session,
             "soul.get": self.soul_get,
             "soul.update": self.soul_update,
             "soul.clear": self.soul_clear,
@@ -2828,6 +2830,69 @@ class Handlers:
             return
         yield {"event": "turn_audit", "data": audit, "final": True}
 
+    async def message_set_feedback(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """User 標 message 👍 / 👎 / unset。Negative 會在 ConversationSearch 過濾掉。
+
+        params:
+          message_id(必填):messages.id UUID
+          feedback:'positive' / 'negative' / null(unset)
+        """
+        message_id = params.get("message_id")
+        feedback = params.get("feedback")
+        if not isinstance(message_id, str) or not message_id:
+            yield {"event": "error", "data": {
+                "code": "BAD_PARAMS",
+                "message": "message_id required",
+            }, "final": True}
+            return
+        if feedback is not None and feedback not in ("positive", "negative"):
+            yield {"event": "error", "data": {
+                "code": "BAD_PARAMS",
+                "message": "feedback must be 'positive' / 'negative' / null",
+            }, "final": True}
+            return
+        engine = await self.ensure_engine()
+        try:
+            await storage.set_message_feedback(engine, message_id, feedback)
+        except Exception as e: # noqa: BLE001
+            yield {"event": "error", "data": {
+                "code": "WRITE_FAILED",
+                "message": str(e)[:200],
+            }, "final": True}
+            return
+        yield {"event": "feedback_set", "data": {
+            "message_id": message_id,
+            "feedback": feedback,
+        }, "final": True}
+
+    async def message_get_feedback_for_session(
+        self, params: dict[str, Any]
+    ) -> AsyncIterator[dict[str, Any]]:
+        """讀某 session 內所有 message 的 feedback。Renderer 載 messages 後順手
+        hydrate UI 狀態。"""
+        sid = params.get("session_id")
+        if not isinstance(sid, str) or not sid:
+            yield {"event": "error", "data": {
+                "code": "BAD_PARAMS",
+                "message": "session_id required",
+            }, "final": True}
+            return
+        engine = await self.ensure_engine()
+        try:
+            feedback_map = await storage.get_session_feedback_map(engine, sid)
+        except Exception as e: # noqa: BLE001
+            yield {"event": "error", "data": {
+                "code": "READ_FAILED",
+                "message": str(e)[:200],
+            }, "final": True}
+            return
+        yield {"event": "feedback_map", "data": {
+            "session_id": sid,
+            "feedback": feedback_map,
+        }, "final": True}
+
     async def conversation_get_budget(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
@@ -3655,15 +3720,16 @@ class Handlers:
                     "partial_output": None,
                 }
             # Tail N 訊息;每條抽 role + text 概要(避免回整 content json)
-            # load_raw_messages 回 list[(role, content_json, metadata_json)]
+            # load_raw_messages 回 list[(id, role, content_json, metadata_json)]
             tail = raw_msgs[-n_recent:]
             excerpt: list[dict[str, Any]] = []
             for m in tail:
                 role: str | None = None
                 content: Any = None
                 if isinstance(m, tuple):
-                    role = m[0] if len(m) > 0 else None
-                    content = m[1] if len(m) > 1 else None
+                    # (id, role, content, meta)
+                    role = m[1] if len(m) > 1 else None
+                    content = m[2] if len(m) > 2 else None
                 elif isinstance(m, dict):
                     role = m.get("role")
                     content = m.get("content")
@@ -3751,8 +3817,9 @@ class Handlers:
             OpenPathTool(),
             # 跨對話搜尋 — LLM 自己決定要不要「想起」之前聊過什麼。Read-only,
             # 走 SQLite FTS5 keyword search,完全 local zero network。
-            ConversationSearchTool(self.ensure_engine),
-            RecentChatsTool(self.ensure_engine),
+            # current_session_id 給 scope=project/collaboration 時 auto-fill 對應 id。
+            ConversationSearchTool(self.ensure_engine, current_session_id=session_id),
+            RecentChatsTool(self.ensure_engine, current_session_id=session_id),
             # Plan Mode tools— SDK 自動透過 plan_mode_aware
             # wrapper enforce read-only 白名單。Host 不用包 policy。
             EnterPlanModeTool(),
@@ -5629,7 +5696,7 @@ def _to_ui_messages_from_raw(
     """
     # 第一 pass:tool_use_id → {text, is_error}
     result_map: dict[str, dict[str, Any]] = {}
-    for _, content_json, _ in rows:
+    for _, _, content_json, _ in rows:
         if not isinstance(content_json, list):
             continue
         for b in content_json:
@@ -5657,13 +5724,14 @@ def _to_ui_messages_from_raw(
     out: list[dict[str, Any]] = []
     i = 0
     while i < len(rows):
-        role, content_json, meta = rows[i]
+        row_id, role, content_json, meta = rows[i]
         is_compacted = isinstance(meta, dict) and bool(meta.get("compacted_out"))
 
         # Tombstone row → 單獨 emit 一張 compact-summary card,然後跳過
         if _row_is_tombstone(content_json):
             tb = content_json[0]
             out.append({
+                "id": row_id,
                 "role": "system",
                 "text": str(tb.get("summary", "")),
                 "attachments": [],
@@ -5700,6 +5768,7 @@ def _to_ui_messages_from_raw(
                         att_idx += 1
             if text or attachments:
                 out.append({
+                    "id": row_id,
                     "role": "user",
                     "text": text,
                     "attachments": attachments,
@@ -5718,14 +5787,17 @@ def _to_ui_messages_from_raw(
         tools_buffer: list[str] = []
         first_idx = i
         merged_compacted = is_compacted
+        # 收 turn 最後一個 assistant row 的 id — 給 UI 對 feedback 用
+        # (整個 turn 顯示成一條 assistant message,feedback 對應 turn end row)
+        last_assistant_row_id: str | None = None
         while i < len(rows):
-            r2, cj2, meta2 = rows[i]
+            row_id2, r2, cj2, meta2 = rows[i]
             if _row_is_tombstone(cj2):
                 break
             if r2 == "user" and _is_user_prompt_row(cj2):
                 break # 進入下個 turn
-            if r2 == "user" and _is_user_prompt_row(cj2):
-                break # 進入下個 turn
+            if r2 == "assistant":
+                last_assistant_row_id = row_id2
             if isinstance(cj2, list):
                 for b in cj2:
                     if not isinstance(b, dict):
@@ -5773,6 +5845,7 @@ def _to_ui_messages_from_raw(
             merged_blocks.append({"type": "tools", "tool_use_ids": tools_buffer})
         if merged_text or merged_tool_calls or merged_attachments:
             out.append({
+                "id": last_assistant_row_id,
                 "role": "assistant",
                 "text": merged_text,
                 "attachments": merged_attachments,

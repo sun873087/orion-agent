@@ -240,6 +240,8 @@ export default {
   'tool.error.explainLoading': 'AI 解释中…',
   'tool.error.explainError': '解释失败:{message}',
   'message.summarize': '摘要这则',
+  'message.feedback.positive': '这回答有用(点下去之后 Orion 可在搜索中参考)',
+  'message.feedback.negative': '这回答不好(点下去之后 Orion 跨对话搜不到这条)',
   'message.summarizeLoading': 'AI 摘要中…',
   'message.summarizeError': '摘要失败:{message}',
   'message.summary.hide': '收起摘要',
