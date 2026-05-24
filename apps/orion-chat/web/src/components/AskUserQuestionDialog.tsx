@@ -28,7 +28,9 @@ export function AskUserQuestionDialog({ event, onAnswer, answers }: Props) {
 
   function toggleMulti(question: string, label: string) {
     setDrafts((prev) => {
-      const cur = prev[question] ? prev[question].split(', ').filter(Boolean) : []
+      const cur = prev[question]
+        ? prev[question].split(', ').filter(Boolean)
+        : []
       const next = cur.includes(label)
         ? cur.filter((l) => l !== label)
         : [...cur, label]
@@ -55,7 +57,9 @@ export function AskUserQuestionDialog({ event, onAnswer, answers }: Props) {
     setDraft(question, label)
   }
 
-  const allAnswered = event.questions.every((q) => (drafts[q.question] ?? '').length > 0)
+  const allAnswered = event.questions.every(
+    (q) => (drafts[q.question] ?? '').length > 0,
+  )
   const needsSubmit =
     event.questions.length > 1 ||
     event.questions.some((q) => q.options.length === 0 || q.multi_select)
@@ -122,8 +126,8 @@ export function AskUserQuestionDialog({ event, onAnswer, answers }: Props) {
       <div className="space-y-4">
         {event.questions.map((q, qi) => {
           const value = readonly
-            ? answers![q.question] ?? ''
-            : drafts[q.question] ?? ''
+            ? (answers![q.question] ?? '')
+            : (drafts[q.question] ?? '')
           const chosen = value.split(', ').filter(Boolean)
           return (
             <div key={qi} className="space-y-2">
@@ -140,13 +144,17 @@ export function AskUserQuestionDialog({ event, onAnswer, answers }: Props) {
                     {q.header}
                   </span>
                 )}
-                <span className="text-[13px] text-claude-text">{q.question}</span>
+                <span className="text-[13px] text-claude-text">
+                  {q.question}
+                </span>
               </div>
 
               {q.options.length === 0 ? (
                 readonly ? (
                   <div className="text-[13px] text-claude-text bg-white/60 dark:bg-claude-panel/60 border border-claude-border rounded-md px-3 py-1.5">
-                    {value || <span className="text-claude-textFaint">(空)</span>}
+                    {value || (
+                      <span className="text-claude-textFaint">(空)</span>
+                    )}
                   </div>
                 ) : (
                   <input

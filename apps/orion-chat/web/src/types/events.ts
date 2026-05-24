@@ -112,6 +112,30 @@ export interface ServerErrorEvent {
   message: string
 }
 
+export interface SessionTitleUpdatedEvent {
+  type: 'session_title_updated'
+  session_id: string
+  title: string
+}
+
+export interface BudgetExceededEvent {
+  type: 'budget_exceeded'
+  session_id: string
+  total_cost_usd: number
+  cap?: number | null
+}
+
+export interface AutoCompactSuggestedEvent {
+  type: 'auto_compact_suggested'
+  session_id: string
+}
+
+export interface FollowUpsUpdatedEvent {
+  type: 'follow_ups_updated'
+  session_id: string
+  suggestions: string[]
+}
+
 export type ServerEvent =
   | UserTextEvent
   | HistoryReplayDoneEvent
@@ -124,6 +148,10 @@ export type ServerEvent =
   | TurnCompleteEvent
   | TerminalEvent
   | ServerErrorEvent
+  | SessionTitleUpdatedEvent
+  | BudgetExceededEvent
+  | AutoCompactSuggestedEvent
+  | FollowUpsUpdatedEvent
 
 // ─── REST 型別 ──────────────────────────────────────────────────────────────
 
@@ -134,6 +162,8 @@ export interface SessionSummary {
   n_turns: number
   provider: string
   model: string
+  title?: string | null
+  starred?: boolean
 }
 
 export interface ModelEntry {

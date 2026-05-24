@@ -1,31 +1,69 @@
 import { useEffect, useState } from 'react'
 import { ApiError, apiFetch } from '../api/client'
+import { LOCALE_LABELS, LOCALES, useTranslation, type Locale } from '../i18n'
+import { useUiStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
 import type { ThemePref } from '../lib/theme'
 
+const selectClasses =
+  'w-full max-w-xs border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
+
 function AppearanceSection() {
+  const { t } = useTranslation()
   const { pref, resolved, setPref } = useTheme()
+  const themeWord =
+    resolved === 'dark'
+      ? t('settings.appearance.dark')
+      : t('settings.appearance.light')
   return (
     <div className="space-y-2">
-      <div className="font-medium text-claude-text text-[13px]">Appearance</div>
+      <div className="font-medium text-claude-text text-[13px]">
+        {t('settings.appearance.title')}
+      </div>
       <select
         value={pref}
         onChange={(e) => setPref(e.target.value as ThemePref)}
-        className="w-full max-w-xs border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow"
+        className={selectClasses}
       >
-        <option value="system">Follow system</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
+        <option value="system">{t('settings.appearance.system')}</option>
+        <option value="light">{t('settings.appearance.light')}</option>
+        <option value="dark">{t('settings.appearance.dark')}</option>
       </select>
       <div className="text-[12px] text-claude-textDim">
-        Currently {resolved}
-        {pref === 'system' && ' (from OS preference)'}.
+        {pref === 'system'
+          ? t('settings.appearance.currentSystem', { theme: themeWord })
+          : t('settings.appearance.current', { theme: themeWord })}
       </div>
     </div>
   )
 }
 
+function LanguageSection() {
+  const { t } = useTranslation()
+  const locale = useUiStore((s) => s.locale)
+  const setLocale = useUiStore((s) => s.setLocale)
+  return (
+    <div className="space-y-2">
+      <div className="font-medium text-claude-text text-[13px]">
+        {t('settings.language.title')}
+      </div>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as Locale)}
+        className={selectClasses}
+      >
+        {LOCALES.map((l) => (
+          <option key={l} value={l}>
+            {LOCALE_LABELS[l]}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 export function SettingsPanel() {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<Record<string, unknown>>({})
   const [unavailable, setUnavailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,7 +116,7 @@ export function SettingsPanel() {
   }
 
   async function deleteKey(key: string) {
-    if (!confirm(`Delete setting "${key}"?`)) return
+    if (!confirm(t('settings.deleteConfirm', { key }))) return
     setBusy(true)
     try {
       await apiFetch(`/me/settings/${encodeURIComponent(key)}`, {
@@ -96,12 +134,9 @@ export function SettingsPanel() {
     return (
       <div className="p-6 space-y-5 text-[14px]">
         <AppearanceSection />
+        <LanguageSection />
         <div className="pt-2 border-t border-claude-border/60 text-claude-textDim">
-          Server-side settings require{' '}
-          <code className="font-mono text-[12px] bg-claude-code px-1.5 py-0.5 rounded">
-            ORION_DB_URL
-          </code>{' '}
-          on the backend.
+          {t('settings.serverRequires')}
         </div>
       </div>
     )
@@ -113,6 +148,7 @@ export function SettingsPanel() {
   return (
     <div className="p-6 space-y-5 text-[14px]">
       <AppearanceSection />
+      <LanguageSection />
 
       {error && (
         <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-900/60 px-3 py-2 rounded-md">
@@ -122,11 +158,11 @@ export function SettingsPanel() {
 
       <div className="space-y-2 pt-2 border-t border-claude-border/60">
         <div className="font-medium text-claude-text text-[13px]">
-          Stored values
+          {t('settings.storedValues')}
         </div>
         {Object.keys(settings).length === 0 ? (
           <div className="text-[13px] text-claude-textFaint italic">
-            No settings stored yet.
+            {t('settings.noSettings')}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -165,17 +201,17 @@ export function SettingsPanel() {
 
       <div className="space-y-2 pt-2 border-t border-claude-border/60">
         <div className="font-medium text-claude-text text-[13px]">
-          Add or update
+          {t('settings.addOrUpdate')}
         </div>
         <input
           className={inputClasses}
-          placeholder="key (e.g. model)"
+          placeholder={t('settings.keyPlaceholder')}
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
         />
         <input
           className={inputClasses}
-          placeholder='value — JSON or string (e.g. "claude-opus-4-7")'
+          placeholder={t('settings.valuePlaceholder')}
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
         />
@@ -184,7 +220,7 @@ export function SettingsPanel() {
           disabled={busy || !newKey}
           className="px-4 py-1.5 bg-claude-orange hover:bg-claude-orangeHover disabled:bg-claude-border disabled:text-claude-textFaint text-white rounded-md text-[13px] font-medium transition-colors"
         >
-          {busy ? 'Saving…' : 'Save'}
+          {busy ? t('common.saving') : t('common.save')}
         </button>
       </div>
     </div>

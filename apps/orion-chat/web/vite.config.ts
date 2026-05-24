@@ -13,7 +13,10 @@ import react from '@vitejs/plugin-react'
 //   開全新 socket,完全沒 stale pool。每 request 多 ~1ms TCP handshake,
 //   dev 環境可接受。
 // - `timeout` + `proxyTimeout`(8s):多一道保險。
-const HTTP_TARGET = 'http://localhost:8000'
+// 後端 target 預設 :8000(dev);Playwright 整合測試用 ORION_API_TARGET 指到
+// mock-provider 的 ephemeral port,避免 clobber dev server。
+const HTTP_TARGET = process.env.ORION_API_TARGET ?? 'http://localhost:8000'
+const WS_TARGET = HTTP_TARGET.replace(/^http/, 'ws')
 const httpProxy = {
   target: HTTP_TARGET,
   changeOrigin: true,
@@ -31,12 +34,18 @@ export default defineConfig({
       '/auth': httpProxy,
       '/sessions': httpProxy,
       '/me': httpProxy,
+      '/skills': httpProxy,
+      '/roles': httpProxy,
+      '/projects': httpProxy,
+      '/mcp': httpProxy,
+      '/schedules': httpProxy,
+      '/collaborations': httpProxy,
       '/uploads': httpProxy,
       '/models': httpProxy,
       '/healthz': httpProxy,
       '/oauth': httpProxy,
       '/chat': {
-        target: 'ws://localhost:8000',
+        target: WS_TARGET,
         ws: true,
         // EPIPE / ECONNRESET / writeAfterFIN 是 user 切對話 / reconnect 時的
         // 常態。Vite 內建會在 `proxy.on('error')` 用 config.logger 把這些

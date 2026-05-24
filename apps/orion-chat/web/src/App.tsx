@@ -8,34 +8,41 @@ import {
   resetModelCatalogCache,
   useModelCatalog,
 } from './hooks/useModelCatalog'
-import { useSessions } from './hooks/useSessions'
-import {
-  getPreferredModel,
-  setPreferredModel,
-  type ModelChoice,
-} from './lib/preferredModel'
-
-const SIDEBAR_COLLAPSED_KEY = 'orion.sidebarCollapsed'
+import { useSessionStore } from './store/sessionStore'
+import { useUiStore } from './store/uiStore'
+import { getPreferredModel, type ModelChoice } from './lib/preferredModel'
 
 export default function App() {
   const [authed, setAuthed] = useState(isLoggedIn())
-  const [currentSid, setCurrentSid] = useState<string | null>(null)
-  // Draft 模式:使用者按了 New chat,但還沒送出第一則訊息;此時不打 backend
-  // create,只在前端記住挑選的 model。送出第一則訊息時才實際建立 session。
-  const [draft, setDraft] = useState<ModelChoice | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
-    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1',
-  )
-  const { sessions, loading, error, create, remove, refresh } = useSessions()
-  const { catalog } = useModelCatalog()
+  const {
+    sessions,
+    loading,
+    error,
+    currentSid,
+    draft,
+    refresh,
+    selectSession,
+    startDraft,
+    commitDraft,
+    changeModel,
+    remove,
+    rename,
+    toggleStar,
+    forkSession,
+    reset,
+  } = useSessionStore()
+  const settingsOpen = useUiStore((s) => s.settingsOpen)
+  const openSettings = useUiStore((s) => s.openSettings)
+  const closeSettings = useUiStore((s) => s.closeSettings)
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar)
+  const hydrateLocale = useUiStore((s) => s.hydrateLocaleFromBackend)
+  const { catalog, refresh: refreshCatalog } = useModelCatalog()
 
-  function toggleSidebar() {
-    setSidebarCollapsed((c) => {
-      const next = !c
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0')
-      return next
-    })
+  function newChat() {
+    // 開新對話時重抓可用 model(provider key / Ollama 模型可能已變)
+    refreshCatalog()
+    startDraft(defaultChoice() ?? null)
   }
 
   useEffect(() => {
@@ -47,18 +54,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (authed) void refresh()
-  }, [authed, refresh])
-
-  useEffect(() => {
-    // draft 模式時不要自動跳到第一個 session
-    if (!currentSid && !draft && sessions.length > 0) {
-      setCurrentSid(sessions[0]!.session_id)
+    if (authed) {
+      void refresh()
+      void hydrateLocale()
     }
-    if (currentSid && !sessions.find((s) => s.session_id === currentSid)) {
-      setCurrentSid(sessions[0]?.session_id ?? null)
-    }
-  }, [sessions, currentSid, draft])
+  }, [authed, refresh, hydrateLocale])
 
   const currentSession = useMemo(
     () => sessions.find((s) => s.session_id === currentSid) ?? null,
@@ -76,51 +76,12 @@ export default function App() {
     return <Login onLoggedIn={() => setAuthed(true)} />
   }
 
-  function newSession() {
-    // 不打 backend — 切到 draft 模式,只在前端顯示空白歡迎畫面
-    setCurrentSid(null)
-    setDraft(defaultChoice() ?? null)
-  }
-
-  function selectSession(sid: string) {
-    setDraft(null)
-    setCurrentSid(sid)
-  }
-
-  async function commitDraft(): Promise<string | null> {
-    // ChatView 在 draft mode 送出第一則訊息時呼叫;這裡才實際建立 session
-    const s = await create(draft ?? undefined)
-    if (!s) return null
-    setPreferredModel({ provider: s.provider, model: s.model })
-    setDraft(null)
-    setCurrentSid(s.session_id)
-    return s.session_id
-  }
-
-  async function onModelChange(choice: ModelChoice) {
-    if (draft !== null) {
-      // draft 模式只更新前端狀態,不打 backend
-      setDraft(choice)
-      return
-    }
-    // 把上一個 empty session 刪掉(picker 只在 empty state 出現,這必為空)
-    if (currentSid && currentSession && currentSession.n_messages === 0) {
-      await remove(currentSid)
-    }
-    const s = await create(choice)
-    if (s) {
-      setCurrentSid(s.session_id)
-      setPreferredModel({ provider: s.provider, model: s.model })
-    }
-  }
-
   function logout() {
     clearAuth()
     resetModelCatalogCache()
+    reset()
+    closeSettings()
     setAuthed(false)
-    setCurrentSid(null)
-    setDraft(null)
-    setSettingsOpen(false)
   }
 
   const token = getToken()
@@ -137,10 +98,13 @@ export default function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         onSelect={selectSession}
-        onNew={newSession}
+        onNew={newChat}
         onDelete={(sid) => void remove(sid)}
+        onRename={(sid, title) => void rename(sid, title)}
+        onToggleStar={(sid) => void toggleStar(sid)}
+        onFork={(sid) => void forkSession(sid)}
         onLogout={logout}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
       />
 
       <ChatView
@@ -150,15 +114,12 @@ export default function App() {
         catalog={catalog}
         draft={draft}
         onCommitDraft={commitDraft}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onModelChange={(c) => void onModelChange(c)}
+        onOpenSettings={openSettings}
+        onModelChange={(c) => void changeModel(c)}
       />
 
       {settingsOpen && (
-        <SettingsModal
-          sessionId={currentSid}
-          onClose={() => setSettingsOpen(false)}
-        />
+        <SettingsModal sessionId={currentSid} onClose={closeSettings} />
       )}
     </div>
   )

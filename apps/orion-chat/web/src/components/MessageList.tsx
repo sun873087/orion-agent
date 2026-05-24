@@ -8,22 +8,9 @@ import { AskUserQuestionDialog } from './AskUserQuestionDialog'
 import { MessageBubble } from './MessageBubble'
 import { PermissionDialog } from './PermissionDialog'
 import { ToolGroupCard } from './ToolGroupCard'
-import type { ToolGroupItem } from '../lib/toolNarration'
+import type { FlowEntry } from '../lib/chatFlow'
 
-export type FlowEntry =
-  | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string }
-  | { kind: 'thinking'; id: string; text: string }
-  | { kind: 'tool_group'; id: string; items: ToolGroupItem[] }
-  | {
-      kind: 'turn_complete'
-      id: string
-      stop_reason: string
-      input_tokens: number
-      output_tokens: number
-    }
-  | { kind: 'terminal'; id: string; reason: string; total_turns: number }
-  | { kind: 'error'; id: string; message: string }
+export type { FlowEntry }
 
 interface Props {
   entries: FlowEntry[]

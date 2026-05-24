@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSessionStore } from '../store/sessionStore'
 import type {
   AskUserQuestionAskEvent,
   ClientEvent,
+  FollowUpsUpdatedEvent,
   PermissionAskEvent,
   ServerEvent,
+  SessionTitleUpdatedEvent,
 } from '../types/events'
 
 export type WsStatus =
@@ -27,6 +30,8 @@ interface UseWebSocketResult {
   pendingQuestions: AskUserQuestionAskEvent[]
   /** 已答的題目 — UI 留下「✓ 已回答」卡片做歷史紀錄。 */
   answeredQuestions: AnsweredQuestion[]
+  /** 最新一輪的 follow-up 建議(side-query 產生)。 */
+  followUps: string[]
   send: (msg: ClientEvent) => void
   answerPermission: (
     requestId: string,
@@ -80,12 +85,14 @@ export function useWebSocket(
   const [answeredQuestions, setAnsweredQuestions] = useState<
     AnsweredQuestion[]
   >([])
+  const [followUps, setFollowUps] = useState<string[]>([])
 
   const clear = useCallback(() => {
     setEvents([])
     setPendingPermissions([])
     setPendingQuestions([])
     setAnsweredQuestions([])
+    setFollowUps([])
     pendingEventsRef.current = []
   }, [])
 
@@ -107,6 +114,17 @@ export function useWebSocket(
     if (newQs.length > 0) {
       setPendingQuestions((prev) => prev.concat(newQs))
     }
+    // 標題自動生成 → 更新 sidebar(非聊天內容,直接打進 sessionStore)
+    const titleUpdates = batch.filter(
+      (e): e is SessionTitleUpdatedEvent => e.type === 'session_title_updated',
+    )
+    for (const u of titleUpdates) {
+      useSessionStore.getState().applyTitleUpdate(u.session_id, u.title)
+    }
+    const fu = batch.filter(
+      (e): e is FollowUpsUpdatedEvent => e.type === 'follow_ups_updated',
+    )
+    if (fu.length > 0) setFollowUps(fu[fu.length - 1]!.suggestions)
   }, [])
 
   const scheduleFlush = useCallback(() => {
@@ -259,6 +277,7 @@ export function useWebSocket(
     setPendingPermissions([])
     setPendingQuestions([])
     setAnsweredQuestions([])
+    setFollowUps([])
     pendingEventsRef.current = []
   }, [sessionId])
 
@@ -311,6 +330,7 @@ export function useWebSocket(
     pendingPermissions,
     pendingQuestions,
     answeredQuestions,
+    followUps,
     send,
     answerPermission,
     answerQuestion,
