@@ -27,8 +27,13 @@ class _MockUpstreamTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.last_request = request
         host = request.url.host
-        # openrouter.ai 也含 "openai" 字串(unicode contains),要先比對它再 openai
+        # 比對順序:openrouter / google 先,再 openai(host substring 可能撞)
         if "openrouter" in host:
+            return httpx.Response(
+                200, content=self.openai_payload,
+                headers={"content-type": self.openai_ct},
+            )
+        if "googleapis" in host:
             return httpx.Response(
                 200, content=self.openai_payload,
                 headers={"content-type": self.openai_ct},
@@ -265,3 +270,88 @@ async def test_e2e_openrouter_chat_writes_usage_log(
     assert transport.last_request.headers.get("authorization") == "Bearer fake-upstream-key"
     assert "openrouter.ai" in transport.last_request.url.host
     os.environ.pop("OPENROUTER_API_KEY", None)
+
+
+@pytest.mark.asyncio
+async def test_e2e_google_native_writes_usage_log(
+    proxy_db, admin_token, monkeypatch
+) -> None:
+    """Google Gemini native API:`v1beta/models/{model}:streamGenerateContent`。
+
+    Client GoogleProvider 走 proxy 時 base_url=`{proxy}/google/v1beta`,path =
+    `v1beta/models/gemini-3.5-flash:streamGenerateContent`,proxy forward 到
+    `https://generativelanguage.googleapis.com/v1beta/models/...:streamGenerateContent`。
+    Upstream Auth 用 `x-goog-api-key`(不是 Bearer)。
+    """
+    import os
+    os.environ["GEMINI_API_KEY"] = "fake-upstream-key"
+
+    # Non-stream payload(`generateContent` 無 stream)— usageMetadata 在頂層
+    mock_payload = json.dumps({
+        "candidates": [{
+            "content": {"parts": [{"text": "hi"}], "role": "model"},
+            "finishReason": "STOP",
+            "index": 0,
+        }],
+        "modelVersion": "gemini-3.5-flash",
+        "usageMetadata": {
+            "promptTokenCount": 20,
+            "candidatesTokenCount": 10,
+            "totalTokenCount": 30,
+        },
+    }).encode()
+    transport = _MockUpstreamTransport(mock_payload)
+    orig_init = httpx.AsyncClient.__init__
+
+    def patched_init(self, *args, **kwargs):
+        if "transport" not in kwargs:
+            kwargs["transport"] = transport
+        orig_init(self, *args, **kwargs)
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ) as c:
+        r = await c.post("/admin/users", json={"email": "g@x.com"})
+        uid = r.json()["id"]
+        r = await c.post(f"/admin/users/{uid}/keys", json={"env": "test"})
+        token = r.json()["token"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as c:
+        r = await c.post(
+            "/google/v1beta/models/gemini-3.5-flash:generateContent",
+            json={
+                "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+            },
+        )
+        assert r.status_code == 200
+
+    for _ in range(10):
+        await asyncio.sleep(0.05)
+        factory = get_session_factory()
+        async with factory() as s:
+            rows = (
+                await s.execute(select(UsageLog).where(UsageLog.user_id == uid))
+            ).scalars().all()
+        if rows:
+            break
+    assert rows, "google usage_log 沒寫進 DB"
+    assert rows[0].provider == "google"
+    assert rows[0].model == "gemini-3.5-flash"
+    assert rows[0].input_tokens == 20
+    assert rows[0].output_tokens == 10
+    # gemini-3.5-flash pricing: 20 × 0.30/1M + 10 × 2.50/1M = 6e-6 + 25e-6 = 31e-6
+    assert rows[0].cost_usd == pytest.approx(31e-6, rel=1e-3)
+    # Verify upstream x-goog-api-key header(不是 Bearer)+ Google host + native path
+    assert transport.last_request is not None
+    assert transport.last_request.headers.get("x-goog-api-key") == "fake-upstream-key"
+    assert "generativelanguage.googleapis.com" in transport.last_request.url.host
+    assert ":generateContent" in str(transport.last_request.url.path)
+    os.environ.pop("GEMINI_API_KEY", None)

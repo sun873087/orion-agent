@@ -17,7 +17,7 @@ packages/orion-model/src/orion_model/
 ├── openai_provider.py           AsyncOpenAI SDK 薄包(Responses API)
 ├── ollama_provider.py           本機 daemon HTTP
 ├── openrouter_provider.py       OpenRouter gateway(OpenAI-compat chat.completions wire)
-├── openrouter_catalog.py        OpenRouter 動態 catalog(fetch /api/v1/models + cache)
+├── google_provider.py           Google Gemini(OpenAI-compat /v1beta/openai endpoint)
 ├── events.py                    NormalizedEvent / NormalizedUsage(跨 provider 一致)
 ├── types.py                     NormalizedMessage / ImageBlock / TextBlock
 ├── catalog.py + models.json     Chat model catalog(pricing / max_tokens;packaged static)
@@ -35,10 +35,16 @@ packages/orion-model/src/orion_model/
 ;`from orion_model.audio import transcribe, synthesize`。
 
 **OpenRouter**(gateway 模式)— 一支 `OPENROUTER_API_KEY` 接 100+ models 來自各
-vendor。`OpenRouterProvider` 走 chat.completions wire(不是 OpenAI Responses API),
-catalog 從 `https://openrouter.ai/api/v1/models` 動態 fetch + cache,pricing 自動
-換 per-1M(OpenRouter API 用 per-token)。Catalog 抓不到不擋 host(silent fallback,
-provider 不顯示在 picker)。
+vendor。`OpenRouterProvider` 走 chat.completions wire(不是 OpenAI Responses API)。
+Models 寫進 `models.json` static section(精選 :free tier 等),user 想加新 model
+直接編 JSON。
+
+**Google Gemini** — 走 Gemini OpenAI-compat endpoint
+(`https://generativelanguage.googleapis.com/v1beta/openai/`),用 `GEMINI_API_KEY`
+(跟 `GOOGLE_STT_API_KEY` 區隔 — STT / LLM 是不同 API)。`GoogleProvider` 共用
+`openrouter_provider` 內 message / tool translation helpers(都是 chat.completions
+wire)。Proxy 模式:client `base_url={proxy}/google`(不加 /v1,因為 Google 端點
+是 `/v1beta/openai/...` 不是 `/v1/...`),proxy `upstream_base=generativelanguage.googleapis.com/v1beta/openai`。
 
 ### orion-sdk
 

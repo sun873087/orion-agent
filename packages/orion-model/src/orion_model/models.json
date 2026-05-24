@@ -89,18 +89,21 @@
       ]
     },
     {
-      "id": "ollama",
-      "label": "Ollama (Local)",
-      "dynamic": true,
-      "_comment": "models[] 是 static fallback — daemon 沒開時 UI 顯這份,daemon 連得上時 InputBox 走 ollama.list_models 動態抓 user 實際 pull 過的(動態 wins,不 merge)。在這加 entry 主要給「daemon 沒在跑時 user 看到能用什麼」的提示。",
+      "id": "google",
+      "label": "Google Gemini",
+      "_comment": "Google Gemini 走 OpenAI-compat 端點(generativelanguage.googleapis.com/v1beta/openai)。GEMINI_API_KEY 不要跟 GOOGLE_STT_API_KEY 混 — STT / LLM 是不同 API。Pricing 對齊 gemini-2.5-flash 現價(input $0.30 / output $2.50 per 1M)。",
       "models": [
         {
-          "id": "qwen3.5:9b",
-          "label": "Qwen 3.5 · 9B(vision+tools, 256K ctx, 6.6GB Q4_K_M)",
-          "max_output_tokens": 4096,
-          "max_context_tokens": 262144,
+          "id": "gemini-3.5-flash",
+          "label": "Gemini 3.5 Flash",
+          "max_output_tokens": 8192,
+          "max_context_tokens": 1000000,
           "supports_reasoning": false,
-          "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+          "pricing": {
+            "input": 0.30,
+            "output": 2.50,
+            "cache_read": 0.075
+          }
         }
       ]
     },
@@ -123,6 +126,22 @@
           "label": "OpenAI gpt-oss-120B (free)",
           "max_output_tokens": 4096,
           "max_context_tokens": 131072,
+          "supports_reasoning": false,
+          "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+        }
+      ]
+    },    
+    {
+      "id": "ollama",
+      "label": "Ollama (Local)",
+      "dynamic": true,
+      "_comment": "models[] 是 static fallback — daemon 沒開時 UI 顯這份,daemon 連得上時 InputBox 走 ollama.list_models 動態抓 user 實際 pull 過的(動態 wins,不 merge)。在這加 entry 主要給「daemon 沒在跑時 user 看到能用什麼」的提示。",
+      "models": [
+        {
+          "id": "qwen3.5:9b",
+          "label": "Qwen 3.5 · 9B(vision+tools, 256K ctx, 6.6GB Q4_K_M)",
+          "max_output_tokens": 4096,
+          "max_context_tokens": 262144,
           "supports_reasoning": false,
           "pricing": {"input": 0.0, "output": 0.0, "cache_read": 0.0}
         }

@@ -237,4 +237,24 @@ async def openrouter_reverse_proxy(req: Request, path: str) -> StreamingResponse
     )
 
 
+async def google_reverse_proxy(req: Request, path: str) -> StreamingResponse:
+    """Google Gemini native API(`/v1beta/models/...:streamGenerateContent`)。
+
+    Native(非 OpenAI-compat)— 我們攜帶 thought_signature 跨 turn,multi-turn
+    tool use 能 work。Client base_url=`{proxy}/google/v1beta`,path 例如
+    `v1beta/models/gemini-3.5-flash:streamGenerateContent`,upstream forward 到
+    `https://generativelanguage.googleapis.com/v1beta/models/...:streamGenerateContent`。
+
+    Gemini API 用 `x-goog-api-key` header(非 Bearer)。
+    """
+    key = _require_key("GEMINI_API_KEY", "Google Gemini")
+    return await reverse_proxy(
+        req, path,
+        upstream_base="https://generativelanguage.googleapis.com",
+        auth_header="x-goog-api-key",
+        auth_value=key,
+        provider="google",
+    )
+
+
 __all__ = ["anthropic_reverse_proxy", "openai_reverse_proxy", "reverse_proxy"]

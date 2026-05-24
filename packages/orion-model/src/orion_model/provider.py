@@ -137,4 +137,8 @@ def get_provider(provider_name: str, model: str) -> LLMProvider:
         from orion_model.openrouter_provider import OpenRouterProvider
 
         return OpenRouterProvider(model=model)
+    if provider_name == "google":
+        from orion_model.google_provider import GoogleProvider
+
+        return GoogleProvider(model=model)
     raise ValueError(f"Unknown provider: {provider_name!r}")

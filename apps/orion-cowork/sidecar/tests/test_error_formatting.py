@@ -115,3 +115,65 @@ def test_format_unknown_error_truncates() -> None:
     code, msg = _format_send_error(_Mystery(long))
     assert code == "MysteryThing"
     assert len(msg) <= 300
+
+
+# ─── ProviderHTTPError(orion_model)→ 友善訊息直通 UI ────────────
+
+
+def test_format_provider_http_error_429_gemini_friendly() -> None:
+    """Native Gemini provider 上游 429 — ProviderHTTPError 自帶中文 quota 訊息,
+    code 標 RATE_LIMIT 讓 UI 可分類。"""
+    from orion_model.errors import ProviderHTTPError
+    exc = ProviderHTTPError(
+        provider="google", status_code=429,
+        upstream_message="quota exceeded for free tier",
+    )
+    code, msg = _format_send_error(exc)
+    assert code == "RATE_LIMIT"
+    assert "Gemini" in msg
+    assert "配額" in msg or "quota" in msg.lower()
+
+
+def test_format_provider_http_error_401_auth() -> None:
+    from orion_model.errors import ProviderHTTPError
+    code, msg = _format_send_error(
+        ProviderHTTPError(provider="google", status_code=401, upstream_message="bad key")
+    )
+    assert code == "AUTH_FAILED"
+    assert "API key" in msg
+
+
+def test_format_provider_http_error_400_includes_upstream_msg() -> None:
+    """400 — upstream message 帶 schema validation 失敗,直接給 user 看。"""
+    from orion_model.errors import ProviderHTTPError
+    exc = ProviderHTTPError(
+        provider="google", status_code=400,
+        upstream_message="Unknown name 'exclusiveMinimum'",
+    )
+    code, msg = _format_send_error(exc)
+    assert code == "HTTP_400"
+    assert "exclusiveMinimum" in msg
+
+
+def test_format_provider_http_error_500() -> None:
+    from orion_model.errors import ProviderHTTPError
+    code, _ = _format_send_error(
+        ProviderHTTPError(provider="google", status_code=503, upstream_message="overloaded")
+    )
+    assert code == "UPSTREAM_503"
+
+
+def test_format_httpx_status_error_fallback_via_response() -> None:
+    """Legacy httpx.HTTPStatusError(沒 status_code attr,只有 .response.status_code)
+    — fallback path 從 response 抓 status 套到 mapping。"""
+    class _FakeResponse:
+        status_code = 429
+
+    class _LegacyHttpxError(Exception):
+        def __init__(self, msg: str) -> None:
+            super().__init__(msg)
+            self.response = _FakeResponse()
+
+    _LegacyHttpxError.__name__ = "HTTPStatusError"
+    code, _ = _format_send_error(_LegacyHttpxError("Gemini 429"))
+    assert code == "RATE_LIMIT"

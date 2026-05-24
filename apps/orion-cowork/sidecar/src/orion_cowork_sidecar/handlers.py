@@ -89,6 +89,30 @@ def _format_send_error(e: BaseException) -> tuple[str, str]:
     name = type(inner).__name__
     status = getattr(inner, "status_code", None)
 
+    # Native httpx provider 走 orion_model ProviderHTTPError — 用自帶的 __str__
+    # (已組好中文友善訊息),搭 status code 給分類 code 讓 UI 認(RATE_LIMIT 等)
+    if name == "ProviderHTTPError" and isinstance(status, int):
+        if status == 429:
+            code = "RATE_LIMIT"
+        elif status == 401:
+            code = "AUTH_FAILED"
+        elif status == 403:
+            code = "PERMISSION_DENIED"
+        elif status == 402:
+            code = "BUDGET_EXCEEDED"
+        elif status >= 500:
+            code = f"UPSTREAM_{status}"
+        else:
+            code = f"HTTP_{status}"
+        return (code, str(inner)[:500])
+
+    # httpx.HTTPStatusError 沒 status_code attr — fallback 從 response 拿,
+    # 之後共用下面 mapping(429 → RATE_LIMIT 等)
+    if status is None:
+        resp_obj = getattr(inner, "response", None)
+        if resp_obj is not None:
+            status = getattr(resp_obj, "status_code", None)
+
     # Mapping by class name(不 import SDK 避免硬依賴 specific版本)
     if name == "AuthenticationError" or status == 401:
         return ("AUTH_FAILED",
@@ -773,6 +797,7 @@ class Handlers:
             "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
+            "google": "GEMINI_API_KEY",
         }
         # 走 proxy 時 client 不必有直接 key — UI 仍標 configured,但同時 flag
         # via_proxy=True 讓 UI 顯⚠「未驗證」徽章,提示「我們沒真的 ping proxy

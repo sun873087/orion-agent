@@ -25,6 +25,10 @@ class ToolUseBlock(BaseModel):
     id: str
     name: str
     input: dict[str, Any]
+    thought_signature: str | None = None
+    """Gemini native API 跨 turn thinking 狀態:Gemini 2.5+ thinking model
+    生 function_call 時會附 base64 signature,user 下次帶 functionResponse
+    回去時 Gemini 期待 echo 同支 signature。其他 provider 忽略。"""
 
 
 class ToolResultBlock(BaseModel):

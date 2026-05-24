@@ -234,9 +234,10 @@ def test_invalid_json_response_returns_none() -> None:
 
 
 def test_unknown_provider_returns_none() -> None:
+    # google 已 supported,改用真未知 provider 測 dispatch fallback
     ev = parse_usage(
-        provider="google", path="v1/anything", method="POST",
+        provider="cohere", path="v1/anything", method="POST",
         request_body=b"", response_body=b"{}", content_type="application/json",
-        endpoint_full="/google/v1/anything",
+        endpoint_full="/cohere/v1/anything",
     )
     assert ev is None

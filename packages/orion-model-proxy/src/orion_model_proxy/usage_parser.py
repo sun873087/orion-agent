@@ -254,6 +254,58 @@ def _parse_anthropic_messages(
     }
 
 
+def _parse_gemini_native(
+    path: str,
+    request_body: bytes, # noqa: ARG001 — 不用,model 從 path / response 拿
+    response_body: bytes,
+    content_type: str,
+) -> tuple[str | None, dict[str, int] | None]:
+    """Gemini native API response → (model, usage_dict)。
+
+    Model 從 path `models/{model}:streamGenerateContent` parse。
+    Usage:`usageMetadata.{promptTokenCount, candidatesTokenCount, cachedContentTokenCount}`。
+    Stream(SSE)+ non-stream 都支援。
+    """
+    # 從 path parse model:`v1beta/models/gemini-3.5-flash:streamGenerateContent`
+    import re as _re
+    model = None
+    m = _re.search(r"models/([^/:]+):(?:stream)?generateContent", path)
+    if m:
+        model = m.group(1)
+
+    if "text/event-stream" not in content_type:
+        # Non-stream:整個 response 是 JSON
+        data = _try_json(response_body)
+        if data is None:
+            return model, None
+        if isinstance(data.get("modelVersion"), str):
+            model = data["modelVersion"]
+        usage_meta = data.get("usageMetadata")
+        if not isinstance(usage_meta, dict):
+            return model, None
+        return model, {
+            "input_tokens": int(usage_meta.get("promptTokenCount") or 0),
+            "output_tokens": int(usage_meta.get("candidatesTokenCount") or 0),
+            "cache_read_tokens": int(usage_meta.get("cachedContentTokenCount") or 0),
+        }
+
+    # Stream:最後一筆 chunk 的 usageMetadata
+    last_usage: dict[str, Any] | None = None
+    for evt in _iter_sse_data_lines(response_body):
+        if isinstance(evt.get("modelVersion"), str):
+            model = evt["modelVersion"]
+        u = evt.get("usageMetadata")
+        if isinstance(u, dict):
+            last_usage = u
+    if last_usage is None:
+        return model, None
+    return model, {
+        "input_tokens": int(last_usage.get("promptTokenCount") or 0),
+        "output_tokens": int(last_usage.get("candidatesTokenCount") or 0),
+        "cache_read_tokens": int(last_usage.get("cachedContentTokenCount") or 0),
+    }
+
+
 # ─── dispatch ─────────────────────────────────────────────────────────────
 
 
@@ -377,6 +429,37 @@ def _dispatch(
                 cost_usd=cost,
             )
         # 未支援 → fallback,cost=0(/models 等 query endpoint 走這裡)
+        return UsageEvent(
+            provider=provider, model="unknown", endpoint=endpoint_full,
+            input_tokens=None, output_tokens=None,
+            cache_read_tokens=None, cache_creation_tokens=None,
+            cost_usd=0.0,
+        )
+
+    if provider == "google":
+        # Native Gemini API:path 是 `v1beta/models/{model}:streamGenerateContent` 或
+        # `models/{model}:generateContent`。Response wire 跟 chat.completions 不同 —
+        # 用 `usageMetadata` 帶 token counts(不是 `usage`),model 在 path 內或
+        # `modelVersion` 欄。
+        if ":generateContent" in path or ":streamGenerateContent" in path:
+            model, usage = _parse_gemini_native(
+                path, request_body, response_body, content_type,
+            )
+            if model is None or usage is None:
+                return None
+            cost = _compute_cost(
+                provider, model,
+                usage.get("input_tokens"), usage.get("output_tokens"),
+                usage.get("cache_read_tokens"), None,
+            )
+            return UsageEvent(
+                provider=provider, model=model, endpoint=endpoint_full,
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                cache_read_tokens=usage.get("cache_read_tokens"),
+                cache_creation_tokens=None,
+                cost_usd=cost,
+            )
         return UsageEvent(
             provider=provider, model="unknown", endpoint=endpoint_full,
             input_tokens=None, output_tokens=None,

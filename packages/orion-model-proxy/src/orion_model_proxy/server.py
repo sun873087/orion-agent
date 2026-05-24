@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
                 "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY")),
                 "openai": bool(os.environ.get("OPENAI_API_KEY")),
                 "openrouter": bool(os.environ.get("OPENROUTER_API_KEY")),
+                "google": bool(os.environ.get("GEMINI_API_KEY")),
             },
         }
 
@@ -128,6 +129,8 @@ def create_app() -> FastAPI:
             ok = bool(os.environ.get("OPENAI_API_KEY"))
         elif provider == "openrouter":
             ok = bool(os.environ.get("OPENROUTER_API_KEY"))
+        elif provider == "google":
+            ok = bool(os.environ.get("GEMINI_API_KEY"))
         else:
             raise HTTPException(status_code=404, detail=f"unknown provider {provider!r}")
         return JSONResponse({"provider": provider, "ok": ok})
@@ -136,6 +139,7 @@ def create_app() -> FastAPI:
     # / files / 任何 OpenAI 未來新加 endpoint 自動支援)─────────────────
     from orion_model_proxy.upstream_proxy import (
         anthropic_reverse_proxy,
+        google_reverse_proxy,
         openai_reverse_proxy,
         openrouter_reverse_proxy,
     )
@@ -166,6 +170,15 @@ def create_app() -> FastAPI:
     )
     async def openrouter_compat(req: Request, path: str) -> StreamingResponse:
         return await openrouter_reverse_proxy(req, path)
+
+    @app.api_route(
+        "/google/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        dependencies=[Depends(require_auth), Depends(enforce_rate_limit), Depends(enforce_budget)],
+        tags=["google"],
+    )
+    async def google_compat(req: Request, path: str) -> StreamingResponse:
+        return await google_reverse_proxy(req, path)
 
     # E:OpenAI Realtime WebSocket pass-through 骨架。實作未完成 —
     # 主要 use case 是 voice。先註冊 endpoint + 503,避免 path 撞到 catch-all。

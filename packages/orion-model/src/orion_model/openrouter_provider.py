@@ -194,7 +194,10 @@ class OpenRouterProvider:
                 tool_calls = getattr(delta, "tool_calls", None)
                 if tool_calls:
                     for tc in tool_calls:
-                        idx = getattr(tc, "index", 0)
+                        # 某些 model(Gemini / 部分 OpenRouter upstream)delta.tool_calls
+                        # 的 index 可能直接 = None(非 missing),要強制 int 0 fallback
+                        idx_raw = getattr(tc, "index", 0)
+                        idx = idx_raw if isinstance(idx_raw, int) else 0
                         accum = tool_state.get(idx)
                         if accum is None:
                             # 首次見此 idx → 應該帶 id + function.name

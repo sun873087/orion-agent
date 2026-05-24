@@ -1862,12 +1862,35 @@ function ErrorBanner({ sessionId, message }: { sessionId: string; message: strin
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
+    // 1) 優先 navigator.clipboard;Electron file:// 載入下會掛 → fallback
     try {
-      await navigator.clipboard.writeText(message)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(message)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+        return
+      }
     } catch {
-      /* swallow — clipboard 在 Electron 一般能用,失敗不重要 */
+      // fall through 走 textarea
+    }
+    // 2) Fallback:離畫面 textarea + execCommand('copy')
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = message
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      ta.style.pointerEvents = 'none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }
+    } catch {
+      // 兩種都掛就放棄
     }
   }
 
