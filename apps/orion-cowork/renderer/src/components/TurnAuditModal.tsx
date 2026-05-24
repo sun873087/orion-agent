@@ -216,12 +216,36 @@ export function TurnAuditModal({
     parts.push(`${audit.provider} / ${audit.model}`)
     parts.push(`tokens: input=${audit.inputTokens} output=${audit.outputTokens} cache_read=${audit.cacheReadTokens}`)
     parts.push(`cost: $${audit.costUsd.toFixed(6)}`)
+    const text = parts.join('\n')
+    // 1) 優先 navigator.clipboard;非 secure context / Electron file:// 載入會掛
     try {
-      await navigator.clipboard.writeText(parts.join('\n'))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+        return
+      }
     } catch {
-      // 沒 clipboard 權限 — 不彈錯,user 自己會發現
+      // fall through 走 textarea fallback
+    }
+    // 2) Fallback:離畫面 textarea + execCommand('copy') — Electron 一定吃
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      ta.style.pointerEvents = 'none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }
+    } catch {
+      // 兩種都掛就放棄
     }
   }
 

@@ -269,6 +269,7 @@ export default {
   'privacy.intro': '「なぜこう答えた」audit で正確な会話を見るために、sidecar が実 wire スナップショットを何 turn 分保持するか制御します。デフォルト 1(最新)。',
   'privacy.turnAudit.title': '基本 audit(常時 ON)',
   'privacy.turnAudit.desc': '各 turn 終了時、sidecar が system prompt / 利用可能ツール / model / token を snapshot し「なぜこう答えた」modal で表示。\n\n• 直近 100 turn を保持(per session)\n• system_prompt の重複部分は hash dedup 実施、実質容量約 30KB / session\n• cowork.db に永続化、sidecar 再起動でも保持\n• OFF 不可 — 切ると「なぜこう答えた」modal が空になる',
+  'privacy.wireAudit.title': '高度な wire payload snapshot(調整可)',
   'privacy.wireAudit.desc': 'Sidecar が各 turn 終了時に conv.state_messages(tool result 含む実 wire)をスナップショット。Audit modal で精確な会話を表示。0 = 保持せず、会話 UI 版にフォールバック(approximate)。範囲 0-20。',
   'privacy.wireAudit.unit': 'turn(範囲 0-20)',
   'privacy.wireAudit.modeOff': 'Wire スナップショットなし、全 turn で会話 UI 版 approximate 表示。最も省スペース。',

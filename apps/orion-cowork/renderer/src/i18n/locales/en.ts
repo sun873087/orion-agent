@@ -269,6 +269,7 @@ export default {
   'privacy.intro': "Control how many real-wire LLM payload snapshots sidecar keeps, so the «Why did Orion answer» audit can show accurate conversation. Default 1 (most recent).",
   'privacy.turnAudit.title': 'Base audit (always on)',
   'privacy.turnAudit.desc': "After each turn, sidecar snapshots this turn's system prompt / available tools / model / token usage — feeds the «Why did Orion answer» modal.\n\n• Keeps the most recent 100 turns (per session)\n• system_prompt repeated across turns is hash-deduped — actual storage ~30KB per session\n• Persisted in cowork.db, survives sidecar restart\n• Cannot be turned off — without it the «Why» modal has nothing to show",
+  'privacy.wireAudit.title': 'Advanced wire payload snapshot (adjustable)',
   'privacy.wireAudit.desc': "Sidecar snapshots conv.state_messages (the real wire incl. tool results) at the end of each turn. Audit modal shows this for accurate conversation view. 0 = none, fall back to chat UI (approximate). Range 0-20.",
   'privacy.wireAudit.unit': 'turns (range 0-20)',
   'privacy.wireAudit.modeOff': "No wire snapshots; all turns fall back to chat-UI approximate view. Most storage-efficient.",

@@ -270,6 +270,7 @@ export default {
   'privacy.intro': '控 sidecar 保留多少「真实送 LLM 的对话内容」snapshot,给「为什么这样回答」的 audit modal 看精准对话。默认只留 1 个(最近一次)。',
   'privacy.turnAudit.title': '基础 audit(已自动启用)',
   'privacy.turnAudit.desc': '每 turn 结束时,sidecar 把这次的 system prompt / 可用工具 / model / token 用量 snapshot 起来,给「为什么这样回答」modal 显示。\n\n• 保留最近 100 个 turn(per session)\n• system_prompt 跨 turn 重复的部分用 hash dedup,实际储存约 30KB / session\n• 持久化在 cowork.db,sidecar 重启也保留\n• 这部分不可关 — 关了「为什么这样回答」就没内容可显',
+  'privacy.wireAudit.title': '进阶 wire payload snapshot(可调)',
   'privacy.wireAudit.desc': 'Sidecar 每 turn 结束时,snapshot 真实送云端 model 的 conv.state_messages(含对话内容 + tool result)。Audit modal 显该 turn 的精准对话。0 = 完全不存,纯走对话 UI 版本(approximate)。范围 0-20。',
   'privacy.wireAudit.unit': '个 turn(范围 0-20)',
   'privacy.wireAudit.modeOff': '完全不存 wire,所有 turn 都用「对话 UI 版本」approximate 显示。最省储存。',
