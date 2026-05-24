@@ -24,26 +24,12 @@ cost ledger + breakdown、soul.md、`?` cheat sheet。
 | # | 功能 | 概念 |
 |---|---|---|
 | ✅ | **A1. 訊息「為什麼這樣回答」追溯** | 每個 turn 末 assistant message 加「🔎 為什麼?」按鈕,modal 顯本 turn 的 system_prompt(完整段落)+ tools list + model + token / cost。Sidecar `AuditStore` per-session ring buffer 100 turns,**content-addressed dedup**(prompts / tool_sets 各自 hash 表 + entries ref)— 同 session 內 system_prompt 跨 turn 幾乎不變,100 turn 從 ~1MB 壓到 ~30KB。持久化 DB JSON 跨 sidecar 重啟。已知 limitation:SDK 自動 inject 的 memory ranker / git status / per_turn_text 暫不在 audit 顯(需要 SDK 暴露 hook 才能 capture)。 |
+| ✅ | **A2. 「我送了什麼給 LLM」隱私 audit** | 沿用 A1 audit modal,加新區段「📤 送 LLM 的訊息」。Sidecar 加 wire_buffer(獨立 ring buffer,maxlen 從 settings 來,default 1,範圍 0-20)snapshot 真實 `conv.state_messages`。Tool result 警示色 + 紅 badge「送了雲端」讓 user 一眼看出檔案內容真的離開機器。有 wire snapshot 顯精準版,沒有就 fallback `messagesBySession`(approximate badge)。Header 加「複製」按鈕一鍵 copy 完整 payload 給 user 離線 audit / diff。Settings 新「隱私 / 資料」section 集中控制(A1 read-only 說明 + A2 數量設定)。95% 對齊真實 wire(SDK auto-inject 的 memory / git_status 不含,modal 有 disclaimer)。 |
+| ✅ | **B2. 跨對話搜尋 — 改成 LLM Tool**(原 spec sidebar UI → 改 Tool) | 設計 pivot:原本想做 sidebar semantic search,改成**對齊 Anthropic 的 `conversation_search` / `recent_chats` Tool 模式**(LLM 主動「想起」過去對話 > user 自己 sidebar 找)。後端 SQLite FTS5 virtual table 對 `messages.raw_text` 全文索引,trigger 自動 sync,BM25 ranker 毫秒級 query。新 cowork-specific tools:`ConversationSearch(query, limit?, session_id?)` 跟 `RecentChats(since?, until?, limit?)`,description 強調「實質性 keyword」對齊 Anthropic 引導語。Read-only,Settings → 工具 新「Recall」group default ON。Pure local — zero embedding model call / zero 外部 service / zero token cost。 |
 
 ---
 
-## A. Trust — 透明度三件套(主推)
-
-### A2. 「我送了什麼給 LLM」隱私 audit
-
-**痛點**:Soul.md / memory / tool result 都會被 inject 進 prompt。User 不確定
-sidecar 真的把哪些東西 forward 給雲端 model。對隱私敏感的 user(用 OpenAI /
-Anthropic 等雲端 provider)會擔心。
-
-**做法**:Settings 加區塊「資料隱私」,顯示**最近 N 次** LLM call 實際 wire
-payload(system + messages 全文),user 可一鍵展開審。也提供「複製整段 prompt」
-讓 user 自己 diff / 送 audit。
-
-**設計考量**:
-- 跟 A1 共用 sidecar snapshot 基礎建設 — 一次做兩個 feature
-- 預設只留最近 20 次(避免 DB 爆),user 可手動清
-- Tool result(可能含 user 私密檔案)要明確高亮「這段送了雲端」
-- 跟 soul.md / memory 系統互動:user 看到送了什麼,可一鍵「從 soul / memory 移除這條」
+## A. Trust — 透明度三件套(剩 A3)
 
 ### A3. 敏感資訊偵測 + 攔截
 
@@ -85,22 +71,6 @@ user click 跳轉 / dismiss。
 - 只在 session **inactive > 2 小時**才顯(避免短時間切走又切回看到自己對話的 recap)
 - Recap 內容存 `cowork_session_ext.recap_text` + `recap_generated_at`
 - Cost 進 ledger 新 origin `recap`
-
-### B2. Sidebar semantic search
-
-**痛點**:目前 sidebar 搜尋是字面 match(title + 內容)。User 想找「我之前怎
-麼處理 OAuth?」但 title 寫的可能是「登入問題 debug」,搜不到。
-
-**做法**:對每個 session 累計時生 embedding(摘要過的版本即可,不必整段對
-話),sidebar 搜尋時 fallback 走 embedding similarity 而非字面 — user 搜「OAuth」
-也找到語意相關的 session。
-
-**設計考量**:
-- Embedding 用 OpenAI `text-embedding-3-small` / Anthropic 也有 — 走 Settings 設
-  的「embedding model」(新加,跟摘要 model 平行)
-- 持久化:per-session 一個 embedding,存 BLOB / JSON(384 維 float)
-- 搜尋 fallback:先字面 → 沒命中或 < N 條 → 跑 embedding similarity 補
-- Cost 增量小(每 session 一次 embedding call)
 
 ### B3. 對話 → 自動 export markdown
 
@@ -178,11 +148,11 @@ Hover 顯 tooltip 預覽,click 跳該 tool row。
 
 ## 推薦優先順序
 
-1. ~~**A1**~~ ✅ — 已完成,基礎建設(AuditStore + dedup + DB persistence)後續 A2 也可直接沿用
-2. **A2 + A3**(透明度剩兩件)— A2 共用 audit 基礎建設容易;A3 純 regex 防護
+1. ~~**A1**~~ ✅ / ~~**A2**~~ ✅ / ~~**B2**~~ ✅ — 已完成。B2 從原 sidebar UI 設想 pivot 成 Tool-only(對齊 Anthropic conversation_search 模式),價值反而更高
+2. **A3**(敏感資訊偵測)— 純 regex 防護,投入最小,效果立即
 3. **B1**(recap chip)— 跨 session 體驗大躍進,沿用既有 cheap LLM channel
-4. **B2**(semantic search)— 投入較大(需 embedding 基礎建設),長期使用者價值高
-5. **D1** / **C1** — 純 polish,有空再做
+4. **B3**(對話自動 export markdown)— Phase 2,沿用同 cheap LLM channel
+5. **C1** / **D1** — 純 polish,有空再做
 
 ---
 

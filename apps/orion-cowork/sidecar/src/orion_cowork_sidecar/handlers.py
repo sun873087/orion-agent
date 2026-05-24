@@ -3445,14 +3445,28 @@ class Handlers:
         Agent group:同樣 Cowork-only(預設 disabled,user 自己開)。
         """
         from orion_cowork_sidecar.browser_tools import browser_tool_group
+        from orion_cowork_sidecar.search_tools import (
+            ConversationSearchTool,
+            RecentChatsTool,
+        )
         from orion_sdk.tools.builtin_set import list_builtin_tool_groups
 
         agent_group: dict[str, Any] = {
             "group": "Agent",
             "tools": [{"name": AgentTool.name, "description": AgentTool.description}],
         }
+        # Recall group — Cowork-only,跨對話搜尋 LLM tool。Read-only,default ON。
+        recall_group: dict[str, Any] = {
+            "group": "Recall",
+            "tools": [
+                {"name": ConversationSearchTool.name, "description": ConversationSearchTool.description},
+                {"name": RecentChatsTool.name, "description": RecentChatsTool.description},
+            ],
+        }
         try:
-            groups = list_builtin_tool_groups(extra_groups=[browser_tool_group(), agent_group])
+            groups = list_builtin_tool_groups(
+                extra_groups=[browser_tool_group(), agent_group, recall_group],
+            )
         except Exception as e: # noqa: BLE001
             yield {
                 "event": "error",
@@ -3728,9 +3742,17 @@ class Handlers:
             build_browser_tools,
             is_browser_available,
         )
+        from orion_cowork_sidecar.search_tools import (
+            ConversationSearchTool,
+            RecentChatsTool,
+        )
         host_tools: list[Any] = [
             OpenUrlTool(),
             OpenPathTool(),
+            # 跨對話搜尋 — LLM 自己決定要不要「想起」之前聊過什麼。Read-only,
+            # 走 SQLite FTS5 keyword search,完全 local zero network。
+            ConversationSearchTool(self.ensure_engine),
+            RecentChatsTool(self.ensure_engine),
             # Plan Mode tools— SDK 自動透過 plan_mode_aware
             # wrapper enforce read-only 白名單。Host 不用包 policy。
             EnterPlanModeTool(),

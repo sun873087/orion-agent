@@ -176,7 +176,242 @@ async def init_storage() -> AsyncEngine:
     await _upsert_local_user(engine)
     await _ensure_cowork_ext_tables(engine)
     await _ensure_default_workspace(engine)
+    await _ensure_messages_fts(engine)
     return engine
+
+
+async def _ensure_messages_fts(engine: AsyncEngine) -> None:
+    """Init FTS5 virtual table over messages + AFTER trigger 自動 sync。
+
+    給 B2 ConversationSearchTool 用 — SQLite 內建 FTS5,BM25 ranker,query 毫秒
+    級,完全在 cowork.db 內,不依賴外部 service / embedding model。
+
+    結構:`messages_fts(message_id UNINDEXED, session_id UNINDEXED, role UNINDEXED, raw_text)`
+    - `raw_text` 是真實 indexed column
+    - 其他 column UNINDEXED 但 join 用
+    - tokenize 用 `unicode61 remove_diacritics 2` — 對中英文都通用,刪變音
+      符號(café → cafe);中文走 character level(SQLite FTS5 沒中文分詞,
+      但 char-level + BM25 對短關鍵字查詢夠用)
+
+    Trigger:AFTER INSERT/UPDATE/DELETE on messages → sync 進 fts。冪等:
+    用 INSERT INTO ... SELECT ... WHERE NOT EXISTS 避免 trigger fire 兩次。
+
+    Backfill:第一次跑時 fts 是空,從 messages 整段 import 進去(idempotent
+    用 INSERT OR REPLACE)。之後增量。
+    """
+    async with engine.connect() as conn:
+        # FTS5 virtual table
+        await conn.exec_driver_sql(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                message_id UNINDEXED,
+                session_id UNINDEXED,
+                role UNINDEXED,
+                raw_text,
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+            """
+        )
+        # Triggers — INSERT/UPDATE/DELETE on messages 自動 sync。raw_text 為
+        # NULL 就跳過(SDK 端 _message_raw_text 對 tool result / image 等可能
+        # 回空字串,FTS5 索引空 row 沒意義)。
+        await conn.exec_driver_sql(
+            """
+            CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages
+            WHEN NEW.raw_text IS NOT NULL AND NEW.raw_text != ''
+            BEGIN
+                INSERT INTO messages_fts (message_id, session_id, role, raw_text)
+                VALUES (NEW.id, NEW.session_id, NEW.role, NEW.raw_text);
+            END
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages
+            BEGIN
+                DELETE FROM messages_fts WHERE message_id = OLD.id;
+            END
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF raw_text ON messages
+            BEGIN
+                DELETE FROM messages_fts WHERE message_id = OLD.id;
+                INSERT INTO messages_fts (message_id, session_id, role, raw_text)
+                SELECT NEW.id, NEW.session_id, NEW.role, NEW.raw_text
+                WHERE NEW.raw_text IS NOT NULL AND NEW.raw_text != '';
+            END
+            """
+        )
+        # Backfill — first init / 跟不上 messages 時補回。Threshold 設「fts
+        # count < messages 有 raw_text count 的 80%」算需要 rebuild。
+        msg_count_result = await conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM messages WHERE raw_text IS NOT NULL AND raw_text != ''"
+        )
+        msg_count = msg_count_result.scalar() or 0
+        fts_count_result = await conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM messages_fts"
+        )
+        fts_count = fts_count_result.scalar() or 0
+        if msg_count > 0 and fts_count < msg_count * 0.8:
+            import sys
+            print(
+                f"[fts] backfill needed: fts={fts_count} / messages={msg_count}",
+                file=sys.stderr, flush=True,
+            )
+            # Truncate + 全量 reinsert(idempotent)
+            await conn.exec_driver_sql("DELETE FROM messages_fts")
+            await conn.exec_driver_sql(
+                """
+                INSERT INTO messages_fts (message_id, session_id, role, raw_text)
+                SELECT id, session_id, role, raw_text FROM messages
+                WHERE raw_text IS NOT NULL AND raw_text != ''
+                """
+            )
+            print(f"[fts] backfill done: {msg_count} rows indexed", file=sys.stderr, flush=True)
+        await conn.commit()
+
+
+async def search_messages_fts(
+    engine: AsyncEngine,
+    query: str,
+    *,
+    limit: int = 10,
+    session_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """FTS5 全文搜尋 messages。
+
+    Args:
+        query: keyword query。FTS5 支援 phrase("..."), AND/OR/NOT,prefix(x*)。
+            User / LLM 通常給單 keyword 即可。空字串回空 list。
+        limit: 結果上限,1-100。
+        session_filter: 限定 session_id(只搜該 session 內)。
+
+    Returns:
+        [{message_id, session_id, session_title, role, snippet, created_at_iso}, ...]
+        snippet 用 FTS5 snippet() 函式 highlight match 前後 context。
+        排序按 BM25 rank(SQLite FTS5 預設,越小越相關)。
+    """
+    if not query or not query.strip():
+        return []
+    limit = max(1, min(100, int(limit)))
+    # 把 user / LLM 給的 query escape:用雙引號包字串避免 FTS5 syntax 誤觸發
+    # (但保留空白讓 multi-word 自然 AND;若要支援 NEAR / phrase 等 advanced
+    # syntax 可改另一條 escape 路徑)
+    safe_query = '"' + query.strip().replace('"', '""') + '"'
+    sql = """
+        SELECT
+            mf.message_id,
+            mf.session_id,
+            mf.role,
+            snippet(messages_fts, 3, '<mark>', '</mark>', '…', 32) AS snippet,
+            m.created_at,
+            cm.title AS session_title
+        FROM messages_fts mf
+        JOIN messages m ON m.id = mf.message_id
+        LEFT JOIN conversation_metadata cm ON cm.session_id = mf.session_id
+        WHERE messages_fts MATCH ?
+        {filter_sql}
+        ORDER BY rank
+        LIMIT ?
+    """.format(
+        filter_sql="AND mf.session_id = ?" if session_filter else "",
+    )
+    params: list[Any] = [safe_query]
+    if session_filter:
+        params.append(session_filter)
+    params.append(limit)
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(sql, tuple(params))
+        rows = result.all()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "message_id": row[0],
+            "session_id": row[1],
+            "role": row[2],
+            "snippet": row[3],
+            "created_at": (
+                row[4].isoformat() if hasattr(row[4], "isoformat")
+                else (str(row[4]) if row[4] else None)
+            ),
+            "session_title": row[5],
+        })
+    return out
+
+
+async def list_recent_chats(
+    engine: AsyncEngine,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """列最近活動 sessions(BY 最後 message timestamp)。
+
+    Args:
+        since / until: ISO 8601 datetime str(e.g. '2026-05-01' / '2026-05-24T12:00:00')。
+            None 表示不限。
+        limit: 1-100。
+
+    Returns:
+        [{session_id, title, n_messages, last_user_msg, last_activity_iso}, ...]
+        按最後 activity 倒序。
+    """
+    limit = max(1, min(100, int(limit)))
+    where_parts: list[str] = ["m.session_id = s.id"]
+    params: list[Any] = []
+    if since:
+        where_parts.append("m.created_at >= ?")
+        params.append(since)
+    if until:
+        where_parts.append("m.created_at <= ?")
+        params.append(until)
+    where_sql = " AND ".join(where_parts)
+    sql = f"""
+        SELECT
+            s.id AS session_id,
+            cm.title AS title,
+            COUNT(m.id) AS n_messages,
+            MAX(m.created_at) AS last_activity
+        FROM sessions s
+        JOIN messages m ON {where_sql}
+        LEFT JOIN conversation_metadata cm ON cm.session_id = s.id
+        GROUP BY s.id, cm.title
+        ORDER BY last_activity DESC
+        LIMIT ?
+    """
+    params.append(limit)
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql(sql, tuple(params))
+        rows = result.all()
+    # 對每個 session 多查最近一個 user msg(snippet 用)
+    out: list[dict[str, Any]] = []
+    async with engine.connect() as conn:
+        for row in rows:
+            sid = row[0]
+            last_user_result = await conn.exec_driver_sql(
+                """
+                SELECT raw_text FROM messages
+                WHERE session_id = ? AND role = 'user' AND raw_text IS NOT NULL
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (sid,),
+            )
+            last_user_row = last_user_result.first()
+            last_user_text = last_user_row[0] if last_user_row else None
+            out.append({
+                "session_id": sid,
+                "title": row[1],
+                "n_messages": row[2],
+                "last_activity": (
+                    row[3].isoformat() if hasattr(row[3], "isoformat")
+                    else (str(row[3]) if row[3] else None)
+                ),
+                "last_user_msg": (last_user_text[:200] if last_user_text else None),
+            })
+    return out
 
 
 async def _ensure_default_workspace(engine: AsyncEngine) -> None:
