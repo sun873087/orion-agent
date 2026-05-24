@@ -66,10 +66,17 @@ collab 內的一個 session。每 pane 有:
 - `pane_position` — JSON `{row, col, w, h, minimized}`,layout 還原用
 - 對應一個獨立 session_id,有自己的 messages / model / context window / 累積 cost
 
-### 3. AskPane tool
+### 3. AskPane tool(pull)
 非阻塞 cross-pane query。Pane A 對 LLM 說「@reviewer 看過了嗎?」→ LLM 呼
 `AskPane(pane_name="@reviewer")` → 拿回對方最近 transcript + status,A 自己決定要不
 要等。
+
+### 4. DispatchPane tool(push)
+非阻塞 cross-pane 派工。AskPane 鏡像 — 從 A 端**主動推**任務給 B 端,而非 A 等 B
+完成自己拉。Pane A 對 LLM 說「@backend 去寫 migration」→ LLM 呼
+`DispatchPane(pane_name="@backend", prompt="寫 migration for users.email")` →
+B pane 收到後 enqueue 該 prompt 當下一輪 user message,自己跑;A 不阻塞,後續用
+AskPane 查進度。Push / pull 兩條合在一起,任一邊都可以發起,符合 collab 雙向。
 
 ---
 

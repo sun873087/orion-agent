@@ -22,10 +22,11 @@ Agent 能呼叫的「能做事的東西」。30+ 內建 + 自訂 Tool 介面。
 - **WebFetch** — 抓 URL → markdown(per-session in-memory TTL cache,預設 5 min)
 - **WebSearch** — 走 SerpAPI(Google search results)
 
-### Skill / Memory
+### Skill / Memory / Search
 - **Skill** — load skill bundle inject 進 system
 - **MemoryWrite** — 寫一條 markdown memory
 - **MemoryRead** — recall by name / type
+- **conversation_search**(Cowork)— 跨 session 全文搜歷史對話,支援 project / collab / session scope filter(對齊 Anthropic conversation_search 模式)
 
 ### MCP-related
 - **McpListServers** — 列出已連 MCP server
@@ -34,6 +35,8 @@ Agent 能呼叫的「能做事的東西」。30+ 內建 + 自訂 Tool 介面。
 ### Multi-agent
 - **AgentTool** / **SubAgentCreate** — spawn sub-agent 跑 sub-task
 - **AgentSend** — peer 模式跨 agent 訊息
+- **AskPane**(Cowork)— collab 內 pane 間 pull query,拿對方 status + transcript excerpt
+- **DispatchPane**(Cowork)— collab 內 pane 間 push 派工,enqueue prompt 給對方下一輪
 
 ### Workflow
 - **TodoWrite** — 維護 task list(stateful、UI 顯)
