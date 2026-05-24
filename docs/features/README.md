@@ -12,7 +12,7 @@
 | [agent-loop.md](./agent-loop.md) | Conversation + QueryLoop + StreamingExecutor 怎麼跑 | `core/` |
 | [tools.md](./tools.md) | 30+ 內建工具集 + 自訂 Tool 介面 | `tools/` |
 | [streaming.md](./streaming.md) | LLM 事件流 → user-facing event 的轉換 | `core/`、`orion_model/events.py` |
-| [models.md](./models.md) | Anthropic / OpenAI / Ollama provider 行為 | `orion-model/` |
+| [models.md](./models.md) | Anthropic / OpenAI / Google Gemini / OpenRouter / Ollama provider 行為 | `orion-model/` |
 | [permissions.md](./permissions.md) | Permission policy(always_allow / ask / DSL) | `permissions/` |
 
 ## Model Proxy(集中計費 / 限速 / 多 user)

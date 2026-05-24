@@ -17,9 +17,10 @@ packages/orion-model/src/orion_model/
 ├── openai_provider.py           AsyncOpenAI SDK 薄包(Responses API)
 ├── ollama_provider.py           本機 daemon HTTP
 ├── openrouter_provider.py       OpenRouter gateway(OpenAI-compat chat.completions wire)
-├── google_provider.py           Google Gemini(OpenAI-compat /v1beta/openai endpoint)
+├── google_provider.py           Google Gemini(native /v1beta API + thought_signature)
 ├── events.py                    NormalizedEvent / NormalizedUsage(跨 provider 一致)
-├── types.py                     NormalizedMessage / ImageBlock / TextBlock
+├── types.py                     NormalizedMessage / ImageBlock / TextBlock(含 ToolUseBlock.thought_signature)
+├── errors.py                    ProviderHTTPError — native http provider 4xx/5xx 友善訊息
 ├── catalog.py + models.json     Chat model catalog(pricing / max_tokens;packaged static)
 ├── stt_catalog.py + stt_models.json    STT pricing
 ├── tts_catalog.py + tts_models.json    TTS pricing
@@ -39,12 +40,24 @@ vendor。`OpenRouterProvider` 走 chat.completions wire(不是 OpenAI Responses 
 Models 寫進 `models.json` static section(精選 :free tier 等),user 想加新 model
 直接編 JSON。
 
-**Google Gemini** — 走 Gemini OpenAI-compat endpoint
-(`https://generativelanguage.googleapis.com/v1beta/openai/`),用 `GEMINI_API_KEY`
-(跟 `GOOGLE_STT_API_KEY` 區隔 — STT / LLM 是不同 API)。`GoogleProvider` 共用
-`openrouter_provider` 內 message / tool translation helpers(都是 chat.completions
-wire)。Proxy 模式:client `base_url={proxy}/google`(不加 /v1,因為 Google 端點
-是 `/v1beta/openai/...` 不是 `/v1/...`),proxy `upstream_base=generativelanguage.googleapis.com/v1beta/openai`。
+**Google Gemini** — 走 native Gemini API
+(`generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse`)
+而**非** OpenAI-compat 端點。原因:multi-turn tool use 需要 `thought_signature`
+跨 turn echo,OpenAI-compat 不傳這欄位會 400。Native API 我們完整管 signature ——
+`stream()` 從 functionCall part 抽 `thoughtSignature`,塞進 `ToolUseBlock.thought_signature`,
+下個 turn 翻譯回 Gemini 時放回 `parts[].thoughtSignature`。Translation 在
+`google_provider` 內自己一套(NormalizedMessage ↔ contents/parts),schema cleaner
+做 `$ref` inline + 砍 `exclusiveMinimum` / empty enum 等 Gemini 不認的 keyword。
+Auth 直連用 `x-goog-api-key`,proxy 用 Bearer。Proxy 模式:client
+`base_url={proxy}/google/v1beta`,proxy `upstream_base=generativelanguage.googleapis.com`。
+
+**ProviderHTTPError**(`errors.py`)— Native httpx provider(目前 google,將來別的)
+4xx/5xx 不裸 raise `httpx.HTTPStatusError`,改 raise `ProviderHTTPError` 帶
+`status_code` / `provider` / `upstream_message`,`__str__` 自動組中文友善訊息
+(429 Gemini 給 free tier 配額 hint、400 帶 upstream validation message 等)。
+Sidecar `_format_send_error` 識別後直接給 UI,不爆 raw JSON。SDK-based provider
+(openai / anthropic)用 SDK 自家 `RateLimitError` / `AuthenticationError`,既有
+mapping 已認 — 不用這 class。
 
 ### orion-sdk
 

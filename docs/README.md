@@ -14,7 +14,7 @@
 ```
 orion-agent/
 ├── packages/
-│   ├── orion-model        ← 純 LLM provider 抽象(Anthropic / OpenAI / Ollama)
+│   ├── orion-model        ← 純 LLM provider 抽象(Anthropic / OpenAI / Google Gemini / OpenRouter / Ollama)
 │   ├── orion-sdk          ← Agent runtime:對話 loop、工具、權限、記憶、MCP、...
 │   └── orion-model-proxy  ← Optional HTTP 服務,集中 API key / cost / routing
 └── apps/

@@ -1,7 +1,8 @@
 # Model Proxy
 
-Transparent reverse proxy 包 OpenAI / Anthropic,加 multi-tenant auth + per-user
-計費 + budget enforcement + admin Web UI。可選 service,不啟用 client 直連也行。
+Transparent reverse proxy 包 OpenAI / Anthropic / Google Gemini / OpenRouter,
+加 multi-tenant auth + per-user 計費 + budget enforcement + admin Web UI。
+可選 service,不啟用 client 直連也行。
 
 **實作位置**:`packages/orion-model-proxy/`
 
@@ -22,8 +23,11 @@ Transparent reverse proxy 包 OpenAI / Anthropic,加 multi-tenant auth + per-use
 ┌─────────────────────────────────────────────────────────────────┐
 │  orion-model-proxy(FastAPI, :9090)                               │
 │                                                                  │
-│  /openai/{path:path}     → api.openai.com    catch-all,透傳     │
-│  /anthropic/{path:path}  → api.anthropic.com 同上,5 verb 全收  │
+│  /openai/{path:path}     → api.openai.com         catch-all     │
+│  /anthropic/{path:path}  → api.anthropic.com      5 verb 全收   │
+│  /openrouter/{path:path} → openrouter.ai/api      OpenAI-compat │
+│  /google/{path:path}     → generativelanguage.googleapis.com    │
+│                                native /v1beta API + x-goog-key │
 │  /v1/health[/{provider}]                       public,no auth   │
 │  /v1/catalog                                   chat/stt/tts JSON │
 │  /admin/*                                      REST(admin token) │
@@ -86,10 +90,12 @@ DB backend 由 `ORION_PROXY_DB_URL` env 切:dev 用 SQLite,prod 用 Postgres。`
 # 1. Bootstrap(一鍵生 ADMIN_KEY + 寫 .env + 指引)
 make proxy-bootstrap
 
-# 2. 填上游 key
+# 2. 填上游 key(填哪幾個就支援哪幾個 provider,沒填的回 503)
 $EDITOR packages/orion-model-proxy/.env
 # ANTHROPIC_API_KEY=sk-ant-...
 # OPENAI_API_KEY=sk-proj-...
+# OPENROUTER_API_KEY=sk-or-v1-...
+# GEMINI_API_KEY=AIzaSy...
 
 # 3. 跑 proxy
 make dev-model-proxy
@@ -111,7 +117,7 @@ ORION_MODEL_PROXY_KEY=sk-orion-prod-...
 |---|---|---|
 | `ORION_MODEL_PROXY_ADMIN_KEY` | proxy server env | 進 `/admin/*` REST + `/admin/ui` |
 | User API key(`sk-orion-<env>-<random>`) | proxy DB(`api_keys.token_hash`) | client 走 `/openai/*` `/anthropic/*` 帶這個 |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | proxy server env | proxy 對上游用真實 key |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GEMINI_API_KEY` | proxy server env | proxy 對上游用真實 key(沒設的 provider 回 503) |
 
 Status code 對齊 OpenAI / Anthropic 慣例:
 
@@ -134,6 +140,9 @@ Status code 對齊 OpenAI / Anthropic 慣例:
 | `/openai/v1/embeddings` | `usage.prompt_tokens` |
 | `/openai/v1/audio/speech` | `input` text 字元數 × tts pricing |
 | `/anthropic/v1/messages`(stream + non-stream) | `usage.input/output/cache_read/cache_creation_input_tokens` |
+| `/openrouter/v1/chat/completions` | OpenAI-compat usage 同 OpenAI |
+| `/google/v1beta/models/*:streamGenerateContent`(SSE) | `usageMetadata.{promptTokenCount, candidatesTokenCount, cachedContentTokenCount}` |
+| `/google/v1beta/models/*:generateContent`(non-stream) | 同上 |
 | 其他 | log endpoint + cost=0(best-effort) |
 
 Pricing 來源:`orion_model.catalog` / `tts_catalog`(跟 client SDK 同份)。
@@ -178,6 +187,30 @@ client = Anthropic(
     api_key="sk-orion-prod-...",
 )
 resp = client.messages.create(model="claude-haiku-4-5", ...)
+```
+
+**OpenRouter**(走 OpenAI SDK + 改 base_url):
+
+```python
+from openai import OpenAI
+client = OpenAI(
+    base_url="http://proxy.local:9090/openrouter/v1",
+    api_key="sk-orion-prod-...",
+)
+resp = client.chat.completions.create(
+    model="deepseek/deepseek-v4-flash:free",
+    messages=[...],
+)
+```
+
+**Google Gemini**(native API,任何 HTTP client 都可):
+
+```bash
+curl http://proxy.local:9090/google/v1beta/models/gemini-3.1-flash-lite:streamGenerateContent \
+  -H "Authorization: Bearer sk-orion-prod-..." \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}'
+# proxy 端把 Authorization 改寫成 x-goog-api-key + 真實 GEMINI_API_KEY
 ```
 
 **curl**:
