@@ -77,8 +77,38 @@ async def db_session(
         yield session
 
 
+def _add_missing_columns(conn) -> None:  # type: ignore[no-untyped-def]
+    """對既有表補上 model 新增的欄位(輕量 migration)。
+
+    `create_all` 只建缺的「表」,不會 ALTER 既有表加「欄位」。各 phase 漸進地往
+    `conversation_metadata` 等表加欄位(starred / budget / plan / project_id …),
+    既有 DB(persistent SQLite / Postgres)需要這層補欄位才不會 OperationalError。
+
+    **慣例:新增欄位一律 nullable**(這裡 ADD COLUMN 不帶 NOT NULL / DEFAULT),
+    對既有 row 永遠安全;app 讀取時自行把 NULL 當預設值(如 `bool(row.starred)`)。
+    production 仍建議走 Alembic;此 helper 是 dev / 漸進 schema 的安全網。
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from orion_sdk.storage.db.models import Base
+
+    insp = sa_inspect(conn)
+    existing_tables = set(insp.get_table_names())
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # create_all 剛建的新表已含所有欄位
+        have = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in have:
+                continue
+            coltype = col.type.compile(dialect=conn.dialect)
+            conn.exec_driver_sql(
+                f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {coltype}'
+            )
+
+
 async def init_db(engine: AsyncEngine) -> None:
-    """建表(create_all)。production 應走 Alembic migrate。
+    """建表(create_all)+ 補既有表缺的欄位。production 應走 Alembic migrate。
 
     測試 / dev 用此 helper 起記憶體 SQLite 即時可用。
     """
@@ -86,3 +116,4 @@ async def init_db(engine: AsyncEngine) -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)

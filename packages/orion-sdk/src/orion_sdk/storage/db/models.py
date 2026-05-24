@@ -16,7 +16,16 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+)
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -167,8 +176,90 @@ class ConversationMetadata(Base):
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    starred: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    """加星標(sidebar 置頂用)。漸進欄位 → nullable;讀取以 bool(starred) 視 NULL 為 False。"""
+    parent_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    """fork 來源 session（fork 樹）。"""
+    forked_from_message_index: Mapped[int | None] = mapped_column(nullable=True)
+    """從來源的第幾則 message 分支。"""
+    budget_usd_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    """per-session 成本上限(USD)。None = 不限。"""
+    budget_exceeded: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    """是否已超過上限(超過後拒絕新 turn)。"""
+    permission_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    """ask(每個工具問)/ act(全放行)。None → 預設 ask。"""
+    plan_mode_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    """inactive / active / awaiting_approval。None → inactive。"""
+    plan_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """submit_plan 時模型寫的 plan 內容(等待 approve)。"""
+    project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    """所屬 project(per-project 自訂指令 / workspace)。None = 無。"""
+    collaboration_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    """所屬 collaboration(多 pane 協作);此 session 即其中一個 pane。"""
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now,
+    )
+
+
+class Project(Base):
+    """使用者的 project — 可掛 per-project 自訂指令 / workspace,組織多個 session。"""
+
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4()),
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workspace_dir: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now,
+    )
+
+
+class Collaboration(Base):
+    """多 pane 協作容器(限同一 user 的多個 session 並排 / 互相派工)。"""
+
+    __tablename__ = "collaborations"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4()),
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now,
+    )
+
+
+class Schedule(Base):
+    """cron 排程 / Loop(target_session_id 非 null = Loop,反覆對既有 session 注入)。"""
+
+    __tablename__ = "schedules"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4()),
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    cron_expr: Mapped[str] = mapped_column(String(120))
+    trigger_type: Mapped[str] = mapped_column(String(16), default="prompt")
+    """prompt / skill。"""
+    payload: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    target_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_run_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    next_run_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now,
     )
 
 

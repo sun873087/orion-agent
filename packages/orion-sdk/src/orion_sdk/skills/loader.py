@@ -185,6 +185,11 @@ def _user_skills_dir(user_id: str) -> Path:
     return _user_skills_root() / safe / "skills"
 
 
+def get_user_skills_dir(user_id: str) -> Path:
+    """Public — 給 host(chat-api RPC / route)寫 / 刪 skill 用。對齊 roles 的 get_user_roles_dir。"""
+    return _user_skills_dir(user_id)
+
+
 def _project_skills_dir() -> Path:
     """CLI cwd-based skills(web chat 場景 cwd 是 server 共用,效果等同 system 級)。"""
     return Path.cwd() / ".orion" / "skills"
