@@ -121,17 +121,20 @@ def record_usage(
     session_id: str,
     user_id: str | None,
     model: str,
+    origin: str = "chat",
     input_tokens: int = 0,
     output_tokens: int = 0,
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
     duration_ms: float = 0.0,
 ) -> None:
-    """把 LLM API response.usage 寫進 cost_tracker + OTel counter。"""
+    """把 LLM API response.usage 寫進 cost_tracker + OTel counter。origin 區分
+    chat / title / follow_ups,讓 /cost 能 by-origin 細分(對齊 cowork CostLedger)。"""
     # cost tracker
     tracker = get_or_create_tracker(session_id, user_id)
     tracker.record(
         model=model,
+        origin=origin,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_creation_tokens=cache_creation_tokens,

@@ -52,6 +52,10 @@ class AgentContext:
     user_id: str = "default"
     """Per-user memory key。CLI 預設 "default";FastAPI 透過 session middleware 注入。"""
 
+    origin: str = "chat"
+    """成本歸屬(cost_tracker by-origin):主對話 turn = "chat";host 跑 side-query
+    (title / follow_ups)時另開 ctx 設成對應 origin。"""
+
     cwd_stack: list[Path] = field(default_factory=list)
     """EnterWorkdirTool / ExitWorkdirTool 的 cwd push/pop 堆疊。
     Enter 把當前 ctx.cwd push 進來,改成新值;Exit 從 stack pop 還原。

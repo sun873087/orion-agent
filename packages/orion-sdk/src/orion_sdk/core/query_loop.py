@@ -219,8 +219,11 @@ async def _run_one_turn(
                 session_id=str(ctx.session_id),
                 user_id=ctx.user_id,
                 model=params.provider.model,
+                origin=getattr(ctx, "origin", "chat"),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
             )
 
             # ─── 2. 組 assistant NormalizedMessage ──────────────────────────

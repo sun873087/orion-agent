@@ -97,3 +97,18 @@ def test_get_session_summary_present() -> None:
     s = get_session_summary("s1")
     assert s is not None
     assert s["session_id"] == "s1"
+
+
+def test_by_origin_splits_cost_and_sums_to_total() -> None:
+    t = SessionCostTracker(session_id="s1")
+    t.record(model="claude-sonnet-4-6", origin="chat", input_tokens=1000, output_tokens=200)
+    t.record(model="claude-sonnet-4-6", origin="title", input_tokens=300, output_tokens=10)
+    t.record(model="claude-sonnet-4-6", origin="follow_ups", input_tokens=300, output_tokens=20)
+    s = t.summary()
+    by_origin = s["by_origin"]
+    assert set(by_origin) == {"chat", "title", "follow_ups"}
+    assert by_origin["chat"]["input_tokens"] == 1000
+    assert by_origin["title"]["input_tokens"] == 300
+    # 各 origin 的 cost 加總 == 總 cost(by_model 與 by_origin 記同一份 token)
+    origin_cost = sum(o["cost_usd"] for o in by_origin.values())
+    assert origin_cost == pytest.approx(s["total_cost_usd"], abs=1e-9)

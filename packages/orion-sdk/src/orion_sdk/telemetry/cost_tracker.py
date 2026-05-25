@@ -32,28 +32,34 @@ class SessionCostTracker:
     by_model: dict[str, ModelUsage] = field(
         default_factory=lambda: defaultdict(ModelUsage),
     )
+    # origin → model → usage(chat / title / follow_ups …;同 token 同時記進 by_model)
+    by_origin: dict[str, dict[str, ModelUsage]] = field(
+        default_factory=lambda: defaultdict(lambda: defaultdict(ModelUsage)),
+    )
     total_api_duration_ms: float = 0.0
 
     def record(
         self,
         *,
         model: str,
+        origin: str = "chat",
         input_tokens: int = 0,
         output_tokens: int = 0,
         cache_creation_tokens: int = 0,
         cache_read_tokens: int = 0,
         duration_ms: float = 0.0,
     ) -> None:
-        m = self.by_model[model]
-        m.input_tokens += int(input_tokens)
-        m.output_tokens += int(output_tokens)
-        m.cache_creation_tokens += int(cache_creation_tokens)
-        m.cache_read_tokens += int(cache_read_tokens)
+        for m in (self.by_model[model], self.by_origin[origin][model]):
+            m.input_tokens += int(input_tokens)
+            m.output_tokens += int(output_tokens)
+            m.cache_creation_tokens += int(cache_creation_tokens)
+            m.cache_read_tokens += int(cache_read_tokens)
         self.total_api_duration_ms += float(duration_ms)
 
-    def total_cost_usd(self) -> float:
+    @staticmethod
+    def _cost_of(by_model: dict[str, ModelUsage]) -> float:
         total = 0.0
-        for model, usage in self.by_model.items():
+        for model, usage in by_model.items():
             p = get_model_pricing(model)
             total += (
                 usage.input_tokens * p.input_per_token
@@ -62,6 +68,9 @@ class SessionCostTracker:
                 + usage.cache_read_tokens * p.cache_read_per_token
             )
         return total
+
+    def total_cost_usd(self) -> float:
+        return self._cost_of(self.by_model)
 
     def cache_hit_ratio(self) -> float:
         total_input = sum(
@@ -86,6 +95,22 @@ class SessionCostTracker:
                     "cache_read_tokens": u.cache_read_tokens,
                 }
                 for model, u in self.by_model.items()
+            },
+            "by_origin": {
+                origin: {
+                    "cost_usd": round(self._cost_of(models), 6),
+                    "input_tokens": sum(u.input_tokens for u in models.values()),
+                    "output_tokens": sum(
+                        u.output_tokens for u in models.values()
+                    ),
+                    "cache_creation_tokens": sum(
+                        u.cache_creation_tokens for u in models.values()
+                    ),
+                    "cache_read_tokens": sum(
+                        u.cache_read_tokens for u in models.values()
+                    ),
+                }
+                for origin, models in self.by_origin.items()
             },
         }
 

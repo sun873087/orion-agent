@@ -194,6 +194,8 @@ class ConversationMetadata(Base):
     """submit_plan 時模型寫的 plan 內容(等待 approve)。"""
     project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     """所屬 project(per-project 自訂指令 / workspace)。None = 無。"""
+    active_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """套用的 role / persona 名;其 ROLE.md body 注入 system prompt。None = 無。"""
     collaboration_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     """所屬 collaboration(多 pane 協作);此 session 即其中一個 pane。"""
     updated_at: Mapped[datetime] = mapped_column(

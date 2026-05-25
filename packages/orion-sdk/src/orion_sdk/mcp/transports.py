@@ -50,11 +50,20 @@ def _open_stdio(config: StdioMcpConfig) -> AbstractAsyncContextManager[tuple[Any
 
 
 def _open_http(config: HttpMcpConfig) -> AbstractAsyncContextManager[tuple[Any, Any]]:
-    """HTTP transport stub。
+    """遠端 streamable-HTTP transport(delegate mcp SDK streamablehttp_client)。
 
-    TODO:接 mcp.client.streamable_http.streamablehttp_client。
+    streamablehttp_client 產 3-tuple (read, write, get_session_id),但 McpClient
+    只解 (read, write) — 包一層丟掉第三個,對齊 stdio 介面。
     """
-    raise NotImplementedError(
-        f"HTTP MCP transport for {config.url!r} not implemented in; "
-        "see roadmap"
-    )
+    from contextlib import asynccontextmanager
+
+    from mcp.client.streamable_http import streamablehttp_client
+
+    @asynccontextmanager
+    async def _cm() -> Any:
+        async with streamablehttp_client(
+            url=config.url, headers=config.headers or None,
+        ) as (read, write, _get_session_id):
+            yield read, write
+
+    return _cm()
