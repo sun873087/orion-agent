@@ -183,6 +183,14 @@ export interface ModelCatalog {
   default: { provider: string; model: string }
 }
 
+export interface OriginUsage {
+  cost_usd: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+}
+
 export interface CostSummary {
   session_id?: string
   total_cost_usd: number
@@ -192,6 +200,8 @@ export interface CostSummary {
   cache_creation_tokens: number
   reasoning_tokens: number
   cache_hit_ratio?: number
+  /** 成本依來源細分:chat / title / follow_ups …(對齊 cowork CostLedger)。 */
+  by_origin?: Record<string, OriginUsage>
 }
 
 export interface UploadSummary {

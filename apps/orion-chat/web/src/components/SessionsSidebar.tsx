@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '../i18n'
+import { useUiStore } from '../store/uiStore'
 import type { ModelCatalog, SessionSummary } from '../types/events'
 
 interface Props {
@@ -35,6 +36,7 @@ function UserMenu({
   onLogout,
 }: UserMenuProps) {
   const { t } = useTranslation()
+  const avatar = useUiStore((s) => s.userAvatar)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -55,19 +57,24 @@ function UserMenu({
   }, [open])
 
   const initial = (username ?? '?').charAt(0).toUpperCase()
+  const avatarInner = avatar ? (
+    <img src={avatar} alt="" className="h-full w-full object-cover" />
+  ) : (
+    initial
+  )
 
   return (
     <div ref={wrapRef} className="relative">
       {variant === 'rail' ? (
         <button
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium hover:ring-2 hover:ring-claude-borderSoft transition"
+          className="inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium hover:ring-2 hover:ring-claude-borderSoft transition"
           title={username ?? '?'}
           aria-label={t('sidebar.userMenu')}
           aria-haspopup="menu"
           aria-expanded={open}
         >
-          {initial}
+          {avatarInner}
         </button>
       ) : (
         <button
@@ -76,8 +83,8 @@ function UserMenu({
           aria-haspopup="menu"
           aria-expanded={open}
         >
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium">
-            {initial}
+          <span className="inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-claude-orange/20 text-claude-orange text-xs font-medium">
+            {avatarInner}
           </span>
           <span className="truncate flex-1 text-left">{username ?? '?'}</span>
         </button>

@@ -144,19 +144,28 @@ describe('sessionStore.changeModel', () => {
     expect(apiFetchMock).not.toHaveBeenCalled()
   })
 
-  it('drops the empty current session then creates a new one', async () => {
+  it('switches the current session model in place via PUT', async () => {
     useSessionStore.setState({
-      sessions: [mk('empty', 0)],
-      currentSid: 'empty',
+      sessions: [mk('s1', 3)],
+      currentSid: 's1',
+      draft: null,
     })
-    apiFetchMock
-      .mockResolvedValueOnce(undefined) // DELETE empty
-      .mockResolvedValueOnce(mk('new2', 0)) // POST create
+    apiFetchMock.mockResolvedValueOnce({
+      ...mk('s1', 3),
+      provider: 'p2',
+      model: 'm2',
+    })
     await useSessionStore
       .getState()
       .changeModel({ provider: 'p2', model: 'm2' })
     const s = useSessionStore.getState()
-    expect(s.currentSid).toBe('new2')
-    expect(s.sessions.map((x) => x.session_id)).not.toContain('empty')
+    // 同一個 session,model 就地更新 — 沒重建
+    expect(s.currentSid).toBe('s1')
+    expect(s.sessions[0]?.provider).toBe('p2')
+    expect(s.sessions[0]?.model).toBe('m2')
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/sessions/s1/model',
+      expect.objectContaining({ method: 'PUT' }),
+    )
   })
 })

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '../i18n'
-import { CollaborationsPanel } from './CollaborationsPanel'
+import { useUiStore } from '../store/uiStore'
 import { ConnectionsPanel } from './ConnectionsPanel'
-import { CustomInstructionsPanel } from './CustomInstructionsPanel'
 import { McpServersPanel } from './McpServersPanel'
 import { MemoryPanel } from './MemoryPanel'
+import { ModelSettingsPanel } from './ModelSettingsPanel'
 import { ProjectsPanel } from './ProjectsPanel'
 import { RolesPanel } from './RolesPanel'
 import { SchedulesPanel } from './SchedulesPanel'
@@ -13,30 +13,29 @@ import { SkillsPanel } from './SkillsPanel'
 import { SoulPanel } from './SoulPanel'
 
 type Tab =
-  | 'instructions'
-  | 'settings'
+  | 'general'
+  | 'models'
   | 'memory'
   | 'skills'
   | 'roles'
   | 'soul'
   | 'projects'
   | 'schedules'
-  | 'collab'
   | 'connections'
 
 interface Props {
-  sessionId: string | null
   onClose: () => void
 }
 
 const TABS: { key: Tab; labelKey: string; icon: JSX.Element }[] = [
   {
-    key: 'instructions',
-    labelKey: 'settings.tab.instructions',
+    key: 'general',
+    labelKey: 'settings.tab.general',
     icon: (
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
         <path
-          d="M3 4h10M3 8h10M3 12h6"
+          d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2"
           stroke="currentColor"
           strokeWidth="1.5"
           strokeLinecap="round"
@@ -45,15 +44,23 @@ const TABS: { key: Tab; labelKey: string; icon: JSX.Element }[] = [
     ),
   },
   {
-    key: 'settings',
-    labelKey: 'settings.tab.settings',
+    key: 'models',
+    labelKey: 'settings.tab.models',
     icon: (
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2"
+        <rect
+          x="3.5"
+          y="3.5"
+          width="9"
+          height="9"
+          rx="1.5"
           stroke="currentColor"
           strokeWidth="1.5"
+        />
+        <path
+          d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M12.5 6h2M12.5 10h2M1.5 6h2M1.5 10h2"
+          stroke="currentColor"
+          strokeWidth="1.3"
           strokeLinecap="round"
         />
       </svg>
@@ -151,22 +158,6 @@ const TABS: { key: Tab; labelKey: string; icon: JSX.Element }[] = [
     ),
   },
   {
-    key: 'collab',
-    labelKey: 'settings.tab.collab',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="5" cy="6" r="2" stroke="currentColor" strokeWidth="1.3" />
-        <circle cx="11" cy="6" r="2" stroke="currentColor" strokeWidth="1.3" />
-        <path
-          d="M2 13c0-2 1.3-3 3-3s3 1 3 3M8 13c0-2 1.3-3 3-3s3 1 3 3"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
     key: 'connections',
     labelKey: 'settings.tab.connections',
     icon: (
@@ -179,9 +170,13 @@ const TABS: { key: Tab; labelKey: string; icon: JSX.Element }[] = [
   },
 ]
 
-export function SettingsModal({ sessionId, onClose }: Props) {
+export function SettingsModal({ onClose }: Props) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<Tab>('instructions')
+  const initialTab = useUiStore((s) => s.settingsTab)
+  // modal 每次開啟才 mount(條件渲染),init 時 settingsTab 已被 openSettings 設好
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.some((x) => x.key === initialTab) ? (initialTab as Tab) : 'general',
+  )
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -246,17 +241,14 @@ export function SettingsModal({ sessionId, onClose }: Props) {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {tab === 'instructions' && (
-              <CustomInstructionsPanel sessionId={sessionId} />
-            )}
-            {tab === 'settings' && <SettingsPanel />}
+            {tab === 'general' && <SettingsPanel />}
+            {tab === 'models' && <ModelSettingsPanel />}
             {tab === 'memory' && <MemoryPanel />}
             {tab === 'skills' && <SkillsPanel />}
             {tab === 'roles' && <RolesPanel />}
             {tab === 'soul' && <SoulPanel />}
             {tab === 'projects' && <ProjectsPanel />}
             {tab === 'schedules' && <SchedulesPanel />}
-            {tab === 'collab' && <CollaborationsPanel />}
             {tab === 'connections' && (
               <>
                 <div className="p-6 border-b border-claude-border/60">

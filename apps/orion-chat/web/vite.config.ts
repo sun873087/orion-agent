@@ -40,6 +40,7 @@ export default defineConfig({
       '/mcp': httpProxy,
       '/schedules': httpProxy,
       '/collaborations': httpProxy,
+      '/voice': httpProxy,
       '/uploads': httpProxy,
       '/models': httpProxy,
       '/healthz': httpProxy,

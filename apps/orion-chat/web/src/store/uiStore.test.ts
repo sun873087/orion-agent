@@ -43,6 +43,13 @@ describe('uiStore', () => {
     expect(useUiStore.getState().settingsOpen).toBe(false)
   })
 
+  it('openSettings(tab) deep-links a tab, close resets it', () => {
+    useUiStore.getState().openSettings('schedules')
+    expect(useUiStore.getState().settingsTab).toBe('schedules')
+    useUiStore.getState().closeSettings()
+    expect(useUiStore.getState().settingsTab).toBeNull()
+  })
+
   it('hydrateLocaleFromBackend applies a valid remote locale', async () => {
     apiFetchMock.mockResolvedValueOnce({ locale: 'zh-CN' })
     await useUiStore.getState().hydrateLocaleFromBackend()

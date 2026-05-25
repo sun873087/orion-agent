@@ -12,7 +12,7 @@ test('switching language re-renders the whole UI', async ({
   await expect(page.getByRole('button', { name: 'New chat' })).toBeVisible()
 
   await openSettings(page, username)
-  await clickSettingsTab(page, 'Settings')
+  await clickSettingsTab(page, 'General')
 
   // 語言下拉(含「日本語」選項的那顆 select)→ 切 ja
   const langSelect = page

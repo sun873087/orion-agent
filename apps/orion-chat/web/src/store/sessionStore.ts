@@ -104,25 +104,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   changeModel: async (choice) => {
-    const { draft, currentSid, sessions } = get()
+    const { draft, currentSid } = get()
     if (draft !== null) {
+      // 還沒建 session — 只更新暫存選擇,commitDraft 時才帶進 create
       set({ draft: choice })
       return
     }
-    // model picker 只在 empty session 出現 — 把上一個空 session 刪掉
-    const cur = sessions.find((s) => s.session_id === currentSid)
-    if (currentSid && cur && cur.n_messages === 0) {
-      await get().remove(currentSid)
-    }
+    if (!currentSid) return
     try {
-      const s = await createSession(choice)
+      // 就地切換現有 session 的 model — 歷史保留,後續 turn 用新 model
+      const s = await apiFetch<SessionSummary>(
+        `/sessions/${currentSid}/model`,
+        {
+          method: 'PUT',
+          body: { provider: choice.provider, model: choice.model },
+        },
+      )
       setPreferredModel({ provider: s.provider, model: s.model })
       set((st) => ({
-        sessions: [
-          s,
-          ...st.sessions.filter((p) => p.session_id !== s.session_id),
-        ],
-        currentSid: s.session_id,
+        sessions: st.sessions.map((p) =>
+          p.session_id === s.session_id ? s : p,
+        ),
       }))
     } catch (e) {
       set({ error: errMsg(e) })

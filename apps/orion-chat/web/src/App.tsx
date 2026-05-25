@@ -119,7 +119,7 @@ export default function App() {
       />
 
       {settingsOpen && (
-        <SettingsModal sessionId={currentSid} onClose={closeSettings} />
+        <SettingsModal onClose={closeSettings} />
       )}
     </div>
   )

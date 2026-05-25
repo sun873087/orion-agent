@@ -20,122 +20,122 @@ export type OrionChatServerClientEvents =
   | SessionTitleUpdatedEvent
   | BudgetExceededEvent
   | AutoCompactSuggestedEvent
-  | FollowUpsUpdatedEvent
-export type Type = 'user_text'
-export type Text = string
-export type Type1 = 'history_replay_done'
-export type Type2 = 'assistant_text'
-export type Text1 = string
-export type Type3 = 'assistant_thinking'
-export type Text2 = string
-export type Type4 = 'tool_use'
-export type ToolUseId = string
-export type ToolName = string
-export type Type5 = 'tool_result'
-export type ToolUseId1 = string
-export type ToolName1 = string
-export type Content = string
-export type IsError = boolean
-export type Type6 = 'permission_ask'
-export type RequestId = string
-export type ToolName2 = string
-export type TimeoutSeconds = number
-export type Type7 = 'ask_user_question'
-export type RequestId1 = string
+  | FollowUpsUpdatedEvent;
+export type Type = "user_text";
+export type Text = string;
+export type Type1 = "history_replay_done";
+export type Type2 = "assistant_text";
+export type Text1 = string;
+export type Type3 = "assistant_thinking";
+export type Text2 = string;
+export type Type4 = "tool_use";
+export type ToolUseId = string;
+export type ToolName = string;
+export type Type5 = "tool_result";
+export type ToolUseId1 = string;
+export type ToolName1 = string;
+export type Content = string;
+export type IsError = boolean;
+export type Type6 = "permission_ask";
+export type RequestId = string;
+export type ToolName2 = string;
+export type TimeoutSeconds = number;
+export type Type7 = "ask_user_question";
+export type RequestId1 = string;
 export type Questions = {
-  [k: string]: unknown
-}[]
-export type TimeoutSeconds1 = number
-export type Type8 = 'turn_complete'
-export type StopReason = string
-export type InputTokens = number
-export type OutputTokens = number
-export type Type9 = 'terminal'
-export type Reason = string
-export type TotalTurns = number
-export type Type10 = 'error'
-export type Message = string
-export type Type11 = 'session_title_updated'
-export type SessionId = string
-export type Title = string
-export type Type12 = 'budget_exceeded'
-export type SessionId1 = string
-export type TotalCostUsd = number
-export type Cap = number | null
-export type Type13 = 'auto_compact_suggested'
-export type SessionId2 = string
-export type Type14 = 'follow_ups_updated'
-export type SessionId3 = string
-export type Suggestions = string[]
+  [k: string]: unknown;
+}[];
+export type TimeoutSeconds1 = number;
+export type Type8 = "turn_complete";
+export type StopReason = string;
+export type InputTokens = number;
+export type OutputTokens = number;
+export type Type9 = "terminal";
+export type Reason = string;
+export type TotalTurns = number;
+export type Type10 = "error";
+export type Message = string;
+export type Type11 = "session_title_updated";
+export type SessionId = string;
+export type Title = string;
+export type Type12 = "budget_exceeded";
+export type SessionId1 = string;
+export type TotalCostUsd = number;
+export type Cap = number | null;
+export type Type13 = "auto_compact_suggested";
+export type SessionId2 = string;
+export type Type14 = "follow_ups_updated";
+export type SessionId3 = string;
+export type Suggestions = string[];
 
 /**
  * 重播歷史時用 — server 送 user 過去說過的訊息給 client 顯示(client 自己送的不會收到回送)。
  */
 export interface UserTextEvent {
-  type?: Type
-  text: Text
-  [k: string]: unknown
+  type?: Type;
+  text: Text;
+  [k: string]: unknown;
 }
 /**
  * 歷史重播完成標記 — client 用來 flush 任何 pending streaming state。
  */
 export interface HistoryReplayDoneEvent {
-  type?: Type1
-  [k: string]: unknown
+  type?: Type1;
+  [k: string]: unknown;
 }
 /**
  * 模型 streaming 文字增量。
  */
 export interface AssistantTextEvent {
-  type?: Type2
-  text: Text1
-  [k: string]: unknown
+  type?: Type2;
+  text: Text1;
+  [k: string]: unknown;
 }
 /**
  * 模型 reasoning(extended thinking)增量。
  */
 export interface AssistantThinkingEvent {
-  type?: Type3
-  text: Text2
-  [k: string]: unknown
+  type?: Type3;
+  text: Text2;
+  [k: string]: unknown;
 }
 /**
  * 工具 call 開始。
  */
 export interface ToolUseEvent {
-  type?: Type4
-  tool_use_id: ToolUseId
-  tool_name: ToolName
-  input: Input
-  [k: string]: unknown
+  type?: Type4;
+  tool_use_id: ToolUseId;
+  tool_name: ToolName;
+  input: Input;
+  [k: string]: unknown;
 }
 export interface Input {
-  [k: string]: unknown
+  [k: string]: unknown;
 }
 /**
  * 工具 call 結束 + 結果摘要。
  */
 export interface ToolResultEvent {
-  type?: Type5
-  tool_use_id: ToolUseId1
-  tool_name: ToolName1
-  content: Content
-  is_error?: IsError
-  [k: string]: unknown
+  type?: Type5;
+  tool_use_id: ToolUseId1;
+  tool_name: ToolName1;
+  content: Content;
+  is_error?: IsError;
+  [k: string]: unknown;
 }
 /**
  * server 反問 user 是否允許工具執行。client 必須 reply PermissionDecisionEvent。
  */
 export interface PermissionAskEvent {
-  type?: Type6
-  request_id: RequestId
-  tool_name: ToolName2
-  input: Input1
-  timeout_seconds?: TimeoutSeconds
-  [k: string]: unknown
+  type?: Type6;
+  request_id: RequestId;
+  tool_name: ToolName2;
+  input: Input1;
+  timeout_seconds?: TimeoutSeconds;
+  [k: string]: unknown;
 }
 export interface Input1 {
-  [k: string]: unknown
+  [k: string]: unknown;
 }
 /**
  * server 反問 user 一/多題(來自 AskUserQuestion tool)。
@@ -145,72 +145,72 @@ export interface Input1 {
  * AskUserAnswerEvent(同 request_id)。
  */
 export interface AskUserQuestionAskEvent {
-  type?: Type7
-  request_id: RequestId1
-  questions: Questions
-  timeout_seconds?: TimeoutSeconds1
-  [k: string]: unknown
+  type?: Type7;
+  request_id: RequestId1;
+  questions: Questions;
+  timeout_seconds?: TimeoutSeconds1;
+  [k: string]: unknown;
 }
 /**
  * assistant 一輪結束(streaming text + tool_use blocks 收齊)。
  */
 export interface TurnCompleteEvent {
-  type?: Type8
-  stop_reason: StopReason
-  input_tokens: InputTokens
-  output_tokens: OutputTokens
-  [k: string]: unknown
+  type?: Type8;
+  stop_reason: StopReason;
+  input_tokens: InputTokens;
+  output_tokens: OutputTokens;
+  [k: string]: unknown;
 }
 /**
  * 整個 query_loop 結束(所有 turn 都做完)。
  */
 export interface TerminalEvent {
-  type?: Type9
-  reason: Reason
-  total_turns: TotalTurns
-  [k: string]: unknown
+  type?: Type9;
+  reason: Reason;
+  total_turns: TotalTurns;
+  [k: string]: unknown;
 }
 /**
  * 通用 error(server 端 exception / unauthorized / etc.)。
  */
 export interface ErrorEvent {
-  type?: Type10
-  message: Message
-  [k: string]: unknown
+  type?: Type10;
+  message: Message;
+  [k: string]: unknown;
 }
 /**
  * session 標題由首輪後的 side-query 自動生成 → 通知 client 更新 sidebar。
  */
 export interface SessionTitleUpdatedEvent {
-  type?: Type11
-  session_id: SessionId
-  title: Title
-  [k: string]: unknown
+  type?: Type11;
+  session_id: SessionId;
+  title: Title;
+  [k: string]: unknown;
 }
 /**
  * session 成本達到上限 → 通知 client 顯示 banner、之後的 turn 會被拒。
  */
 export interface BudgetExceededEvent {
-  type?: Type12
-  session_id: SessionId1
-  total_cost_usd: TotalCostUsd
-  cap?: Cap
-  [k: string]: unknown
+  type?: Type12;
+  session_id: SessionId1;
+  total_cost_usd: TotalCostUsd;
+  cap?: Cap;
+  [k: string]: unknown;
 }
 /**
  * context 逼近 model 上限 → 建議使用者 compact。
  */
 export interface AutoCompactSuggestedEvent {
-  type?: Type13
-  session_id: SessionId2
-  [k: string]: unknown
+  type?: Type13;
+  session_id: SessionId2;
+  [k: string]: unknown;
 }
 /**
  * 每 turn 結束後 side-query 產生的後續問題建議。
  */
 export interface FollowUpsUpdatedEvent {
-  type?: Type14
-  session_id: SessionId3
-  suggestions: Suggestions
-  [k: string]: unknown
+  type?: Type14;
+  session_id: SessionId3;
+  suggestions: Suggestions;
+  [k: string]: unknown;
 }

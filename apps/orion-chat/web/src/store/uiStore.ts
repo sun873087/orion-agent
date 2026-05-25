@@ -14,6 +14,7 @@ import { detectDefaultLocale, isLocale, type Locale } from '../i18n/types'
 
 const LOCALE_KEY = 'orion.locale'
 const SIDEBAR_KEY = 'orion.sidebarCollapsed'
+const AVATAR_KEY = 'orion.userAvatar'
 /** user_settings 後端 key(跨裝置同步用);與 localStorage key 分開。 */
 const LOCALE_SETTING = 'locale'
 
@@ -35,14 +36,27 @@ function initialSidebarCollapsed(): boolean {
   }
 }
 
+function initialAvatar(): string | null {
+  try {
+    return localStorage.getItem(AVATAR_KEY)
+  } catch {
+    return null
+  }
+}
+
 interface UiState {
   locale: Locale
   sidebarCollapsed: boolean
   settingsOpen: boolean
+  /** 開 Settings 時要直接跳到哪個 tab(slash `/schedule`、Model 設定深連結用)。 */
+  settingsTab: string | null
+  /** 使用者頭像 / icon(data URL,localStorage;對齊 Cowork 的 userAvatar)。 */
+  userAvatar: string | null
+  setUserAvatar: (dataUrl: string | null) => void
   setLocale: (locale: Locale) => void
   hydrateLocaleFromBackend: () => Promise<void>
   toggleSidebar: () => void
-  openSettings: () => void
+  openSettings: (tab?: string) => void
   closeSettings: () => void
 }
 
@@ -50,6 +64,18 @@ export const useUiStore = create<UiState>((set, get) => ({
   locale: initialLocale(),
   sidebarCollapsed: initialSidebarCollapsed(),
   settingsOpen: false,
+  settingsTab: null,
+  userAvatar: initialAvatar(),
+
+  setUserAvatar: (dataUrl) => {
+    set({ userAvatar: dataUrl })
+    try {
+      if (dataUrl) localStorage.setItem(AVATAR_KEY, dataUrl)
+      else localStorage.removeItem(AVATAR_KEY)
+    } catch {
+      // localStorage 滿 / disabled — 忽略
+    }
+  },
 
   setLocale: (locale) => {
     set({ locale })
@@ -92,6 +118,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
   },
 
-  openSettings: () => set({ settingsOpen: true }),
-  closeSettings: () => set({ settingsOpen: false }),
+  openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null }),
+  closeSettings: () => set({ settingsOpen: false, settingsTab: null }),
 }))

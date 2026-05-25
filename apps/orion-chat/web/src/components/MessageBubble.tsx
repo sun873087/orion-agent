@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ReadAloudButton } from './ReadAloudButton'
 
 interface Props {
   role: 'user' | 'assistant' | 'thinking'
@@ -39,8 +40,11 @@ export function MessageBubble({ role, text }: Props) {
     )
   }
   return (
-    <div className="prose-msg">
+    <div className="group prose-msg">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity -mt-1">
+        <ReadAloudButton text={text} />
+      </div>
     </div>
   )
 }

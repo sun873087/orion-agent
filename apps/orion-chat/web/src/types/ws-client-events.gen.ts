@@ -5,34 +5,30 @@
  * and run json-schema-to-typescript to regenerate this file.
  */
 
-export type OrionChatClientServerEvents =
-  | UserMessageEvent
-  | PermissionDecisionEvent
-  | AbortEvent
-  | AskUserAnswerEvent
-export type Type = 'user_message'
-export type Content = string
-export type Type1 = 'permission_decision'
-export type RequestId = string
-export type Decision = 'allow' | 'always_allow' | 'deny'
-export type Type2 = 'abort'
-export type Type3 = 'ask_user_answer'
-export type RequestId1 = string
+export type OrionChatClientServerEvents = UserMessageEvent | PermissionDecisionEvent | AbortEvent | AskUserAnswerEvent;
+export type Type = "user_message";
+export type Content = string;
+export type Type1 = "permission_decision";
+export type RequestId = string;
+export type Decision = "allow" | "always_allow" | "deny";
+export type Type2 = "abort";
+export type Type3 = "ask_user_answer";
+export type RequestId1 = string;
 
 export interface UserMessageEvent {
-  type?: Type
-  content: Content
-  [k: string]: unknown
+  type?: Type;
+  content: Content;
+  [k: string]: unknown;
 }
 export interface PermissionDecisionEvent {
-  type?: Type1
-  request_id: RequestId
-  decision: Decision
-  [k: string]: unknown
+  type?: Type1;
+  request_id: RequestId;
+  decision: Decision;
+  [k: string]: unknown;
 }
 export interface AbortEvent {
-  type?: Type2
-  [k: string]: unknown
+  type?: Type2;
+  [k: string]: unknown;
 }
 /**
  * client 回覆 server 的 AskUserQuestionAskEvent。
@@ -41,11 +37,11 @@ export interface AbortEvent {
  * 若使用者放棄/超時,client 可送 `answers={}` 提早通知。
  */
 export interface AskUserAnswerEvent {
-  type?: Type3
-  request_id: RequestId1
-  answers: Answers
-  [k: string]: unknown
+  type?: Type3;
+  request_id: RequestId1;
+  answers: Answers;
+  [k: string]: unknown;
 }
 export interface Answers {
-  [k: string]: string
+  [k: string]: string;
 }

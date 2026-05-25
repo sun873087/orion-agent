@@ -27,8 +27,35 @@ const messages: Record<string, string> = {
   'sidebar.branch': 'ブランチ',
 
   'settings.title': '設定',
-  'settings.tab.instructions': '指示',
-  'settings.tab.settings': '設定',
+  'settings.tab.general': '一般',
+  'settings.avatar.title': 'アバター / アイコン',
+  'settings.avatar.hint':
+    'サイドバーであなたとして表示されます。256×256 の正方形にトリミングし、このブラウザに保存します。',
+  'settings.avatar.pick': '画像を選ぶ',
+  'settings.avatar.change': '変更',
+  'settings.avatar.remove': '削除',
+  'settings.tab.models': 'モデル',
+  'settings.model.defaultHeading': '新規チャットの既定モデル',
+  'settings.model.defaultHint':
+    '以降に開く新規チャットに適用されます。既存のチャットには影響しません。',
+  'settings.model.loading': 'モデル一覧を読み込み中…',
+  'settings.model.failed': 'モデル一覧を読み込めませんでした。',
+  'settings.model.keySet': 'API キー設定済み',
+  'settings.model.keyMissing': 'API キー未設定',
+  'settings.model.voiceHeading': '音声入力(STT)',
+  'settings.model.sttOn': '利用可能 —— 入力欄にマイクボタンが表示されます。',
+  'settings.model.sttOff':
+    '音声プロバイダのキーが未設定のため、マイクボタンは非表示です。',
+  'chat.readAloud': '読み上げ',
+  'chat.role.title': 'ロール / ペルソナ(system prompt に注入)',
+  'chat.role.none': 'ロールなし',
+  'chat.project.title': 'プロジェクト(共有の指示 / workspace)',
+  'chat.project.none': 'プロジェクトなし',
+  'chat.slash.compact': '会話履歴を圧縮して context を解放',
+  'chat.slash.plan': 'Plan Mode に入る — まず計画してから実行',
+  'chat.slash.context': 'サイドパネルで context 使用量を表示',
+  'chat.slash.schedule': 'スケジュールタスクを管理',
+  'chat.slash.skill': 'スキル',
   'settings.tab.memory': 'メモリ',
   'settings.tab.connections': '接続',
   'settings.appearance.title': '外観',
@@ -38,15 +65,14 @@ const messages: Record<string, string> = {
   'settings.appearance.current': '現在は{theme}です。',
   'settings.appearance.currentSystem': '現在は{theme}です(OS の設定に従う)。',
   'settings.language.title': '言語',
-  'settings.storedValues': '保存された値',
-  'settings.noSettings': '保存された設定はまだありません。',
-  'settings.addOrUpdate': '追加または更新',
-  'settings.keyPlaceholder': 'key(例:model)',
-  'settings.valuePlaceholder':
-    'value — JSON または文字列(例:"claude-opus-4-7")',
-  'settings.serverRequires':
-    'サーバー側の設定にはバックエンドの ORION_DB_URL が必要です。',
-  'settings.deleteConfirm': '設定「{key}」を削除しますか?',
+  'settings.instructions.dbRequired':
+    'カスタム指示にはバックエンドの ORION_DB_URL が必要です。',
+  'settings.instructions.aboutYou': 'あなたについて',
+  'settings.instructions.aboutYouHint':
+    'すべての会話に適用されます。呼び方・役割・好みを Orion に伝えてください。',
+  'settings.instructions.aboutYouPlaceholder':
+    '例:私はシニア Python エンジニアです。簡潔な説明を好みます。',
+  'settings.instructions.saved': '✓ 保存しました {time}',
 
   'common.new': '新規',
   'common.edit': '編集',
@@ -61,6 +87,7 @@ const messages: Record<string, string> = {
   'settings.schedules.desc':
     'プロンプトを自動実行する cron スケジュール(バックグラウンド実行は今後)。',
   'settings.schedules.empty': 'スケジュールはまだありません。',
+  'settings.schedules.runNow': '今すぐ実行',
   'settings.schedules.namePlaceholder': 'スケジュール名',
   'settings.schedules.payloadPlaceholder': '実行するプロンプト',
 
@@ -117,7 +144,13 @@ const messages: Record<string, string> = {
   'panel.skills': '使用したスキル',
   'panel.cost': 'トークンとコスト',
   'panel.empty': 'まだありません',
-  'panel.contextTokens': '約 {n} トークン',
+  'panel.tokensTotal': '合計 {n} トークン',
+  'panel.tokensIO': '入力 {in} · 出力 {out}',
+  'panel.tokensCache': 'キャッシュ {n}',
+  'panel.noUsage': '使用量なし',
+  'panel.origin.chat': 'チャット',
+  'panel.origin.title': 'タイトル生成',
+  'panel.origin.followUps': 'フォローアップ',
   'panel.messages': '{n} 件のメッセージ',
 
   'chat.permMode': '権限モード',
@@ -135,14 +168,6 @@ const messages: Record<string, string> = {
   'mcp.desc': 'リモート MCP サーバー(sse / http / ws)を接続。stdio は不可。',
   'mcp.namePlaceholder': '名前',
   'mcp.empty': 'MCP サーバーは未設定です。',
-
-  'settings.tab.collab': 'コラボ',
-  'settings.collab.title': 'コラボレーション',
-  'settings.collab.desc':
-    '複数の会話をマルチペインのコラボにまとめます(自分の session)。',
-  'settings.collab.empty': 'コラボはまだありません。',
-  'settings.collab.namePlaceholder': 'コラボ名',
-  'settings.collab.panes': '{n} ペイン',
 }
 
 export default messages

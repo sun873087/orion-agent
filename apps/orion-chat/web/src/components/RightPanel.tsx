@@ -10,6 +10,19 @@ interface ContextBreakdown {
   by_role_chars: Record<string, number>
 }
 
+/** 已知 origin → i18n label;未知的直接顯原字串。 */
+function originLabel(
+  t: (k: string) => string,
+  origin: string,
+): string {
+  const keys: Record<string, string> = {
+    chat: 'panel.origin.chat',
+    title: 'panel.origin.title',
+    follow_ups: 'panel.origin.followUps',
+  }
+  return keys[origin] ? t(keys[origin]) : origin
+}
+
 interface Props {
   sessionId: string | null
   events: ServerEvent[]
@@ -100,11 +113,57 @@ export function RightPanel({ sessionId, events, refreshKey }: Props) {
 
       <Section title={t('panel.cost')}>
         <div className="space-y-1 text-claude-textDim">
-          <div>${cost ? cost.total_cost_usd.toFixed(4) : '0.0000'}</div>
+          <div className="text-[15px] text-claude-text">
+            ${cost ? cost.total_cost_usd.toFixed(4) : '0.0000'}
+          </div>
+          {(() => {
+            const inTok = cost?.input_tokens ?? 0
+            const outTok = cost?.output_tokens ?? 0
+            const cacheTok =
+              (cost?.cache_read_tokens ?? 0) +
+              (cost?.cache_creation_tokens ?? 0)
+            const total = inTok + outTok + cacheTok
+            if (total === 0) {
+              return (
+                <div className="text-[12px] text-claude-textFaint">
+                  {t('panel.noUsage')}
+                </div>
+              )
+            }
+            return (
+              <>
+                <div className="text-[12px]">
+                  {t('panel.tokensTotal', { n: total.toLocaleString() })}
+                </div>
+                <div className="text-[12px] text-claude-textFaint">
+                  {t('panel.tokensIO', {
+                    in: inTok.toLocaleString(),
+                    out: outTok.toLocaleString(),
+                  })}
+                  {cacheTok > 0 &&
+                    ` · ${t('panel.tokensCache', { n: cacheTok.toLocaleString() })}`}
+                </div>
+              </>
+            )
+          })()}
           {ctx && (
-            <div className="text-[12px]">
-              {t('panel.contextTokens', { n: ctx.approx_total_tokens })} ·{' '}
+            <div className="text-[12px] text-claude-textFaint">
               {t('panel.messages', { n: ctx.n_messages })}
+            </div>
+          )}
+          {cost?.by_origin && Object.keys(cost.by_origin).length > 1 && (
+            <div className="mt-1.5 pt-1.5 border-t border-claude-border/40 space-y-0.5">
+              {Object.entries(cost.by_origin)
+                .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+                .map(([origin, u]) => (
+                  <div
+                    key={origin}
+                    className="flex items-center justify-between text-[12px] text-claude-textFaint"
+                  >
+                    <span>{originLabel(t, origin)}</span>
+                    <span className="font-mono">${u.cost_usd.toFixed(4)}</span>
+                  </div>
+                ))}
             </div>
           )}
         </div>

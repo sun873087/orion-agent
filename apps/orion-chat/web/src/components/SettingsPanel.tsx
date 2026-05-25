@@ -1,12 +1,119 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ApiError, apiFetch } from '../api/client'
 import { LOCALE_LABELS, LOCALES, useTranslation, type Locale } from '../i18n'
 import { useUiStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
 import type { ThemePref } from '../lib/theme'
+import type { CustomInstructionsResponse } from '../types/events'
 
 const selectClasses =
   'w-full max-w-xs border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
+
+/** 圖片 → 正方形 cover crop → JPEG data URL(對齊 Cowork resizeToJpeg)。 */
+async function resizeToJpeg(
+  file: File,
+  edge: number,
+  quality: number,
+): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = edge
+  canvas.height = edge
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas 2d unavailable')
+  const side = Math.min(bitmap.width, bitmap.height)
+  const sx = (bitmap.width - side) / 2
+  const sy = (bitmap.height - side) / 2
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, edge, edge)
+  bitmap.close()
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
+/** ICON / 頭像設定 — 上傳→256² JPEG→localStorage(uiStore)。顯在 sidebar user 列。 */
+function AvatarSection() {
+  const { t } = useTranslation()
+  const avatar = useUiStore((s) => s.userAvatar)
+  const setAvatar = useUiStore((s) => s.setUserAvatar)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onPick(file: File) {
+    setError(null)
+    setBusy(true)
+    try {
+      setAvatar(await resizeToJpeg(file, 256, 0.85))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="font-medium text-claude-text text-[13px]">
+        {t('settings.avatar.title')}
+      </div>
+      <div className="text-[12px] text-claude-textDim">
+        {t('settings.avatar.hint')}
+      </div>
+      <div className="flex items-center gap-3 pt-1">
+        <div className="h-14 w-14 shrink-0 inline-flex items-center justify-center overflow-hidden rounded-full bg-claude-orange/20 text-claude-orange">
+          {avatar ? (
+            <img
+              src={avatar}
+              alt="avatar"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.6" />
+              <path
+                d="M4 20c0-4 3.6-6 8-6s8 2 8 6"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-md border border-claude-border text-[13px] hover:bg-claude-panel disabled:opacity-50 transition-colors"
+          >
+            {avatar ? t('settings.avatar.change') : t('settings.avatar.pick')}
+          </button>
+          {avatar && (
+            <button
+              type="button"
+              onClick={() => setAvatar(null)}
+              disabled={busy}
+              className="px-3 py-1.5 rounded-md text-[13px] text-claude-textDim hover:bg-claude-panel hover:text-claude-text disabled:opacity-50 transition-colors"
+            >
+              {t('settings.avatar.remove')}
+            </button>
+          )}
+        </div>
+        {error && <span className="text-[12px] text-red-600">{error}</span>}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void onPick(f)
+            if (inputRef.current) inputRef.current.value = ''
+          }}
+        />
+      </div>
+    </div>
+  )
+}
 
 function AppearanceSection() {
   const { t } = useTranslation()
@@ -62,67 +169,40 @@ function LanguageSection() {
   )
 }
 
-export function SettingsPanel() {
+/** 自訂指令(單一 user-level,對齊 Cowork user_instructions)。 */
+function InstructionsSection() {
   const { t } = useTranslation()
-  const [settings, setSettings] = useState<Record<string, unknown>>({})
-  const [unavailable, setUnavailable] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [newKey, setNewKey] = useState('')
-  const [newValue, setNewValue] = useState('')
+  const [user, setUser] = useState('')
   const [busy, setBusy] = useState(false)
-
-  async function refresh() {
-    setError(null)
-    try {
-      const all = await apiFetch<Record<string, unknown>>('/me/settings')
-      setSettings(all || {})
-      setUnavailable(false)
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 503) {
-        setUnavailable(true)
-      } else {
-        setError(e instanceof Error ? e.message : String(e))
-      }
-    }
-  }
+  const [error, setError] = useState<string | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
 
   useEffect(() => {
-    void refresh()
+    let alive = true
+    void apiFetch<CustomInstructionsResponse>('/me/custom-instructions')
+      .then((me) => {
+        if (alive) setUser(me.user_level ?? '')
+      })
+      .catch((e) => {
+        if (!alive) return
+        if (e instanceof ApiError && e.status === 503) setUnavailable(true)
+        else setError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      alive = false
+    }
   }, [])
 
-  async function setKey() {
-    if (!newKey) return
+  async function save() {
     setBusy(true)
     setError(null)
     try {
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(newValue)
-      } catch {
-        parsed = newValue
-      }
-      await apiFetch(`/me/settings/${encodeURIComponent(newKey)}`, {
+      await apiFetch('/me/custom-instructions', {
         method: 'PUT',
-        body: { value: parsed },
+        body: { instructions: user || null },
       })
-      setNewKey('')
-      setNewValue('')
-      await refresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function deleteKey(key: string) {
-    if (!confirm(t('settings.deleteConfirm', { key }))) return
-    setBusy(true)
-    try {
-      await apiFetch(`/me/settings/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-      })
-      await refresh()
+      setSavedAt(Date.now())
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -132,96 +212,62 @@ export function SettingsPanel() {
 
   if (unavailable) {
     return (
-      <div className="p-6 space-y-5 text-[14px]">
-        <AppearanceSection />
-        <LanguageSection />
-        <div className="pt-2 border-t border-claude-border/60 text-claude-textDim">
-          {t('settings.serverRequires')}
-        </div>
+      <div className="text-claude-textDim text-[13px]">
+        {t('settings.instructions.dbRequired')}
       </div>
     )
   }
 
-  const inputClasses =
-    'w-full border border-claude-border rounded-md px-2.5 py-1.5 text-[13px] font-mono bg-claude-cream text-claude-text focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow'
-
   return (
-    <div className="p-6 space-y-5 text-[14px]">
-      <AppearanceSection />
-      <LanguageSection />
-
+    <div className="space-y-2">
+      <div className="font-medium text-claude-text text-[13px]">
+        {t('settings.instructions.aboutYou')}
+      </div>
+      <div className="text-[12px] text-claude-textDim">
+        {t('settings.instructions.aboutYouHint')}
+      </div>
+      <textarea
+        className="w-full h-28 border border-claude-border rounded-lg p-3 text-[13px] bg-white dark:bg-claude-cream text-claude-text placeholder:text-claude-textFaint focus:outline-none focus:border-claude-orange focus:ring-2 focus:ring-claude-orange/20 transition-shadow resize-none"
+        placeholder={t('settings.instructions.aboutYouPlaceholder')}
+        value={user}
+        onChange={(e) => setUser(e.target.value)}
+      />
       {error && (
         <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 dark:text-red-300 dark:bg-red-950/40 dark:border-red-900/60 px-3 py-2 rounded-md">
           {error}
         </div>
       )}
-
-      <div className="space-y-2 pt-2 border-t border-claude-border/60">
-        <div className="font-medium text-claude-text text-[13px]">
-          {t('settings.storedValues')}
-        </div>
-        {Object.keys(settings).length === 0 ? (
-          <div className="text-[13px] text-claude-textFaint italic">
-            {t('settings.noSettings')}
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {Object.entries(settings).map(([key, value]) => (
-              <div
-                key={key}
-                className="group flex items-start gap-2 p-2.5 rounded-md bg-white dark:bg-claude-panel border border-claude-borderSoft"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono text-[12px] font-medium text-claude-text">
-                    {key}
-                  </div>
-                  <pre className="text-[12px] text-claude-textDim font-mono whitespace-pre-wrap break-all mt-0.5">
-                    {JSON.stringify(value)}
-                  </pre>
-                </div>
-                <button
-                  onClick={() => void deleteKey(key)}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-claude-textFaint hover:text-red-600 transition"
-                  aria-label="delete"
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M4 4l8 8M12 4l-8 8"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2 pt-2 border-t border-claude-border/60">
-        <div className="font-medium text-claude-text text-[13px]">
-          {t('settings.addOrUpdate')}
-        </div>
-        <input
-          className={inputClasses}
-          placeholder={t('settings.keyPlaceholder')}
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-        />
-        <input
-          className={inputClasses}
-          placeholder={t('settings.valuePlaceholder')}
-          value={newValue}
-          onChange={(e) => setNewValue(e.target.value)}
-        />
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] text-emerald-700 dark:text-emerald-400">
+          {savedAt &&
+            t('settings.instructions.saved', {
+              time: new Date(savedAt).toLocaleTimeString(),
+            })}
+        </span>
         <button
-          onClick={() => void setKey()}
-          disabled={busy || !newKey}
+          onClick={() => void save()}
+          disabled={busy}
           className="px-4 py-1.5 bg-claude-orange hover:bg-claude-orangeHover disabled:bg-claude-border disabled:text-claude-textFaint text-white rounded-md text-[13px] font-medium transition-colors"
         >
           {busy ? t('common.saving') : t('common.save')}
         </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 「一般」設定 — 對齊 Cowork General:頭像(ICON)+ 外觀 + 語言 + 自訂指令。
+ * 原本分開的「設定」「指令」兩個 tab 合併到這裡。
+ */
+export function SettingsPanel() {
+  return (
+    <div className="p-6 space-y-6 text-[14px]">
+      <AvatarSection />
+      <AppearanceSection />
+      <LanguageSection />
+      <div className="border-t border-claude-border/60 pt-5">
+        <InstructionsSection />
       </div>
     </div>
   )

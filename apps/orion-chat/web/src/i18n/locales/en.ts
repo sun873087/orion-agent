@@ -27,8 +27,34 @@ const messages: Record<string, string> = {
   'sidebar.branch': 'Branch',
 
   'settings.title': 'Settings',
-  'settings.tab.instructions': 'Instructions',
-  'settings.tab.settings': 'Settings',
+  'settings.tab.general': 'General',
+  'settings.avatar.title': 'Avatar / icon',
+  'settings.avatar.hint':
+    'Shown as you in the sidebar. Cropped to a 256×256 square, stored in this browser.',
+  'settings.avatar.pick': 'Pick image',
+  'settings.avatar.change': 'Change',
+  'settings.avatar.remove': 'Remove',
+  'settings.tab.models': 'Model',
+  'settings.model.defaultHeading': 'Default model for new chats',
+  'settings.model.defaultHint':
+    'Applies to chats you start next; existing chats are unchanged.',
+  'settings.model.loading': 'Loading models…',
+  'settings.model.failed': 'Failed to load the model list.',
+  'settings.model.keySet': 'API key set',
+  'settings.model.keyMissing': 'No API key',
+  'settings.model.voiceHeading': 'Voice input (STT)',
+  'settings.model.sttOn': 'Available — a mic button shows in the composer.',
+  'settings.model.sttOff': 'No voice provider key configured; mic button hidden.',
+  'chat.readAloud': 'Read aloud',
+  'chat.role.title': 'Role / persona (injected into the system prompt)',
+  'chat.role.none': 'No role',
+  'chat.project.title': 'Project (shared instructions / workspace)',
+  'chat.project.none': 'No project',
+  'chat.slash.compact': 'Compact the conversation to free up context',
+  'chat.slash.plan': 'Enter Plan Mode — plan first, then act',
+  'chat.slash.context': 'Open the side panel to see context usage',
+  'chat.slash.schedule': 'Manage scheduled tasks',
+  'chat.slash.skill': 'Skill',
   'settings.tab.memory': 'Memory',
   'settings.tab.connections': 'Connections',
   'settings.appearance.title': 'Appearance',
@@ -39,15 +65,14 @@ const messages: Record<string, string> = {
   'settings.appearance.currentSystem':
     'Currently {theme} (from OS preference).',
   'settings.language.title': 'Language',
-  'settings.storedValues': 'Stored values',
-  'settings.noSettings': 'No settings stored yet.',
-  'settings.addOrUpdate': 'Add or update',
-  'settings.keyPlaceholder': 'key (e.g. model)',
-  'settings.valuePlaceholder':
-    'value — JSON or string (e.g. "claude-opus-4-7")',
-  'settings.serverRequires':
-    'Server-side settings require ORION_DB_URL on the backend.',
-  'settings.deleteConfirm': 'Delete setting "{key}"?',
+  'settings.instructions.dbRequired':
+    'Custom Instructions require ORION_DB_URL on the backend.',
+  'settings.instructions.aboutYou': 'About you',
+  'settings.instructions.aboutYouHint':
+    'Persistent across all conversations. Tell Orion how to address you, your role, your preferences.',
+  'settings.instructions.aboutYouPlaceholder':
+    "e.g. I'm a senior Python engineer; prefer terse explanations.",
+  'settings.instructions.saved': '✓ Saved {time}',
 
   'common.new': 'New',
   'common.edit': 'Edit',
@@ -62,6 +87,7 @@ const messages: Record<string, string> = {
   'settings.schedules.desc':
     'Cron schedules that run a prompt automatically (background runner is a follow-up).',
   'settings.schedules.empty': 'No schedules yet.',
+  'settings.schedules.runNow': 'Run now',
   'settings.schedules.namePlaceholder': 'Schedule name',
   'settings.schedules.payloadPlaceholder': 'Prompt to run',
 
@@ -120,7 +146,13 @@ const messages: Record<string, string> = {
   'panel.skills': 'Skills used',
   'panel.cost': 'Tokens & cost',
   'panel.empty': 'Nothing yet',
-  'panel.contextTokens': '~{n} tokens',
+  'panel.tokensTotal': '{n} tokens total',
+  'panel.tokensIO': 'in {in} · out {out}',
+  'panel.tokensCache': 'cache {n}',
+  'panel.noUsage': 'No usage yet',
+  'panel.origin.chat': 'Chat',
+  'panel.origin.title': 'Title gen',
+  'panel.origin.followUps': 'Follow-ups',
   'panel.messages': '{n} messages',
 
   'chat.permMode': 'Permission mode',
@@ -139,14 +171,6 @@ const messages: Record<string, string> = {
     'Connect remote MCP servers (sse / http / ws). stdio is not allowed.',
   'mcp.namePlaceholder': 'name',
   'mcp.empty': 'No MCP servers configured.',
-
-  'settings.tab.collab': 'Collaborations',
-  'settings.collab.title': 'Collaborations',
-  'settings.collab.desc':
-    'Group conversations into a multi-pane collaboration (your own sessions).',
-  'settings.collab.empty': 'No collaborations yet.',
-  'settings.collab.namePlaceholder': 'Collaboration name',
-  'settings.collab.panes': '{n} panes',
 }
 
 export default messages

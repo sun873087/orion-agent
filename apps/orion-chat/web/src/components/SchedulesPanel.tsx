@@ -62,6 +62,19 @@ export function SchedulesPanel() {
     await refresh()
   }
 
+  const [running, setRunning] = useState<string | null>(null)
+
+  async function runNow(id: string) {
+    setRunning(id)
+    try {
+      await apiFetch(`/schedules/${id}/run-now`, { method: 'POST' })
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e))
+    } finally {
+      setRunning(null)
+    }
+  }
+
   return (
     <div className="p-6 space-y-4 text-[14px]">
       <div>
@@ -130,6 +143,15 @@ export function SchedulesPanel() {
                   {s.cron_expr}
                 </div>
               </div>
+              <button
+                className="px-2 py-1 text-[12px] rounded-md text-claude-textDim hover:bg-claude-panel hover:text-claude-text disabled:opacity-50 transition"
+                onClick={() => void runNow(s.id)}
+                disabled={running === s.id}
+              >
+                {running === s.id
+                  ? t('common.loading')
+                  : t('settings.schedules.runNow')}
+              </button>
               <button
                 className="opacity-0 group-hover:opacity-100 p-1 text-claude-textFaint hover:text-red-600 transition"
                 onClick={() => void remove(s.id)}

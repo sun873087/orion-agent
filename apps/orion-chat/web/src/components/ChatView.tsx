@@ -9,14 +9,14 @@ import type {
   UploadSummary,
 } from '../types/events'
 import type { ModelChoice } from '../lib/preferredModel'
+import type { ClientCommandName } from '../lib/inputCommands'
 import { EMPTY, newId, reduce, type FlowState } from '../lib/chatFlow'
 import { CostBadge } from './CostBadge'
 import { MessageList } from './MessageList'
 import { InputBox } from './InputBox'
-import { ModelBadge } from './ModelBadge'
-import { ModelPicker } from './ModelPicker'
 import { PlanApprovalModal } from './PlanApprovalModal'
 import { RightPanel } from './RightPanel'
+import { SessionContextControls } from './SessionContextControls'
 import { WorkspaceFiles } from './WorkspaceFiles'
 
 interface Props {
@@ -28,7 +28,7 @@ interface Props {
   draft: ModelChoice | null
   /** Draft mode 送第一則訊息時呼叫,實際建立 session 並回傳 sid。 */
   onCommitDraft: () => Promise<string | null>
-  onOpenSettings: () => void
+  onOpenSettings: (tab?: string) => void
   onModelChange: (choice: ModelChoice) => void
 }
 
@@ -95,6 +95,23 @@ export function ChatView({
     if (r) {
       setPlanStatus(r.status)
       setPlanContent(r.content ?? '')
+    }
+  }
+
+  function handleClientCommand(name: ClientCommandName) {
+    switch (name) {
+      case '/compact':
+        if (sessionId) void compact(sessionId)
+        break
+      case '/plan':
+        void planAction('enter')
+        break
+      case '/context':
+        setShowPanel(true)
+        break
+      case '/schedule':
+        onOpenSettings('schedules')
+        break
     }
   }
 
@@ -211,6 +228,18 @@ export function ChatView({
 
   const isEmpty =
     flow.entries.length === 0 && !flow.liveAssistant && !flow.liveThinking
+  // 第一次對話(尚無訊息的 draft / 空 session):問候語 + 輸入框黏成一塊置中,
+  // 不把輸入框釘在畫面底 —— 對齊 cowork 空狀態。
+  const showWelcome = (isEmpty && sessionId) || (!sessionId && draft)
+  // 連線抖動時(connecting / reconnecting)仍允許打字 — useWebSocket 會把 send
+  // queue 起來,open 時 flush。只有真的 closed(token 失效 / 重試耗盡)或 inFlight
+  // 才 disable。draft 模式無 sessionId 但允許輸入。
+  const inputDisabled =
+    (!sessionId && !draft) || ws.status === 'closed' || flow.inFlight
+  // 模型選擇器移進輸入框 — active session 用它的 provider/model,draft 用暫存選擇。
+  const modelChoice: ModelChoice | null = currentSession
+    ? { provider: currentSession.provider, model: currentSession.model }
+    : draft
 
   return (
     <div className="flex-1 flex min-w-0">
@@ -236,12 +265,8 @@ export function ChatView({
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <ModelBadge
-              provider={currentSession?.provider}
-              model={currentSession?.model}
-              catalog={catalog}
-            />
             <WorkspaceFiles sessionId={sessionId} refreshKey={turnCount} />
+            {sessionId && <SessionContextControls sessionId={sessionId} />}
             {sessionId && (
               <button
                 onClick={() =>
@@ -323,7 +348,7 @@ export function ChatView({
               </button>
             )}
             <button
-              onClick={onOpenSettings}
+              onClick={() => onOpenSettings()}
               className="p-1.5 rounded-md text-claude-textDim hover:bg-claude-panel hover:text-claude-text transition-colors"
               title="Settings"
             >
@@ -374,70 +399,72 @@ export function ChatView({
           </div>
         )}
 
-        {(isEmpty && sessionId) || (!sessionId && draft) ? (
-          <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-claude-orange text-white text-lg font-semibold mb-4">
-              O
-            </div>
-            <div className="text-[22px] font-medium text-claude-text mb-1">
-              What can I help with today?
-            </div>
-            <div className="text-[14px] text-claude-textDim mb-5">
-              Pick a model below, then type your first message.
-            </div>
-            {(currentSession || draft) && (
-              <ModelPicker
-                value={
-                  currentSession
-                    ? {
-                        provider: currentSession.provider,
-                        model: currentSession.model,
-                      }
-                    : draft!
-                }
+        {showWelcome ? (
+          <div className="flex-1 flex flex-col items-center justify-center px-6">
+            <div className="w-full max-w-3xl">
+              <div className="text-center mb-2">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-claude-orange text-white text-lg font-semibold mb-4">
+                  O
+                </div>
+                <div className="text-[22px] font-medium text-claude-text mb-1">
+                  What can I help with today?
+                </div>
+                <div className="text-[14px] text-claude-textDim mb-5">
+                  Pick a model below, then type your first message.
+                </div>
+              </div>
+              <InputBox
+                disabled={inputDisabled}
+                onSend={send}
+                onAbort={ws.abort}
+                modelValue={modelChoice}
                 catalog={catalog}
-                onChange={onModelChange}
+                onModelChange={onModelChange}
+                sessionId={sessionId}
+                onClientCommand={handleClientCommand}
               />
-            )}
+            </div>
           </div>
         ) : (
-          <MessageList
-            key={sessionId ?? 'none'}
-            entries={flow.entries}
-            pendingPermissions={ws.pendingPermissions}
-            pendingQuestions={ws.pendingQuestions}
-            answeredQuestions={ws.answeredQuestions}
-            liveAssistant={flow.liveAssistant}
-            liveThinking={flow.liveThinking}
-            onPermissionDecide={ws.answerPermission}
-            onQuestionAnswer={ws.answerQuestion}
-          />
-        )}
+          <>
+            <MessageList
+              key={sessionId ?? 'none'}
+              entries={flow.entries}
+              pendingPermissions={ws.pendingPermissions}
+              pendingQuestions={ws.pendingQuestions}
+              answeredQuestions={ws.answeredQuestions}
+              liveAssistant={flow.liveAssistant}
+              liveThinking={flow.liveThinking}
+              onPermissionDecide={ws.answerPermission}
+              onQuestionAnswer={ws.answerQuestion}
+            />
 
-        {ws.followUps.length > 0 && !flow.inFlight && (
-          <div className="flex flex-wrap gap-2 px-5 pb-2">
-            {ws.followUps.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => send(s, [])}
-                className="px-2.5 py-1 rounded-full border border-claude-border text-[12px] text-claude-textDim hover:bg-claude-panel hover:text-claude-text transition-colors"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
+            {ws.followUps.length > 0 && !flow.inFlight && (
+              <div className="flex flex-wrap gap-2 px-5 pb-2">
+                {ws.followUps.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => send(s, [])}
+                    className="px-2.5 py-1 rounded-full border border-claude-border text-[12px] text-claude-textDim hover:bg-claude-panel hover:text-claude-text transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
 
-        <InputBox
-          // 連線抖動時(connecting / reconnecting)仍允許打字 — useWebSocket 會把
-          // send queue 起來,open 時 flush。只有真的 closed (token 失效 / 重試耗盡)
-          // 或已知 inFlight 才 disable。draft 模式無 sessionId 但允許輸入。
-          disabled={
-            (!sessionId && !draft) || ws.status === 'closed' || flow.inFlight
-          }
-          onSend={send}
-          onAbort={ws.abort}
-        />
+            <InputBox
+              disabled={inputDisabled}
+              onSend={send}
+              onAbort={ws.abort}
+              modelValue={modelChoice}
+              catalog={catalog}
+              onModelChange={onModelChange}
+              sessionId={sessionId}
+              onClientCommand={handleClientCommand}
+            />
+          </>
+        )}
       </main>
       {showPanel && sessionId && (
         <RightPanel
