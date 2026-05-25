@@ -177,3 +177,22 @@ async def delete_schedule(
         await db.execute(delete(ScheduleRow).where(ScheduleRow.id == sched_id))
         await db.commit()
     return {"deleted": True}
+
+
+class RunNowResponse(BaseModel):
+    session_id: str | None = None
+
+
+@router.post("/schedules/{sched_id}/run-now", response_model=RunNowResponse)
+async def run_schedule_now_endpoint(
+    sched_id: str,
+    request: Request,
+    user_id: Annotated[str, Depends(current_user)],
+) -> RunNowResponse:
+    """立即觸發一次(不動排程時刻)。回實際跑的 session_id。"""
+    engine = _engine(request)
+    await _owned(engine, sched_id, user_id)  # 驗自己的
+    from orion_chat_api.scheduler import run_schedule_now
+
+    sid = await run_schedule_now(request.app, sched_id, advance=False)
+    return RunNowResponse(session_id=sid)

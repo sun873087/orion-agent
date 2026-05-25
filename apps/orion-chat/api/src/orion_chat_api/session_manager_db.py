@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from orion_chat_api.session_manager import SessionInfo
@@ -126,6 +126,39 @@ class DbSessionManager:
             include_workspace_context=False,
         )
         self._cache[(user_id, session_id)] = conv
+        return conv
+
+    async def set_model(
+        self,
+        user_id: str,
+        session_id: UUID,
+        *,
+        provider_name: str,
+        model: str,
+    ) -> Conversation | None:
+        """切換既有 session 的 model:更新 DB row + 換掉 cached conv.provider。
+
+        provider 無 per-conversation 狀態(fork 也是直接重用實例),所以換 provider
+        實例即可,歷史不動,後續 turn 就用新 model。session 不存在回 None。
+        """
+        conv = await self.get(user_id, session_id)
+        if conv is None:
+            return None
+        new_provider = get_provider(provider_name, model)
+        async with db_session(self.engine) as db:
+            await db.execute(
+                update(SessionRow)
+                .where(
+                    SessionRow.id == str(session_id),
+                    SessionRow.user_id == user_id,
+                )
+                .values(provider=new_provider.name, model=new_provider.model),
+            )
+            await db.commit()
+        conv.provider = new_provider
+        conv.max_tokens_per_turn = pick_max_tokens_per_turn(
+            new_provider.name, new_provider.model,
+        )
         return conv
 
     async def _rewrite_db_messages(

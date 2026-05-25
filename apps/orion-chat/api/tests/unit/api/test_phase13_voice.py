@@ -68,3 +68,73 @@ def test_tts_available_when_key_set(
         client.get("/voice/status", headers=_h(token)).json()["tts_available"]
         is True
     )
+
+
+def test_tts_synthesizes_when_key_set(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """設了 key → 走 orion_model.audio.synthesize(stub),回 base64 audio。"""
+    client, token = client_with_token
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+
+    from orion_model.audio.types import SynthesizeResult
+
+    async def fake_synth(**_kwargs: object) -> SynthesizeResult:
+        return SynthesizeResult(
+            audio_bytes=b"\x00\x01\x02ID3",
+            mime_type="audio/mpeg",
+            provider="openai",
+            model="tts-1",
+            voice="nova",
+            char_count=5,
+            cost_usd=0.0001,
+        )
+
+    monkeypatch.setattr("orion_model.audio.synthesize", fake_synth)
+    r = client.post("/voice/tts", headers=_h(token), json={"text": "hello"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mime_type"] == "audio/mpeg"
+    import base64
+
+    assert base64.b64decode(body["audio_base64"]) == b"\x00\x01\x02ID3"
+
+
+def test_stt_503_when_unconfigured(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    client, token = client_with_token
+    r = client.post(
+        "/voice/stt", headers=_h(token), json={"audio_base64": "AAAA"},
+    )
+    assert r.status_code == 503
+
+
+def test_stt_transcribes_when_key_set(
+    client_with_token: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """設了 key → 走 orion_model.audio.transcribe(這裡 stub,不打真 API)。"""
+    client, token = client_with_token
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+
+    from orion_model.audio.types import TranscribeResult
+
+    async def fake_transcribe(**_kwargs: object) -> TranscribeResult:
+        return TranscribeResult(
+            text="hello world",
+            provider="openai",
+            model="whisper-1",
+            duration_seconds=1.0,
+            cost_usd=0.0001,
+        )
+
+    monkeypatch.setattr("orion_model.audio.transcribe", fake_transcribe)
+    r = client.post(
+        "/voice/stt",
+        headers=_h(token),
+        json={"audio_base64": "AAAA", "mime_type": "audio/webm"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["text"] == "hello world"

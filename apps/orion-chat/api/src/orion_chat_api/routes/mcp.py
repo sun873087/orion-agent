@@ -3,6 +3,10 @@
 存 `~/.orion/users/<uid>/mcp.json`(per-user,非全域)。multi-tenant 下只允許
 **remote transport(sse / http / ws)**:stdio 會在 server 主機 spawn 子行程,
 跨租戶高風險,一律拒。
+
+連線:ws 連上時由 mcp_loader.load_user_http_mcp_configs 載入、McpManager 連線,
+工具併進該對話的 tool set(見 chat.py)。目前 SDK transport 只實作 streamable-http,
+所以實際接得上的是 transport=http;sse / ws 等 SDK 補對應 transport 再生效。
 """
 
 from __future__ import annotations

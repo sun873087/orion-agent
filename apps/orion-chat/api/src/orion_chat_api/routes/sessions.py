@@ -22,6 +22,7 @@ from orion_chat_api.conversation_meta import (
     fetch_budget,
     fetch_meta_map,
     fetch_permission_mode,
+    fetch_session_context,
     session_belongs_to,
     upsert_meta,
 )
@@ -237,6 +238,51 @@ async def patch_session(
     )
 
 
+class ModelBody(BaseModel):
+    provider: str
+    model: str
+
+
+@router.put("/sessions/{session_id}/model", response_model=SessionSummary)
+async def set_session_model(
+    session_id: UUID,
+    body: ModelBody,
+    user_id: Annotated[str, Depends(current_user)],
+    sm: Annotated[SessionManager, Depends(get_session_manager)],
+) -> SessionSummary:
+    """就地切換既有 session 的 model — 歷史保留,後續 turn 用新 model。"""
+    if not validate(body.provider, body.model):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"invalid (provider, model): ({body.provider!r}, {body.model!r})",
+        )
+    if not _provider_available(body.provider):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"{body.provider} not configured",
+        )
+    conv = await sm.set_model(
+        user_id, session_id, provider_name=body.provider, model=body.model,
+    )
+    if conv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    title, starred = None, False
+    engine = getattr(sm, "engine", None)
+    if engine is not None:
+        meta = await fetch_meta_map(engine, [str(session_id)])
+        title, starred = meta.get(str(session_id), (None, False))
+    return SessionSummary(
+        session_id=session_id,
+        user_id=user_id,
+        n_messages=len(conv.state_messages),
+        n_turns=conv.stats.turns,
+        provider=conv.provider.name,
+        model=conv.provider.model,
+        title=title,
+        starred=starred,
+    )
+
+
 def _message_text(message: object) -> str:
     """取 message 純文字(content 為 str 或 block list)。"""
     content = getattr(message, "content", "")
@@ -374,7 +420,11 @@ async def session_cost(
     user_id: Annotated[str, Depends(current_user)],
     sm: Annotated[SessionManager, Depends(get_session_manager)],
 ) -> dict[str, object]:
-    """回該 session 的 token / cost 摘要。"""
+    """回該 session 的 token / cost 摘要。
+
+    SDK summary 只在 by_model 內帶 token,這裡把跨 model 的 token 加總攤平到頂層
+    (input/output/cache),前端 CostSummary 才有真實用量可顯(不是 chars/4 概估)。
+    """
     conv = await sm.get(user_id, session_id)
     if conv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
@@ -386,8 +436,23 @@ async def session_cost(
             "total_cost_usd": 0.0,
             "cache_hit_ratio": 0.0,
             "total_api_duration_ms": 0.0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
             "by_model": {},
+            "by_origin": {},
         }
+    by_model = summary.get("by_model", {})
+    if isinstance(by_model, dict):
+
+        def _sum(field: str) -> int:
+            return sum(int(m.get(field, 0)) for m in by_model.values())
+
+        summary["input_tokens"] = _sum("input_tokens")
+        summary["output_tokens"] = _sum("output_tokens")
+        summary["cache_read_tokens"] = _sum("cache_read_tokens")
+        summary["cache_creation_tokens"] = _sum("cache_creation_tokens")
     return summary
 
 
@@ -436,6 +501,56 @@ async def put_permission_mode(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     await upsert_meta(engine, str(session_id), permission_mode=body.mode)
     return PermissionModeResponse(mode=body.mode)
+
+
+class RoleBody(BaseModel):
+    role: str | None = None
+
+
+class RoleResponse(BaseModel):
+    role: str | None = None
+
+
+@router.get("/sessions/{session_id}/role", response_model=RoleResponse)
+async def get_session_role(
+    session_id: UUID,
+    request: Request,
+    user_id: Annotated[str, Depends(current_user)],
+) -> RoleResponse:
+    engine = getattr(request.app.state, "db_engine", None)
+    if engine is None:
+        return RoleResponse(role=None)
+    if not await session_belongs_to(engine, str(session_id), user_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    _project, role = await fetch_session_context(engine, str(session_id))
+    return RoleResponse(role=role)
+
+
+@router.put("/sessions/{session_id}/role", response_model=RoleResponse)
+async def put_session_role(
+    session_id: UUID,
+    body: RoleBody,
+    request: Request,
+    user_id: Annotated[str, Depends(current_user)],
+) -> RoleResponse:
+    """設 active role(None = 清除)。role 的 ROLE.md body 下一輪注入 system prompt。"""
+    engine = getattr(request.app.state, "db_engine", None)
+    if engine is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "roles require ORION_DB_URL",
+        )
+    if not await session_belongs_to(engine, str(session_id), user_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    if body.role:
+        from orion_sdk.roles.loader import load_all_roles
+
+        if not any(r.name == body.role for r in load_all_roles(user_id=user_id)):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"unknown role: {body.role!r}",
+            )
+    await upsert_meta(engine, str(session_id), active_role=body.role)
+    return RoleResponse(role=body.role)
 
 
 class BudgetBody(BaseModel):

@@ -310,7 +310,10 @@ async def _maybe_generate_title(
         if not user_text:
             return
         provider = conv.compact_summary_provider or mini_provider_for(conv.provider)
-        title = await generate_session_title(provider, user_text, assistant_text)
+        title = await generate_session_title(
+            provider, user_text, assistant_text,
+            session_id=str(session_id), user_id=conv.user_id,
+        )
         if not title:
             return
         await upsert_meta(engine, str(session_id), title=title)
@@ -384,7 +387,10 @@ async def _maybe_followups(
         if not assistant_text:
             return
         provider = conv.compact_summary_provider or mini_provider_for(conv.provider)
-        suggestions = await generate_followups(provider, user_text, assistant_text)
+        suggestions = await generate_followups(
+            provider, user_text, assistant_text,
+            session_id=str(session_id), user_id=conv.user_id,
+        )
         if suggestions:
             await outbound.send(
                 FollowUpsUpdatedEvent(
@@ -523,15 +529,40 @@ async def chat_stream(
             # plan mode active/awaiting → 用 SDK plan_mode_aware 包(唯讀/全擋優先)。
             plan_status = "inactive"
             plan_content = ""
+            cwd = sp.workspace_dir
             engine = getattr(sm, "engine", None)
             if engine is not None:
                 from orion_chat_api.conversation_meta import (
                     fetch_permission_mode,
                     fetch_plan,
+                    fetch_session_context,
+                )
+                from orion_chat_api.user_context import (
+                    build_session_system_prefix,
+                    project_workspace_dir,
                 )
 
                 mode = await fetch_permission_mode(engine, str(session_id))
                 plan_status, plan_content = await fetch_plan(engine, str(session_id))
+                # 每輪重算 system prefix(soul + active role + project 指令)→ 改設定下一輪生效
+                conv.system_prompt = await build_session_system_prefix(
+                    engine, user_id, str(session_id),
+                )
+                # custom instructions(只有 user-level,對齊 Cowork user_instructions)
+                # → 交給 SDK assembler 放正確位置(不塞 prefix)。改了下一輪生效。
+                from orion_sdk.prompt.instructions import get_custom_instructions
+                from orion_sdk.storage.db.engine import db_session
+
+                async with db_session(engine) as _db:
+                    _inst = await get_custom_instructions(
+                        user_id=user_id, session_id=None, db=_db,
+                    )
+                conv.custom_instructions_user = _inst.user_level
+                # 屬某 project → 用 project 共享 workspace(sandbox 在 user 命名空間)
+                proj_id, _ = await fetch_session_context(engine, str(session_id))
+                if proj_id:
+                    cwd = project_workspace_dir(user_id, proj_id)
+                    cwd.mkdir(parents=True, exist_ok=True)
                 # act → 全放行 callable(不可用 None — SDK 會無條件呼叫);ask → ws round-trip
                 base = _allow_all if mode == "act" else ws_can_use_tool
                 if plan_status != "inactive":
@@ -544,7 +575,7 @@ async def chat_stream(
                 session_id=session_id,
                 user_id=user_id,
                 abort_event=abort_event,
-                cwd=sp.workspace_dir,
+                cwd=cwd,
             )
             if plan_status != "inactive":
                 from orion_sdk.plan_mode.state import PlanModeState, PlanModeStatus
@@ -661,6 +692,29 @@ async def chat_stream(
             await outbound_send.send(_QUEUE_SENTINEL)
             await outbound_send.aclose()
 
+    # ─── 連 per-user remote MCP server(工具在本連線期間可用)──────────────
+    # 生命週期綁 ws 連線(連線時連、斷線時關)→ 多租戶資源有界、多 worker 安全。
+    # 連不上不該擋對話:best-effort,失敗就當沒 MCP。
+    mcp_manager: Any = None
+    original_tools = list(conv.tools)
+    from orion_chat_api.mcp_loader import load_user_http_mcp_configs
+
+    mcp_configs = load_user_http_mcp_configs(user_id)
+    if mcp_configs:
+        from orion_sdk.mcp.manager import McpManager
+
+        mgr = McpManager(configs=mcp_configs)
+        try:
+            # 連線上限 8s — 黑洞 / 無回應的 server 不該卡住 ws 連線
+            with anyio.fail_after(8):
+                await mgr.__aenter__()
+            mcp_manager = mgr
+            conv.tools = [*original_tools, *mgr.tools]
+        except Exception:  # noqa: BLE001 — MCP 連不上不影響對話
+            with contextlib.suppress(Exception):
+                await mgr.__aexit__(None, None, None)
+            conv.tools = original_tools
+
     try:
         async with anyio.create_task_group() as tg:
             tg.start_soon(writer)
@@ -674,6 +728,11 @@ async def chat_stream(
                 ),
             )
     finally:
+        # 收掉 MCP 連線 + 還原 tool set(wrapped tool 的 client 已關,不能留在 cached conv)
+        if mcp_manager is not None:
+            with contextlib.suppress(Exception):
+                await mcp_manager.__aexit__(None, None, None)
+            conv.tools = original_tools
         # 清掉 ws-bound asker(closure 抓住本連線的 outbound_send,留著會 leak)
         if ask_tool is not None:
             ask_tool.asker = None

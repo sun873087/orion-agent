@@ -19,7 +19,9 @@ from uuid import UUID, uuid4
 
 import anyio
 
-from orion_sdk.core.conversation import Conversation
+from orion_model.provider import get_provider
+
+from orion_sdk.core.conversation import Conversation, pick_max_tokens_per_turn
 from orion_sdk.storage.paths import session_paths
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,26 @@ class SessionManager:
     async def get(self, user_id: str, session_id: UUID) -> Conversation | None:
         async with self._lock:
             return self._sessions.get((user_id, session_id))
+
+    async def set_model(
+        self,
+        user_id: str,
+        session_id: UUID,
+        *,
+        provider_name: str,
+        model: str,
+    ) -> Conversation | None:
+        """切換 cached session 的 model(in-memory 無持久化,只換 provider 實例)。"""
+        async with self._lock:
+            conv = self._sessions.get((user_id, session_id))
+        if conv is None:
+            return None
+        new_provider = get_provider(provider_name, model)
+        conv.provider = new_provider
+        conv.max_tokens_per_turn = pick_max_tokens_per_turn(
+            new_provider.name, new_provider.model,
+        )
+        return conv
 
     async def delete(self, user_id: str, session_id: UUID) -> bool:
         async with self._lock:

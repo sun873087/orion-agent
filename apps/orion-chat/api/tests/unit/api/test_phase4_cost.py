@@ -37,6 +37,51 @@ def _h(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_cost_endpoint_exposes_real_top_level_tokens(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    """/cost 要把跨 model 的真實 token 攤平到頂層(不是 chars/4 概估)。"""
+    from orion_sdk.telemetry.cost_tracker import get_or_create_tracker
+
+    client, token = client_with_token
+    sid = client.post("/sessions", headers=_h(token)).json()["session_id"]
+    tr = get_or_create_tracker(sid)
+    tr.record(
+        model="claude-sonnet-4-6",
+        input_tokens=1200,
+        output_tokens=80,
+        cache_read_tokens=300,
+    )
+    body = client.get(f"/sessions/{sid}/cost", headers=_h(token)).json()
+    assert body["input_tokens"] == 1200
+    assert body["output_tokens"] == 80
+    assert body["cache_read_tokens"] == 300
+    assert body["total_cost_usd"] > 0  # 由真實 token × 定價算出
+
+
+def test_cost_endpoint_returns_by_origin(
+    client_with_token: tuple[TestClient, str],
+) -> None:
+    """/cost 要 by-origin 細分(chat / title / follow_ups),對齊 cowork。"""
+    from orion_sdk.telemetry.cost_tracker import get_or_create_tracker
+
+    client, token = client_with_token
+    sid = client.post("/sessions", headers=_h(token)).json()["session_id"]
+    tr = get_or_create_tracker(sid)
+    tr.record(
+        model="claude-sonnet-4-6", origin="chat",
+        input_tokens=1000, output_tokens=200,
+    )
+    tr.record(
+        model="claude-sonnet-4-6", origin="title",
+        input_tokens=300, output_tokens=10,
+    )
+    body = client.get(f"/sessions/{sid}/cost", headers=_h(token)).json()
+    assert set(body["by_origin"]) == {"chat", "title"}
+    assert body["by_origin"]["title"]["input_tokens"] == 300
+    assert body["by_origin"]["chat"]["cost_usd"] > 0
+
+
 def test_context_breakdown_shape(
     client_with_token: tuple[TestClient, str],
 ) -> None:

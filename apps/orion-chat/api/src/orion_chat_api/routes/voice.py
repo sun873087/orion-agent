@@ -37,7 +37,35 @@ class VoiceStatus(BaseModel):
 
 class TtsBody(BaseModel):
     text: str
-    voice: str | None = None
+    # OpenAI TTS 預設(與 cowork 對齊);proxy mode 由 env 切換 base URL
+    voice: str = "nova"
+    model: str = "tts-1"
+    speed: float = 1.0
+
+
+class TtsResult(BaseModel):
+    audio_base64: str
+    mime_type: str
+    voice: str
+    model: str
+    cost_usd: float | None = None
+
+
+class SttBody(BaseModel):
+    audio_base64: str
+    mime_type: str = "audio/webm"
+    # 預設走 OpenAI whisper-1(與 cowork 對齊);proxy mode 由 env 切換 base URL
+    provider: str = "openai"
+    model: str = "whisper-1"
+    locale: str | None = None
+    duration_seconds: float | None = None
+
+
+class SttResult(BaseModel):
+    text: str
+    provider: str
+    model: str
+    cost_usd: float | None = None
 
 
 @router.get("/voice/status", response_model=VoiceStatus)
@@ -50,33 +78,73 @@ async def voice_status(
     )
 
 
-@router.post("/voice/tts")
+@router.post("/voice/tts", response_model=TtsResult)
 async def tts(
-    _body: TtsBody,
+    body: TtsBody,
     _user_id: Annotated[str, Depends(current_user)],
-) -> dict[str, str]:
+) -> TtsResult:
     if not _any_key(_TTS_KEYS):
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "TTS not configured — set a voice provider key (or proxy).",
         )
-    # 實際合成(provider SDK + per-user cache GC)留待後續整合
-    raise HTTPException(
-        status.HTTP_501_NOT_IMPLEMENTED,
-        "TTS synthesis integration is a follow-up.",
+    if not body.text.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty text")
+
+    import base64
+
+    from orion_model.audio import synthesize
+
+    try:
+        result = await synthesize(
+            provider="openai",
+            model=body.model,
+            voice=body.voice,
+            speed=body.speed,
+            text=body.text[:4096],  # OpenAI TTS 上限
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+    return TtsResult(
+        audio_base64=base64.b64encode(result.audio_bytes).decode("ascii"),
+        mime_type=result.mime_type,
+        voice=result.voice,
+        model=result.model,
+        cost_usd=result.cost_usd,
     )
 
 
-@router.post("/voice/stt")
+@router.post("/voice/stt", response_model=SttResult)
 async def stt(
+    body: SttBody,
     _user_id: Annotated[str, Depends(current_user)],
-) -> dict[str, str]:
+) -> SttResult:
     if not _any_key(_STT_KEYS):
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "STT not configured — set a voice provider key (or proxy).",
         )
-    raise HTTPException(
-        status.HTTP_501_NOT_IMPLEMENTED,
-        "STT transcription integration is a follow-up.",
+    from orion_model.audio import transcribe
+
+    try:
+        result = await transcribe(
+            provider=body.provider,
+            model=body.model,
+            audio_base64=body.audio_base64,
+            mime_type=body.mime_type,
+            locale=body.locale,
+            duration_seconds=body.duration_seconds,
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    except RuntimeError as e:
+        # NO_API_KEY / upstream HTTP / proxy 錯 — 屬上游問題
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+    return SttResult(
+        text=result.text,
+        provider=result.provider,
+        model=result.model,
+        cost_usd=result.cost_usd,
     )

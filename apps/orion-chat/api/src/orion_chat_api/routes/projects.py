@@ -1,7 +1,8 @@
 """/projects — per-user project CRUD + session 關聯。
 
 project 掛 per-project 自訂指令 / workspace,組織多個 session。每個 query WHERE
-user_id 隔離。per-project system-prompt 注入與 workspace sandbox 留待後續(見路線圖)。
+user_id 隔離。custom_instructions 在每輪由 user_context.build_session_system_prefix
+注入 system prompt;workspace 走 project_workspace_dir() 的 sandbox(見 chat.py runner)。
 """
 
 from __future__ import annotations
@@ -15,7 +16,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import Request
 
-from orion_chat_api.conversation_meta import session_belongs_to, upsert_meta
+from orion_chat_api.conversation_meta import (
+    fetch_session_context,
+    session_belongs_to,
+    upsert_meta,
+)
 from orion_chat_api.deps import current_user
 from orion_sdk.storage.db.engine import db_session
 from orion_sdk.storage.db.models import Project as ProjectRow
@@ -147,6 +152,19 @@ async def delete_project(
         await db.execute(delete(ProjectRow).where(ProjectRow.id == project_id))
         await db.commit()
     return {"deleted": True}
+
+
+@router.get("/sessions/{session_id}/project", response_model=dict)
+async def get_session_project(
+    session_id: UUID,
+    request: Request,
+    user_id: Annotated[str, Depends(current_user)],
+) -> dict[str, str | None]:
+    engine = _engine(request)
+    if not await session_belongs_to(engine, str(session_id), user_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    project_id, _role = await fetch_session_context(engine, str(session_id))
+    return {"project_id": project_id}
 
 
 @router.put("/sessions/{session_id}/project", response_model=dict)

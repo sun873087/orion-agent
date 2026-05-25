@@ -78,6 +78,24 @@ async def fetch_plan(engine: AsyncEngine, session_id: str) -> tuple[str, str]:
     return (status or "inactive", content or "")
 
 
+async def fetch_session_context(
+    engine: AsyncEngine, session_id: str,
+) -> tuple[str | None, str | None]:
+    """回 (project_id, active_role)。沒 metadata 都是 None。"""
+    async with db_session(engine) as db:
+        row = (
+            await db.execute(
+                select(
+                    ConversationMetadata.project_id,
+                    ConversationMetadata.active_role,
+                ).where(ConversationMetadata.session_id == session_id),
+            )
+        ).first()
+    if row is None:
+        return (None, None)
+    return (row[0], row[1])
+
+
 async def fetch_permission_mode(engine: AsyncEngine, session_id: str) -> str:
     """回 'ask' / 'act'(預設 'ask')。"""
     async with db_session(engine) as db:
@@ -122,6 +140,7 @@ async def upsert_meta(
     plan_mode_status: str = _UNSET,
     plan_content: str = _UNSET,
     project_id: str | None = _UNSET,
+    active_role: str | None = _UNSET,
     collaboration_id: str | None = _UNSET,
 ) -> tuple[str | None, bool]:
     """upsert metadata(只更新有傳的欄位)。回 (title, starred)。"""
@@ -156,6 +175,8 @@ async def upsert_meta(
             row.plan_content = plan_content
         if project_id is not _UNSET:
             row.project_id = project_id
+        if active_role is not _UNSET:
+            row.active_role = active_role
         if collaboration_id is not _UNSET:
             row.collaboration_id = collaboration_id
         await db.commit()

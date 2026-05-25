@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -135,9 +135,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.hooks = hooks
     await hooks.fire(SetupEvent(session_id=None, user_id=None))
 
+    # 背景 scheduler(只在有 DB 時起;cron 到點以擁有者身分自動跑一輪)。
+    # ORION_DISABLE_SCHEDULER=1 可關(測試 / 不想要背景 turn 時)。
+    scheduler = None
+    if db_engine is not None and os.environ.get("ORION_DISABLE_SCHEDULER") != "1":
+        from orion_chat_api.scheduler import SchedulerEngine
+
+        scheduler = SchedulerEngine(app)
+        app.state.scheduler = scheduler
+        try:
+            await scheduler.start()
+        except Exception:  # noqa: BLE001 — scheduler 起不來不擋 server
+            import structlog
+
+            structlog.get_logger().warning("scheduler_start_failed")
+            scheduler = None
+
     try:
         yield
     finally:
+        if scheduler is not None:
+            with suppress(Exception):
+                await scheduler.stop()
         if db_engine is not None:
             await db_engine.dispose()
 

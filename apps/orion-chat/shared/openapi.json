@@ -337,6 +337,62 @@
         }
       }
     },
+    "/sessions/{session_id}/model": {
+      "put": {
+        "summary": "Set Session Model",
+        "description": "就地切換既有 session 的 model — 歷史保留,後續 turn 用新 model。",
+        "operationId": "set_session_model_sessions__session_id__model_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sessions/{session_id}/fork": {
       "post": {
         "summary": "Fork Session Route",
@@ -684,6 +740,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PermissionModeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/role": {
+      "get": {
+        "summary": "Get Session Role",
+        "operationId": "get_session_role_sessions__session_id__role_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Session Role",
+        "description": "設 active role(None = 清除)。role 的 ROLE.md body 下一輪注入 system prompt。",
+        "operationId": "put_session_role_sessions__session_id__role_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleResponse"
                 }
               }
             }
@@ -2463,6 +2618,51 @@
       }
     },
     "/sessions/{session_id}/project": {
+      "get": {
+        "summary": "Get Session Project",
+        "operationId": "get_session_project_sessions__session_id__project_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Session Project Sessions  Session Id  Project Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "summary": "Set Session Project",
         "operationId": "set_session_project_sessions__session_id__project_put",
@@ -2814,6 +3014,51 @@
         }
       }
     },
+    "/schedules/{sched_id}/run-now": {
+      "post": {
+        "summary": "Run Schedule Now Endpoint",
+        "description": "立即觸發一次(不動排程時刻)。回實際跑的 session_id。",
+        "operationId": "run_schedule_now_endpoint_schedules__sched_id__run_now_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sched_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sched Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/voice/status": {
       "get": {
         "summary": "Voice Status",
@@ -2857,11 +3102,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Tts Voice Tts Post"
+                  "$ref": "#/components/schemas/TtsResult"
                 }
               }
             }
@@ -2888,17 +3129,33 @@
       "post": {
         "summary": "Stt",
         "operationId": "stt_voice_stt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SttBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Stt Voice Stt Post"
+                  "$ref": "#/components/schemas/SttResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -3803,6 +4060,24 @@
         "title": "MemoryWriteBody",
         "description": "PUT body — frontmatter 欄位 + body。"
       },
+      "ModelBody": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "ModelBody"
+      },
       "PatchSessionBody": {
         "properties": {
           "title": {
@@ -4037,6 +4312,23 @@
         ],
         "title": "RegisterResponse"
       },
+      "RoleBody": {
+        "properties": {
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "title": "RoleBody"
+      },
       "RoleDetail": {
         "properties": {
           "name": {
@@ -4086,6 +4378,23 @@
           "body"
         ],
         "title": "RoleDetail"
+      },
+      "RoleResponse": {
+        "properties": {
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "title": "RoleResponse"
       },
       "RoleSummary": {
         "properties": {
@@ -4171,6 +4480,23 @@
         },
         "type": "object",
         "title": "RoleWriteBody"
+      },
+      "RunNowResponse": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "title": "RunNowResponse"
       },
       "ScheduleBody": {
         "properties": {
@@ -4570,6 +4896,90 @@
         ],
         "title": "StatusResponse"
       },
+      "SttBody": {
+        "properties": {
+          "audio_base64": {
+            "type": "string",
+            "title": "Audio Base64"
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type",
+            "default": "audio/webm"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "openai"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "whisper-1"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_base64"
+        ],
+        "title": "SttBody"
+      },
+      "SttResult": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "provider",
+          "model"
+        ],
+        "title": "SttResult"
+      },
       "SubmitPlanBody": {
         "properties": {
           "content": {
@@ -4601,15 +5011,19 @@
             "title": "Text"
           },
           "voice": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voice"
+            "type": "string",
+            "title": "Voice",
+            "default": "nova"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "tts-1"
+          },
+          "speed": {
+            "type": "number",
+            "title": "Speed",
+            "default": 1.0
           }
         },
         "type": "object",
@@ -4617,6 +5031,45 @@
           "text"
         ],
         "title": "TtsBody"
+      },
+      "TtsResult": {
+        "properties": {
+          "audio_base64": {
+            "type": "string",
+            "title": "Audio Base64"
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type"
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_base64",
+          "mime_type",
+          "voice",
+          "model"
+        ],
+        "title": "TtsResult"
       },
       "UploadSummary": {
         "properties": {
